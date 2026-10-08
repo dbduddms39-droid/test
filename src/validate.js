@@ -77,6 +77,10 @@ function normalize(item) {
     reason_code: item.presence === 'found' && item.specificity === 'vague' ? item.reason_code : null,
     evidence_ids: [...item.evidence_ids].sort((a, b) => a - b),
   };
+  // 설명용 인용 문구 (분명하지 않음일 때만). 판정에는 쓰지 않고, 근거 원문에 실제로 있는지는 화면 설명을 만들 때 확인한다.
+  const vague = out.specificity === 'vague';
+  out.stated_text = vague && typeof item.stated_text === 'string' ? item.stated_text : null;
+  out.unclear_texts = vague && Array.isArray(item.unclear_texts) ? item.unclear_texts.filter((t) => typeof t === 'string').slice(0, 3) : [];
   // 항목 전용 필드는 해당 항목에서만 의미가 있다. 다른 항목에 들어온 값은 버린다.
   if (item.id === 'probation_period') out.probation_status = item.probation_status ?? null;
   if (item.id === 'employment_type') out.employment_category = item.employment_category ?? null;

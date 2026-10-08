@@ -12,6 +12,9 @@ const RULES = {
   probation_pay: /수습.*(급여|임금|\d+\s*%|만\s*원)|(급여|임금).*수습/,
 };
 const VAGUE = /(협의|내규|추후|면접\s*후|경력에\s*따라|별도\s*안내|추후\s*결정|회사\s*규정)/;
+// 설명에 인용할 문구 (AI의 unclear_texts·stated_text 역할)
+const VAGUE_PHRASE = /(경력에\s*따라\s*)?협의|(회사\s*)?내규에?\s*따름|회사\s*내규|면접\s*후\s*(협의|결정)?|경력에\s*따라|별도\s*안내|추후\s*(결정|안내)?|회사\s*규정/g;
+const MONEY = /(연봉|월급?|시급|일급)?\s*\d[\d,]*\s*만?\s*원(\s*[~∼〜]\s*\d[\d,]*\s*만?\s*원)?/;
 const NO_PROBATION = /수습\s*(기간)?\s*[:：]?\s*(없음|해당\s*없음|미적용|없습니다)/;
 
 export function createDemoAnalyzer() {
@@ -30,10 +33,12 @@ function judge(id, segments) {
   for (const h of hits) {
     ids.add(h.id);
     if (/^[^\d]{1,12}[:：]?$/.test(h.text) && h.id < segments.length) ids.add(h.id + 1);
+    // 다음 줄이 괄호로 된 보충 설명이면 같은 항목으로 본다 (예: "(경력에 따라 협의)")
+    if (h.id < segments.length && /^[*•·-]?\s*\(.*\)$/.test(segments[h.id].text.trim())) ids.add(h.id + 1);
   }
   const evidence = [...ids].sort((a, b) => a - b);
   const base = { id, probation_status: null, employment_category: null };
-  if (!evidence.length) return { ...base, presence: 'not_found', specificity: null, reason_code: null, evidence_ids: [] };
+  if (!evidence.length) return { ...base, presence: 'not_found', specificity: null, reason_code: null, evidence_ids: [], stated_text: null, unclear_texts: [] };
 
   const texts = evidence.map((n) => segments[n - 1].text).join(' ');
   const vague = VAGUE.test(texts);
@@ -43,10 +48,16 @@ function judge(id, segments) {
     specificity: vague ? 'vague' : 'specific',
     reason_code: vague ? 'vague_expression' : null,
     evidence_ids: evidence,
+    stated_text: null,
+    unclear_texts: [],
   };
+  if (vague) {
+    out.unclear_texts = [...new Set(texts.match(VAGUE_PHRASE).map((m) => m.trim()))].slice(0, 3);
+    if (id === 'salary' || id === 'probation_pay') out.stated_text = texts.match(MONEY)?.[0].trim() ?? null;
+  }
   if (id === 'probation_period') {
     out.probation_status = NO_PROBATION.test(texts) ? 'none' : 'applies';
-    if (out.probation_status === 'none') Object.assign(out, { specificity: 'specific', reason_code: null });
+    if (out.probation_status === 'none') Object.assign(out, { specificity: 'specific', reason_code: null, stated_text: null, unclear_texts: [] });
   }
   if (id === 'employment_type') {
     out.employment_category = /정규직/.test(texts) ? 'permanent'

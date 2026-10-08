@@ -32,16 +32,12 @@ export const EMPLOYMENT_CATEGORY = ['permanent', 'fixed_term', 'intern', 'other'
 // 화면 상태
 export const STATUS = {
   stated: { label: '명시됨', explanation: '이 조건이 문서에 구체적으로 적혀 있어요. 적법하거나 유리한 조건이라는 뜻은 아니에요.' },
-  unclear: { label: '분명하지 않음', explanation: '이 조건을 언급하고 있지만, 내용이 모호하거나 서로 다른 값이 함께 적혀 있어요.' },
+  unclear: { label: '분명하지 않음', explanation: '이 조건에 관한 내용은 있지만, 구체적으로 정해지지 않았거나 추가 확인이 필요한 부분이 있어요.' },
   not_found: { label: '찾지 못함', explanation: '입력한 문서에서 이 조건에 관한 내용을 확인하지 못했어요. 법률 위반을 뜻하지는 않아요.' },
   unavailable: { label: '분석 확인 불가', explanation: 'AI 분석 결과를 검증하지 못해 이 항목의 상태를 확정할 수 없어요. 원문을 직접 확인해 주세요.' },
 };
 
-export const REASON_TEXT = {
-  vague_expression: "'협의', '회사 내규에 따름'처럼 구체적인 값 대신 모호한 표현으로 적혀 있어요.",
-  conflicting_values: '같은 항목에 서로 다른 값이 함께 적혀 있어요. 어느 값이 적용되는지 확인이 필요해요.',
-  candidate_unclear: '관련된 내용은 있지만 이 항목을 가리키는지 분명하지 않아요.',
-};
+// '분명하지 않음'의 상세 설명은 사유 코드별 고정 문장이 아니라 src/reason.js가 근거 원문으로 만든다.
 
 export const NOT_FOUND_TEMPLATES = {
   job_posting: (label) => `이 채용공고에는 ${label}에 관한 안내가 확인되지 않아요.`,

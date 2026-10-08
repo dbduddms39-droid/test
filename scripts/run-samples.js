@@ -104,6 +104,13 @@ for (const [i, sample] of SAMPLES.entries()) {
     ...rows.map((r) => `| ${ITEM_BY_ID[r.item].label} | ${STATUS_KO[r.expectedStatus]} | ${STATUS_KO[r.actualStatus]} | ${r.statusMatch ? '✓' : '✗'} | ${fmtIds(r.expectedIds)} | ${fmtIds(r.actualIds)} | ${r.evidence}${r.falseNotFound ? ' (잘못된 not_found)' : ''} |`),
     '',
   ];
+  // 분명하지 않음 항목의 상세 설명 (가상 문서라 원문 인용을 남겨도 된다)
+  const explained = result.items.filter((it) => it.visible && it.reasonFact);
+  if (explained.length) {
+    lines.push('상세 설명 (분명하지 않음):', '');
+    for (const it of explained) lines.push(`- ${it.label} [${it.reasonKind}] ${it.reasonFact} / ${it.reasonPending} / 우선 확인: ${it.followUps[0]}`);
+    lines.push('');
+  }
   if (live) {
     lines.push('<details><summary>AI 원본 응답 JSON</summary>', '', '```json', ...(rawResponses.length ? rawResponses.map((r) => JSON.stringify(r, null, 1)) : ['(성공한 응답 없음)']), '```', '</details>', '');
   }

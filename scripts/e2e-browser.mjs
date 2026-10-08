@@ -102,6 +102,23 @@ try {
     return hasAsk;
   };
 
+  // 분명하지 않음 설명: 적힌 사실과 확인이 필요한 부분이 나뉘어 있고, 인용(' ')은 입력 원문에 있는 문구만,
+  // 원문에 없는 사유('내규', '서로 다른')를 말하지 않는다
+  const reasonProblems = [];
+  const checkReason = async (it, docText) => {
+    if (it.status !== 'unclear') return;
+    const fact = (await page.textContent('.reason-fact').catch(() => null)) ?? '';
+    const pending = (await page.textContent('.reason-pending').catch(() => null)) ?? '';
+    const quotes = [...`${fact} ${pending}`.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    const squeeze = (s) => s.replace(/\s+/g, '');
+    const firstFollowUp = await page.textContent('.follow-ups li');
+    if (!fact || !pending) reasonProblems.push(`${it.label}: 설명 없음`);
+    if (quotes.some((q) => !squeeze(docText).includes(squeeze(q)))) reasonProblems.push(`${it.label}: 원문에 없는 인용`);
+    if (['내규', '서로 다른'].some((w) => `${fact}${pending}`.includes(w) && !docText.includes(w))) reasonProblems.push(`${it.label}: 원문에 없는 사유`);
+    if (!firstFollowUp.startsWith('실제')) reasonProblems.push(`${it.label}: 핵심 확인 사항이 맨 앞이 아님`);
+    console.log(`      ${it.label} 설명 [${it.reasonKind}] 인용 ${quotes.length}개, 우선 확인: ${firstFollowUp}`);
+  };
+
   // 5) 항목별 원문 근거 확인
   let evidenceOk = true;
   for (const [k, it] of visible.entries()) {
@@ -112,6 +129,7 @@ try {
     const fromInput = shown.every((t) => sample.text.includes(t));
     if (!sameAsApi || !fromInput) evidenceOk = false;
     const hasAsk = await checkAsk(it);
+    await checkReason(it, sample.text);
     console.log(`      ${it.label}: 원문 근거 ${shown.length}줄, 입력 원문과 일치 ${fromInput ? '예' : '아니오'}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
     if (k === 0) await page.screenshot({ path: `${OUT}/03-detail.png`, fullPage: true });
     await page.goBack();
@@ -137,6 +155,7 @@ try {
     await page.click(`.item-row >> nth=${k}`);
     await page.waitForSelector('#view-detail:not([hidden])');
     const hasAsk = await checkAsk(it);
+    await checkReason(it, missing.text);
     console.log(`      ${it.label}: ${it.statusLabel}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
     if (hasAsk && !copied) {
       const shownQ = await page.textContent('#ask-text');
@@ -155,6 +174,7 @@ try {
   }
   const hidden2 = data2.items.filter((i) => !i.visible).map((i) => i.label);
   console.log(`      숨김 항목(질문 없음): ${hidden2.join(', ') || '없음'}`);
+  check('분명하지 않음 설명: 적힌 사실/확인 필요 구분, 원문 인용만, 원문에 없는 사유 없음, 핵심 확인 사항 우선', reasonProblems.length === 0, reasonProblems.join(', '));
   check('질문 영역은 분명하지 않음·찾지 못함 항목에만 표시', askMismatch.length === 0, askMismatch.join(', '));
   check('찾지 못함 항목에서 질문 복사 → 클립보드에 같은 문장 + 완료 안내', Boolean(copied?.ok), copied ? copied.label : '질문 영역이 있는 항목 없음');
   check('복사한 질문에 숫자(금액·날짜) 없음', Boolean(copied?.noDigits));

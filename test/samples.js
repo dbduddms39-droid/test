@@ -1,7 +1,8 @@
 // 테스트 샘플. expected의 각 항목:
 //   status: 화면 상태(stated | unclear | not_found | hidden)
 //   evidence: 근거로 선택돼야 하는 원문 단위를 찾는 부분 문자열 목록
-//   reason / probation / employment: 이상적인 AI 응답을 만들 때 쓰는 부가 값
+//   reason / probation / employment / stated / unclear: 이상적인 AI 응답을 만들 때 쓰는 부가 값
+//   (stated·unclear는 설명에 인용할 원문 문구: AI의 stated_text·unclear_texts)
 // 화면에 숨겨지는 항목(hidden)도 AI 응답 기준(found/not_found)을 함께 적는다.
 
 export const SAMPLES = [
@@ -42,8 +43,8 @@ export const SAMPLES = [
 근무지: 서울 성동구
 수습: 3개월 (수습 기간 급여는 내규에 따름)`,
     expected: {
-      salary: { status: 'unclear', evidence: ['급여: 회사 내규'], reason: 'vague_expression' },
-      work_hours: { status: 'unclear', evidence: ['근무시간'], reason: 'vague_expression' },
+      salary: { status: 'unclear', evidence: ['급여: 회사 내규'], reason: 'vague_expression', unclear: ['회사 내규에 따름', '면접 후 협의'] },
+      work_hours: { status: 'unclear', evidence: ['근무시간'], reason: 'vague_expression', unclear: ['세부 시간은 협의'] },
       workplace: { status: 'stated', evidence: ['근무지'] },
       duties: { status: 'stated', evidence: ['담당업무'] },
       employment_type: { status: 'stated', evidence: ['고용형태'], employment: 'permanent' },
@@ -180,7 +181,7 @@ export const SAMPLES = [
 근무시간: 10:00~19:00
 연봉: 4,000만원 이상 (경력에 따라 협의)`,
     expected: {
-      salary: { status: 'unclear', evidence: ['연봉'], reason: 'vague_expression' },
+      salary: { status: 'unclear', evidence: ['연봉'], reason: 'vague_expression', stated: '4,000만원 이상', unclear: ['경력에 따라 협의'] },
       work_hours: { status: 'stated', evidence: ['근무시간'] },
       workplace: { status: 'stated', evidence: ['근무지'] },
       duties: { status: 'stated', evidence: ['담당업무'] },
@@ -253,6 +254,31 @@ export const SAMPLES = [
       duties: { status: 'stated', evidence: ['담당업무'] },
       employment_type: { status: 'stated', evidence: ['채용형태'], employment: 'fixed_term' },
       contract_period: { status: 'stated', evidence: ['근무 기간: 6개월'] },
+      probation_period: { status: 'hidden', presence: 'not_found' },
+      probation_pay: { status: 'hidden', presence: 'not_found' },
+    },
+  },
+  {
+    key: 'X7_salary_range_negotiable',
+    title: '추가: 연봉 범위와 협의가 함께 적힌 급여',
+    docType: 'job_posting',
+    text: `[채용] 백엔드 개발자 (가상 예시)
+담당업무: 결제 서버 API 개발 및 운영
+고용형태: 정규직
+근무지: 서울 강남구 테헤란로
+근무시간: 월~금 10:00~19:00
+급여 연봉 3000만원 ~ 5,000만원
+(경력에 따라 협의, 인센티브 별도)`,
+    expected: {
+      salary: {
+        status: 'unclear', evidence: ['급여 연봉', '(경력에 따라 협의'], reason: 'vague_expression',
+        stated: '연봉 3000만원 ~ 5,000만원', unclear: ['경력에 따라 협의'],
+      },
+      work_hours: { status: 'stated', evidence: ['근무시간'] },
+      workplace: { status: 'stated', evidence: ['근무지'] },
+      duties: { status: 'stated', evidence: ['담당업무'] },
+      employment_type: { status: 'stated', evidence: ['고용형태'], employment: 'permanent' },
+      contract_period: { status: 'hidden', presence: 'not_found' },
       probation_period: { status: 'hidden', presence: 'not_found' },
       probation_pay: { status: 'hidden', presence: 'not_found' },
     },

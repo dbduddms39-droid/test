@@ -15,13 +15,15 @@ export function responseSchema(itemIds = ITEM_IDS) {
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['id', 'presence', 'specificity', 'reason_code', 'evidence_ids', 'probation_status', 'employment_category'],
+          required: ['id', 'presence', 'specificity', 'reason_code', 'evidence_ids', 'stated_text', 'unclear_texts', 'probation_status', 'employment_category'],
           properties: {
             id: { type: 'string', enum: itemIds },
             presence: { type: 'string', enum: ['found', 'not_found'] },
             specificity: nullable(['specific', 'vague']),
             reason_code: nullable(REASON_CODES),
             evidence_ids: { type: 'array', items: { type: 'integer' } },
+            stated_text: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+            unclear_texts: { type: 'array', items: { type: 'string' } },
             probation_status: nullable(PROBATION_STATUS),
             employment_category: nullable(EMPLOYMENT_CATEGORY),
           },
@@ -53,11 +55,16 @@ export const SYSTEM_PROMPT = `당신은 한국어 채용 관련 문서(채용공
 - specificity: found일 때 내용이 구체적이면 "specific", 모호하거나 상충하면 "vague". not_found면 null.
 - reason_code: specificity가 "vague"일 때만 다음 중 하나, 그 외에는 null.
   - "vague_expression": '협의', '회사 내규에 따름', '면접 후 결정', '경력에 따라' 처럼 구체 값 대신 모호한 표현.
+    "연봉 3000만원~5000만원 (경력에 따라 협의)"처럼 범위·최소값 등 일부 값은 적혀 있지만 실제 적용될 값이 정해지지 않은 경우도 vague_expression 입니다.
   - "conflicting_values": 같은 항목에 서로 다른 값이 함께 적혀 있음. 상충하는 값이 적힌 단위 번호를 모두 evidence_ids에 넣습니다.
   - "candidate_unclear": 관련 내용으로 보이지만 이 항목을 가리키는지 분명하지 않음.
 - evidence_ids: 판단 근거가 된 단위 번호 배열. found면 1개 이상, not_found면 빈 배열.
   값이 여러 줄로 갈라져 있으면(예: "급여" 다음 줄에 "월 250만원") 관련된 번호를 모두 넣습니다.
   원문 문장을 다시 쓰거나 요약하지 말고 번호만 반환합니다. 존재하지 않는 번호는 쓰지 않습니다.
+- stated_text: specificity가 "vague"일 때, 근거 단위에 이미 구체적으로 적힌 값(금액 범위, 최소 금액, 날짜 등)이 있으면 그 부분을 문서에서 글자 그대로 복사합니다 (40자 이내). 없으면 null. specific이거나 not_found면 null.
+- unclear_texts: specificity가 "vague"일 때 그렇게 판단한 문구를 문서에서 글자 그대로 복사한 배열입니다 (각 40자 이내, 최대 3개).
+  vague_expression이면 정해지지 않은 표현, conflicting_values이면 서로 다른 각 값, candidate_unclear이면 애매한 문구. 그 외에는 [].
+  문서에 없는 말을 만들거나, 예시 문구를 가져오거나, 바꿔 쓰지 않습니다.
 - probation_status: probation_period 항목에서만 사용. found일 때 수습이 적용되면 "applies", "수습 없음"·"해당 없음"처럼 명시적으로 수습이 없으면 "none", 적용 여부가 불분명하면 "unclear". 그 외 항목과 not_found에는 null.
   "수습 없음"이 명시된 경우 probation_period는 presence "found", specificity "specific", probation_status "none" 입니다.
 - employment_category: employment_type 항목에서만 사용. found일 때 "permanent"(정규직), "fixed_term"(계약직·기간제), "intern"(인턴), "other"(파견·프리랜서 등), "unclear" 중 하나. 그 외 항목과 not_found에는 null.

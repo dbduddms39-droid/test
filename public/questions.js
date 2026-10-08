@@ -22,16 +22,20 @@ const ITEM_ASK = {
   probation_pay: { topic: '수습 기간 중 급여', subj: '수습 기간 중 급여가', ask: '수습 기간 중 급여가 어떻게 지급되는지(정규 급여와 같은지, 다르다면 어떻게 정해지는지) 알려 주실 수 있을까요?' },
 };
 
-// '분명하지 않음'의 사유별 앞 문장
+// '분명하지 않음'의 앞 문장. 상세 설명(reasonKind)과 같은 근거로 고른다.
+// 원문에서 사유를 확인하지 못한 경우(unspecified)에는 특정 사유를 단정하지 않는다.
 const VAGUE_LEAD = {
-  vague_expression: (ref, spec) => `${ref} ${spec.subj} 구체적으로 정해지지 않은 표현으로 적혀 있어 여쭤봅니다.`,
-  conflicting_values: (ref, spec) => `${ref} ${spec.subj} 서로 다르게 적힌 부분이 있어, 어느 내용이 적용되는지 확인하고 싶습니다.`,
-  candidate_unclear: (ref, spec) => `${ref} ${spec.topic}에 관한 내용인지 분명하지 않은 부분이 있어 여쭤봅니다.`,
+  partial: (ref, spec) => `${ref} ${spec.topic}에 관한 내용은 있지만, 실제 적용될 내용이 정해지지 않은 부분이 있어 여쭤봅니다.`,
+  vague: (ref, spec) => `${ref} ${spec.subj} 구체적으로 정해지지 않은 표현으로 적혀 있어 여쭤봅니다.`,
+  conflicting: (ref, spec) => `${ref} ${spec.subj} 서로 다르게 적힌 부분이 있어, 어느 내용이 적용되는지 확인하고 싶습니다.`,
+  candidate: (ref, spec) => `${ref} ${spec.topic}에 관한 내용인지 분명하지 않은 부분이 있어 여쭤봅니다.`,
+  unspecified: (ref, spec) => `${ref} ${spec.topic}에 관한 내용 중 확인이 필요한 부분이 있어 여쭤봅니다.`,
 };
+const KIND_BY_REASON = { vague_expression: 'vague', conflicting_values: 'conflicting', candidate_unclear: 'candidate' };
 
 export const QUESTION_STATUSES = ['unclear', 'not_found'];
 
-// item: 분석 결과 항목 ({ id, visible, status, reasonCode }), docType: 문서 유형
+// item: 분석 결과 항목 ({ id, visible, status, reasonKind, reasonCode }), docType: 문서 유형
 // 반환: 질문 문장 또는 null(질문을 만들지 않는 경우)
 export function buildQuestion(item, docType) {
   if (!item?.visible || !QUESTION_STATUSES.includes(item.status)) return null;
@@ -40,7 +44,7 @@ export function buildQuestion(item, docType) {
   if (!spec || !ref) return null;
   const lead = item.status === 'not_found'
     ? `${ref} ${spec.topic}에 관한 내용을 찾지 못해 여쭤봅니다.`
-    : (VAGUE_LEAD[item.reasonCode] ?? VAGUE_LEAD.candidate_unclear)(ref, spec);
+    : VAGUE_LEAD[item.reasonKind ?? KIND_BY_REASON[item.reasonCode] ?? 'unspecified'](ref, spec);
   return `안녕하세요. ${lead} ${spec.ask} 감사합니다.`;
 }
 

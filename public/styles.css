@@ -60,6 +60,8 @@ textarea { width: 100%; padding: 12px; font: inherit; font-size: 15px; color: va
 .badge-unavailable { background: var(--unavail-bg); color: var(--unavail-fg); border: 1px dashed var(--muted); }
 .notice { margin-top: 24px; font-size: 13px; color: var(--muted); }
 .reason { background: var(--surface); border-left: 3px solid var(--border); padding: 8px 12px; margin: 8px 0; }
+.reason p { margin: 0; }
+.reason p + p { margin-top: 6px; }
 .evidence { list-style: none; padding: 0; margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
 .evidence li { display: flex; gap: 12px; padding: 10px 12px; }
 .evidence li + li { border-top: 1px dashed var(--border); }

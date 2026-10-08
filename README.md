@@ -56,8 +56,8 @@ npm run demo              # DEMO_MODE=true — 키워드 규칙 데모 (AI 아�
 
 ```bash
 npm test             # 단위·통합 테스트 (실제 AI 호출 없음)
-npm run report       # 샘플 8종을 데모 분석기로 실행 → docs/test-report-demo.md
-npm run eval:live    # 샘플 8종을 실제 Gemini API로 실행 → docs/test-report-live.md (GEMINI_API_KEY 필요)
+npm run report       # 가상 샘플 12종을 데모 분석기로 실행 → docs/test-report-demo.md
+npm run eval:live    # 가상 샘플 12종을 실제 Gemini API로 실행 → docs/test-report-live.md (GEMINI_API_KEY 필요)
 npm run eval:live -- --samples=S2_vague   # 일부 샘플만 실행 (무료 사용량 절약)
 ```
 
@@ -65,7 +65,7 @@ npm run eval:live -- --samples=S2_vague   # 일부 샘플만 실행 (무료 사�
 
 ### GitHub Actions에서 실제 Gemini 연결 테스트
 
-`.github/workflows/gemini-live-test.yml` — 수동 실행 전용. 저장소 Secrets의 `GEMINI_API_KEY`로 가상 문서 샘플 8건 전체를 앱 기본 모델과 같은 `gemini-3.5-flash-lite`로 분석하고, 보고서(`gemini-live-report`)를 아티팩트로 올립니다.
+`.github/workflows/gemini-live-test.yml` — 수동 실행 전용. 저장소 Secrets의 `GEMINI_API_KEY`로 가상 문서 샘플 전체(12건)를 앱 기본 모델과 같은 `gemini-3.5-flash-lite`로 분석하고, 보고서(`gemini-live-report`)를 아티팩트로 올립니다.
 실행: 저장소 **Actions** 탭 → 왼쪽 **Gemini live test** → **Run workflow** → (선택) `samples`에 `S3_missing`처럼 샘플 키 입력 → **Run workflow**.
 
 ### 브라우저 사용자 흐름 확인 (E2E)
@@ -108,6 +108,7 @@ src/ai/demo.js         데모용 키워드 규칙 분석기
 src/validate.js        AI 응답 서버 검증
 src/analyze.js         분할 → AI → 검증 → 실패 항목 1회 재분석 → 화면용 결과
 src/present.js         화면 상태·표시 여부·안내 문구 결정
+src/reason.js          분명하지 않음 상세 설명 (적힌 사실 / 확인 필요 부분, 원문 인용 검증)
 src/eval/score.js      기대/실제 상태, 근거 번호 정확성, 잘못된 not_found 채점
 public/                화면 01(입력) · 02(결과) · 03(원문 상세)
 public/extract.js      파일 → 텍스트 추출 (pdf.js, Tesseract.js OCR, 브라우저 안에서만)
@@ -124,9 +125,10 @@ scripts/run-samples.js 샘플 결과 기록
 ## 동작 요약
 
 1. 원문을 줄 단위로 나누고 번호를 붙입니다. 원문과 위치는 그대로 보존하며, 마침표가 없다는 이유로 줄을 합치지 않습니다. 100자를 넘는 한 줄만 문장 경계에서 나눕니다.
-2. AI에는 번호가 붙은 텍스트를 보내고, 항목마다 `presence` / `specificity` / `reason_code` / `evidence_ids`(와 `probation_status`, `employment_category`)만 받습니다.
+2. AI에는 번호가 붙은 텍스트를 보내고, 항목마다 `presence` / `specificity` / `reason_code` / `evidence_ids`(와 `probation_status`, `employment_category`)를 받습니다. 분명하지 않음(vague)일 때는 설명에 인용할 원문 문구 `stated_text`(이미 적힌 구체 값, 예: 연봉 범위)와 `unclear_texts`(정해지지 않은 표현·서로 다른 값)도 받습니다.
 3. 서버가 응답을 검증합니다(항목 누락·중복, found인데 근거 없음, not_found인데 근거 있음, 존재하지 않는 번호, vague인데 사유 없음 등). 실패한 항목만 오류 내용을 알려 주고 한 번 재분석하며, 그래도 실패하면 그 항목만 `분석 확인 불가`로 표시합니다. 검증 실패를 `찾지 못함`으로 바꾸지 않습니다.
 4. 화면 상태와 표시 여부는 앱이 결정하고, 근거는 앱이 보존한 원문을 번호로 찾아 그대로 보여 줍니다.
+5. 분명하지 않음의 상세 설명은 `src/reason.js`가 만듭니다. **문서에 적힌 내용**(예: "채용공고에 '연봉 3000만원 ~ 5,000만원'의 범위가 적혀 있어요.")과 **이 문서만으로 확인하기 어려운 부분**(예: "다만 '경력에 따라 협의'라고 안내되어 있어, 실제 적용될 연봉은 이 문서만으로 확인하기 어려워요.")을 나눠 씁니다. 인용 문구는 근거 줄에서 글자 그대로 찾은 경우에만 쓰고(공백 차이만 허용), 찾지 못하면 '협의'·'회사 내규'·'서로 다른 값' 같은 특정 사유를 말하지 않는 중립 문장을 씁니다. 이 문구는 판정에 쓰지 않으므로 상태는 바뀌지 않습니다. '추가로 확인해 보세요' 맨 앞에는 그 항목의 핵심 확인 사항(예: '실제 적용될 연봉 금액')을 둡니다.
 
 ## 개인정보
 

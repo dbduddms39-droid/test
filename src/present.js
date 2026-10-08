@@ -1,7 +1,8 @@
 // 검증된 AI 결과를 화면 상태로 바꾼다. 상태 라벨·표시 여부·문구는 모두 여기서 결정한다.
 import {
-  ITEMS, STATUS, REASON_TEXT, NOT_FOUND_TEMPLATES, COMMON_NOTICE, FOLLOW_UPS, DOC_TYPES,
+  ITEMS, STATUS, NOT_FOUND_TEMPLATES, COMMON_NOTICE, FOLLOW_UPS, DOC_TYPES,
 } from './items.js';
+import { describeUnclear } from './reason.js';
 
 export function statusOf(result) {
   if (!result) return 'unavailable';
@@ -40,6 +41,15 @@ export function present({ docType, segments, valid, errors }) {
   const items = ITEMS.map((item) => {
     const result = valid[item.id];
     const status = statusOf(result);
+    // 화면에는 AI가 쓴 문장이 아니라 앱이 보존한 원문을 번호로 찾아 보여준다.
+    const evidence = (result?.evidence_ids ?? []).map((n) => segById.get(n));
+    const reason = status === 'unclear'
+      ? describeUnclear({ itemId: item.id, docType, result, texts: evidence.map((s) => s.text) })
+      : null;
+    // 분명하지 않음: 이 문서에서 확인되지 않은 핵심 사항을 맨 앞에 둔다
+    const followUps = reason
+      ? [reason.keyFollowUp, ...FOLLOW_UPS[item.id].filter((f) => f !== reason.keyFollowUp)]
+      : FOLLOW_UPS[item.id];
     return {
       id: item.id,
       label: item.label,
@@ -48,12 +58,13 @@ export function present({ docType, segments, valid, errors }) {
       statusLabel: STATUS[status].label,
       explanation: STATUS[status].explanation,
       reasonCode: result?.reason_code ?? null,
-      reasonText: result?.reason_code ? REASON_TEXT[result.reason_code] : null,
+      reasonKind: reason?.kind ?? null,
+      reasonFact: reason?.fact ?? null, // 문서에 적힌 내용
+      reasonPending: reason?.pending ?? null, // 이 문서만으로 확인하기 어려운 부분
       notFoundMessage: status === 'not_found' ? NOT_FOUND_TEMPLATES[docType](item.label) : null,
       probationNone: item.id === 'probation_period' && result?.probation_status === 'none',
-      // 화면에는 AI가 쓴 문장이 아니라 앱이 보존한 원문을 번호로 찾아 보여준다.
-      evidence: (result?.evidence_ids ?? []).map((n) => segById.get(n)),
-      followUps: FOLLOW_UPS[item.id],
+      evidence,
+      followUps,
       errorCodes: errors[item.id] ?? [],
     };
   });

@@ -12,6 +12,8 @@ export function idealItem(sample, id) {
     specificity: found ? (exp.status === 'unclear' ? 'vague' : 'specific') : null,
     reason_code: found && exp.status === 'unclear' ? exp.reason : null,
     evidence_ids: found ? [...new Set(resolveEvidence(sample.text, exp.evidence))] : [],
+    stated_text: found && exp.status === 'unclear' ? exp.stated ?? null : null,
+    unclear_texts: found && exp.status === 'unclear' ? exp.unclear ?? [] : [],
     probation_status: id === 'probation_period' && found ? exp.probation : null,
     employment_category: id === 'employment_type' && found ? exp.employment : null,
   };

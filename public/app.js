@@ -305,7 +305,12 @@ function renderDetail(id) {
     el('h2', {}, '이 결과의 의미'),
     el('p', {}, it.probationNone ? '문서에 수습기간이 없다고 적혀 있어요.' : it.explanation),
   ];
-  if (it.reasonText) blocks.push(el('p', { class: 'reason' }, it.reasonText));
+  // 분명하지 않음: 문서에 적힌 내용과 이 문서만으로 확인하기 어려운 부분을 나눠 보여 준다
+  if (it.reasonFact || it.reasonPending) {
+    blocks.push(el('div', { class: 'reason' },
+      el('p', { class: 'reason-fact' }, it.reasonFact ?? ''),
+      el('p', { class: 'reason-pending' }, it.reasonPending ?? '')));
+  }
   if (it.notFoundMessage) blocks.push(el('p', { class: 'reason' }, it.notFoundMessage));
 
   const extracted = result.inputSource !== 'paste';
