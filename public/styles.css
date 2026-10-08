@@ -68,3 +68,15 @@ textarea { width: 100%; padding: 12px; font: inherit; font-size: 15px; color: va
 .detail-status { margin-bottom: 4px; }
 .analysis-source { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
 .analysis-source-demo { color: var(--text); background: var(--unclear-bg); border: 1px dashed var(--muted); border-radius: 8px; padding: 8px 12px; font-weight: 600; }
+.upload { margin-bottom: 16px; }
+.optional { font-weight: 400; font-size: 13px; color: var(--muted); margin-left: 4px; }
+.upload-drop { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 16px 12px; background: var(--surface); border: 1px dashed var(--border); border-radius: 10px; cursor: pointer; text-align: center; }
+.upload-drop:hover, .upload-drop.dragover, .upload-drop:focus-within { border-color: var(--accent); }
+.upload-drop:focus-within { box-shadow: 0 0 0 1px var(--accent); }
+.upload-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.upload-title { font-weight: 600; color: var(--accent); }
+.upload-hint { font-size: 13px; color: var(--muted); }
+.upload-note { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.upload-status { font-size: 14px; border-radius: 8px; padding: 10px 12px; margin: 8px 0 0; background: var(--surface); border: 1px solid var(--border); }
+.upload-status-done { border-color: var(--accent); }
+.upload-status-warn, .upload-status-error { background: var(--unclear-bg); color: var(--text); border-color: transparent; }

@@ -1,13 +1,19 @@
 # 웹앱 실제 사용자 흐름 확인 (브라우저 E2E) — 수동 실행 전용
-# - 러너 안에서 웹 서버를 띄우고, 실제 브라우저(Chromium)로 가상 채용공고 1건을 분석한다.
-#   문서 유형 선택 → 붙여넣기 → 분석 시작 → 8개 항목 결과 → 항목별 원문 근거 확인.
-# - GEMINI_API_KEY는 GitHub Actions Secrets에서 서버 프로세스 환경변수로만 전달한다.
-#   브라우저 응답·페이지·서버 로그에 키가 없는지 스크립트가 함께 검사한다.
+# - base_url을 비우면: 러너 안에서 웹 서버를 띄워 검사한다.
+#     1) 붙여넣기 흐름: 문서 유형 선택 → 붙여넣기 → 분석 → 8개 항목 → 원문 근거
+#     2) 업로드 흐름: 가상 PDF·한국어 이미지·스캔 PDF → 브라우저 안 추출·OCR → 수정 → 분석, 오류 안내
+# - base_url에 배포 주소(예: https://xxx.vercel.app)를 넣으면: 배포된 사이트를 대상으로 업로드 흐름을 검사한다.
+# - GEMINI_API_KEY는 GitHub Actions Secrets에서 로컬 서버 프로세스 환경변수로만 전달한다 (배포 검사 때는 쓰지 않음).
 # - 모델은 무료 등급 gemini-3.5-flash-lite. 유료 모델 자동 전환(fallback)은 없다.
 name: Web E2E (browser)
 
 on:
   workflow_dispatch:
+    inputs:
+      base_url:
+        description: '배포 사이트 주소 (비우면 러너에서 로컬 서버로 검사). 예: https://xxx.vercel.app'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -19,7 +25,7 @@ concurrency:
 jobs:
   browser-flow:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,13 +42,31 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Browser flow with real Gemini analysis (1 fictional job posting)
+      - name: Paste flow with real Gemini analysis (local server)
+        if: inputs.base_url == ''
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: gemini-3.5-flash-lite
           AI_TIMEOUT_MS: '60000'
           E2E_REQUIRE_AI: 'true'
         run: node scripts/e2e-browser.mjs
+
+      - name: Upload flow (PDF, Korean image, scanned PDF) with real Gemini analysis (local server)
+        if: inputs.base_url == ''
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-3.5-flash-lite
+          AI_TIMEOUT_MS: '60000'
+          E2E_REQUIRE_AI: 'true'
+          E2E_PORT: '3211'
+        run: node scripts/e2e-upload.mjs
+
+      - name: Upload flow against deployed site
+        if: inputs.base_url != ''
+        env:
+          E2E_BASE_URL: ${{ inputs.base_url }}
+          E2E_REQUIRE_AI: 'true'
+        run: node scripts/e2e-upload.mjs
 
       - name: Upload screenshots
         if: always()

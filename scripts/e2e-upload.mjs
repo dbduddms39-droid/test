@@ -1,0 +1,174 @@
+// 파일 업로드 → 브라우저 안 텍스트 추출(pdf.js·Tesseract.js) → 사용자 수정 → 분석 흐름을 실제 브라우저로 확인한다.
+//   DEMO_MODE=true node scripts/e2e-upload.mjs                 (분석은 데모, 추출·OCR은 실제)
+//   GEMINI_API_KEY=... E2E_REQUIRE_AI=true node scripts/e2e-upload.mjs
+//   E2E_BASE_URL=https://배포주소 E2E_REQUIRE_AI=true node scripts/e2e-upload.mjs   (배포된 사이트를 직접 검사, 로컬 서버 없음)
+// 검사: 추출 정확도(정답 대비 글자 일치율), 오류 안내, 수정한 텍스트가 그대로 분석 요청에 들어가는지,
+//       파일이 서버·외부로 전송되지 않는지(외부 요청 없음, POST는 /api/analyze JSON뿐), 서버 로그에 원문 없음.
+// 출력에는 API 키와 문서 원문을 남기지 않는다.
+import { spawn } from 'node:child_process';
+import { mkdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { chromium } from 'playwright';
+
+const PORT = Number(process.env.E2E_PORT) || 3211;
+const REMOTE = process.env.E2E_BASE_URL ? new URL(process.env.E2E_BASE_URL).origin : null;
+const BASE = REMOTE ?? `http://127.0.0.1:${PORT}`;
+const OUT = 'e2e-artifacts/upload';
+const FIX = 'test/fixtures/upload';
+const REQUIRE_AI = process.env.E2E_REQUIRE_AI === 'true';
+const KEY = process.env.GEMINI_API_KEY || '';
+const TRUTH = JSON.parse(await readFile(`${FIX}/truth.json`, 'utf8'));
+
+const checks = [];
+const check = (name, ok, detail = '') => {
+  checks.push({ name, ok });
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
+};
+
+// 공백을 뺀 글자 기준 일치율 (1 - 편집거리 / 긴 쪽 길이)
+function similarity(a, b) {
+  const x = [...a.replace(/\s/g, '')];
+  const y = [...b.replace(/\s/g, '')];
+  if (!x.length && !y.length) return 1;
+  let prev = Array.from({ length: y.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= x.length; i += 1) {
+    const cur = [i];
+    for (let j = 1; j <= y.length; j += 1) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (x[i - 1] === y[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return 1 - prev[y.length] / Math.max(x.length, y.length);
+}
+
+// 확인 대상: [파일, 문서 유형, 정답 키, 기대 방식, 최소 일치율, 분석까지 진행]
+const EXTRACT_CASES = [
+  ['contract-text.pdf', 'contract', 'contract', '텍스트를 추출했어요', 0.98, true],
+  ['posting-ko.png', 'job_posting', 'posting', '글자를 인식했어요', 0.9, true],
+  ['posting-ko.webp', 'job_posting', 'posting', '글자를 인식했어요', 0.9, false],
+  ['posting-ko-photo.jpg', 'job_posting', 'posting', '글자를 인식했어요', 0.7, false],
+  ['scanned.pdf', 'contract', 'scanned', '스캔된 1쪽은 글자 인식', 0.9, true],
+];
+const ERROR_CASES = [
+  ['encrypted.pdf', '암호가 걸린 PDF'],
+  ['too-many-pages.pdf', '10쪽까지'],
+  ['not-really.pdf', 'JPG, PNG, WebP 이미지나 PDF'],
+  ['broken.pdf', 'PDF 파일을 열지 못했어요'],
+  [{ name: 'huge.pdf', mimeType: 'application/pdf', buffer: Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(10 * 1024 * 1024)]) }, '10MB 이하'],
+];
+
+await mkdir(OUT, { recursive: true });
+// 배포 사이트를 검사할 때는 로컬 서버를 띄우지 않는다 (서버 로그 검사는 생략).
+const server = REMOTE ? null : spawn(process.execPath, ['server.js'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] });
+let serverLog = '';
+server?.stdout.on('data', (d) => { serverLog += d; });
+server?.stderr.on('data', (d) => { serverLog += d; });
+if (REMOTE) console.log(`대상: 배포 사이트 ${REMOTE}`);
+
+let browser;
+const accuracy = [];
+try {
+  let config = null;
+  for (let i = 0; i < 30 && !config; i += 1) {
+    try { config = await (await fetch(`${BASE}/api/config`)).json(); } catch { await sleep(500); }
+  }
+  check(REMOTE ? '배포 사이트 응답' : '서버 시작', Boolean(config), `mode=${config?.mode}`);
+  if (!config) throw new Error('server not ready');
+  check('분석 모드', !REQUIRE_AI || config.mode === 'gemini', `mode=${config.mode}`);
+
+  browser = await chromium.launch();
+  const context = await browser.newContext({ viewport: { width: 375, height: 812 } });
+  const external = [];
+  const posts = [];
+  context.on('request', (r) => {
+    const u = new URL(r.url());
+    if (!['http:', 'https:'].includes(u.protocol)) return; // blob:, data: 는 브라우저 내부
+    if (u.origin !== BASE) external.push(u.origin);
+    if (r.method() !== 'GET') posts.push({ path: u.pathname, body: r.postData() ?? '' });
+  });
+  const page = await context.newPage();
+  page.on('dialog', (d) => d.accept()); // 입력란 내용 바꾸기 확인 → 수락
+  const pageErrors = [];
+  page.on('pageerror', (e) => pageErrors.push(e.message));
+  await page.goto(BASE);
+
+  const waitStatus = async () => {
+    await page.waitForFunction(() => /upload-status-(done|warn|error)/.test(document.querySelector('#upload-status').className), null, { timeout: 240_000 });
+    return {
+      kind: (await page.getAttribute('#upload-status', 'class')).match(/upload-status-(\w+)$/)[1],
+      text: await page.textContent('#upload-status'),
+    };
+  };
+
+  for (const [file, docType, truthKey, expectPhrase, minSim, analyze] of EXTRACT_CASES) {
+    await page.goto(`${BASE}/#/`);
+    await page.check(`input[name=docType][value=${docType}]`);
+    const analyzeBefore = posts.filter((p) => p.path === '/api/analyze').length;
+    const t0 = Date.now();
+    await page.setInputFiles('#file-input', path.join(FIX, file));
+    const status = await waitStatus();
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    const extracted = await page.inputValue('#doc-text');
+    const sim = similarity(extracted, TRUTH[truthKey]);
+    accuracy.push({ file, sim, secs });
+    check(`[${file}] 추출 완료 안내`, status.kind !== 'error' && status.text.includes(expectPhrase), `${status.kind}, ${secs}초`);
+    check(`[${file}] 추출 정확도 ≥ ${Math.round(minSim * 100)}%`, sim >= minSim, `${(sim * 100).toFixed(1)}%`);
+    await sleep(1000);
+    check(`[${file}] 자동으로 분석하지 않음`, (await page.isVisible('#view-input')) && posts.filter((p) => p.path === '/api/analyze').length === analyzeBefore);
+    await page.screenshot({ path: `${OUT}/${file}.png`, fullPage: true });
+
+    if (!analyze) continue;
+    // 사용자가 추출 결과를 수정한 뒤 분석 시작
+    const edited = `${extracted}\n문의: 인사팀 (가상 예시)`;
+    await page.fill('#doc-text', edited);
+    const reqPromise = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
+    const resPromise = page.waitForResponse((r) => r.url().endsWith('/api/analyze'), { timeout: 150_000 });
+    await page.click('#submit-btn');
+    const body = JSON.parse((await reqPromise).postData());
+    const res = await resPromise;
+    const data = await res.json();
+    check(`[${file}] 수정한 텍스트가 그대로 분석 요청에 전달`, body.text === edited && body.docType === docType && Object.keys(body).length === 2);
+    check(`[${file}] 분석 결과 8개 항목`, res.status() === 200 && data.items?.length === 8 && (!REQUIRE_AI || data.mode === 'gemini'),
+      `HTTP ${res.status()}${data.code ? ` ${data.code}` : ''}, mode=${data.mode}, 표시 ${data.items?.filter((i) => i.visible).length ?? 0}개, 분석 확인 불가 ${data.items?.filter((i) => i.status === 'unavailable').length ?? '-'}개`);
+    if (res.status() === 200) {
+      await page.waitForSelector('#view-result:not([hidden])');
+      const evidenceOk = data.items.every((it) => it.evidence.every((e) => edited.slice(e.start, e.end) === e.text));
+      check(`[${file}] 원문 근거가 수정한 텍스트에서 그대로 표시`, evidenceOk);
+      const first = data.items.find((it) => it.visible && it.evidence.length);
+      if (first) {
+        await page.click(`.item-row >> text=${first.label}`);
+        await page.waitForSelector('#view-detail:not([hidden])');
+        const shown = await page.$$eval('.evidence-text', (els) => els.map((e) => e.textContent));
+        check(`[${file}] 상세 화면 원문 근거 (${first.label})`, shown.length > 0 && shown.every((t) => edited.includes(t)), `${shown.length}줄`);
+        await page.screenshot({ path: `${OUT}/${file}-detail.png`, fullPage: true });
+      }
+    }
+    await sleep(REQUIRE_AI ? 16_000 : 0); // 서버 분당 요청 제한(기본 4회)과 무료 한도 여유
+  }
+
+  for (const [file, phrase] of ERROR_CASES) {
+    await page.goto(`${BASE}/#/`);
+    const name = typeof file === 'string' ? file : file.name;
+    await page.setInputFiles('#file-input', typeof file === 'string' ? path.join(FIX, file) : file);
+    const status = await waitStatus();
+    check(`[${name}] 오류 안내`, status.kind === 'error' && status.text.includes(phrase), status.text);
+  }
+
+  check('파일·추출 텍스트를 외부로 보내지 않음 (외부 요청 없음)', external.length === 0, external.length ? [...new Set(external)].join(', ') : '같은 사이트 요청만 있음');
+  check('서버로 가는 전송은 분석 요청(JSON 텍스트)뿐', posts.every((p) => p.path === '/api/analyze' && !/%PDF|\u0089PNG|JFIF|WEBP/.test(p.body)), `POST ${posts.length}건`);
+  check('브라우저 스크립트 오류 없음', pageErrors.length === 0, pageErrors.slice(0, 2).join(' | '));
+  if (KEY) check('서버 로그·브라우저 요청에 API 키 없음', !serverLog.includes(KEY) && !posts.some((p) => p.body.includes(KEY)));
+  if (!REMOTE) check('서버 로그에 추출 원문 없음', !['입출고 서류 정리', '양화로 00', '센텀중앙로'].some((s) => serverLog.includes(s)));
+} catch (err) {
+  check('예외 없이 완료', false, err.message);
+} finally {
+  if (browser) await browser.close();
+  server?.kill();
+}
+
+console.log('\n추출 정확도 (공백 제외 글자 일치율):');
+for (const a of accuracy) console.log(`  ${a.file}: ${(a.sim * 100).toFixed(1)}% (${a.secs}초)`);
+const failed = checks.filter((c) => !c.ok);
+console.log(`\n업로드 흐름 확인: ${failed.length ? `실패 ${failed.length}건` : '모두 통과'} (${checks.length - failed.length}/${checks.length})`);
+if (failed.length) process.exitCode = 1;

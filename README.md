@@ -19,6 +19,14 @@ npm run demo              # DEMO_MODE=true — 키워드 규칙 데모 (AI 아�
 - 데모 모드는 `DEMO_MODE=true`를 명시했을 때만 켜집니다. 데모 결과는 헤더 배지와 결과 화면 안내로 AI 결과와 구분됩니다.
 - 무료 사용량 한도(HTTP 429)에 도달하면 "AI 무료 사용량 한도에 도달했어요"를 안내합니다.
 
+### 이미지·PDF 업로드
+
+- 입력 화면에서 JPG·PNG·WebP 이미지와 PDF를 올릴 수 있습니다 (10MB, 10쪽까지, 스캔된 쪽은 5쪽까지).
+- **파일은 브라우저 안에서만 처리하고 서버로 보내지 않습니다.** 일반 PDF는 pdf.js로 텍스트를 추출하고, 이미지와 스캔 PDF 쪽은 Tesseract.js로 한국어·영어 글자 인식(OCR)을 합니다.
+- 추출 결과는 입력란에 채워지고 **자동으로 분석하지 않습니다.** 사용자가 확인·수정한 뒤 '분석 시작'을 누르면 그 텍스트만 기존 분석 API로 전송됩니다.
+- 라이브러리와 언어 데이터는 외부 CDN이 아니라 같은 사이트의 `public/vendor/`에서 제공합니다 (처음 업로드할 때만 내려받음: PDF 약 2MB, OCR 약 8.5MB). `public/vendor/`는 `npm run vendor`로 `node_modules`에서 복사해 커밋한 파일입니다. Vercel은 빌드 스크립트보다 먼저 `public/`을 정적 파일로 수집하므로 빌드 때 생성하지 않고 커밋해 둡니다.
+- 한계: OCR은 사진 품질·글꼴·기울기에 따라 오타가 생깁니다 (예: 테스트에서 '센텀중앙로'를 'MESURE'로 인식). 표·여러 단 배치는 줄 순서가 섞일 수 있습니다. 처음 OCR 때 내려받는 데이터 때문에 느린 네트워크·저사양 휴대폰에서는 시간이 걸립니다. 암호가 걸린 PDF는 열지 않습니다.
+
 ### 환경변수
 
 | 이름 | 기본값 | 설명 |
@@ -56,6 +64,9 @@ npm run eval:live -- --samples=S2_vague   # 일부 샘플만 실행 (무료 사�
 `.github/workflows/web-e2e.yml` — 수동 실행 전용. 러너에서 웹 서버를 띄우고 실제 브라우저로 문서 유형 선택 → 가상 채용공고 붙여넣기 → 분석 시작 → 8개 항목 결과 → 원문 근거 확인을 진행합니다. 브라우저로 전달된 응답·페이지·서버 로그에 API 키가 없는지도 검사하고, 화면 캡처를 `web-e2e-screenshots` 아티팩트로 올립니다.
 로컬: `DEMO_MODE=true node scripts/e2e-browser.mjs` (키 없이 흐름만, 데모 결과)
 
+업로드 흐름은 `scripts/e2e-upload.mjs`가 가상 문서 파일(`test/fixtures/upload/`, 생성: `scripts/make-upload-fixtures.mjs`)로 일반 PDF·한국어 이미지(PNG·WebP·사진형 JPG)·스캔 PDF 추출 정확도, 수정한 텍스트의 분석 전달, 오류 안내(암호화·쪽수 초과·형식 오류·손상·10MB 초과), 외부 전송 없음을 검사합니다. 워크플로 입력 `base_url`에 배포 주소를 넣으면 배포된 사이트를 대상으로 검사합니다.
+로컬: `DEMO_MODE=true node scripts/e2e-upload.mjs`
+
 ### Vercel 배포 (Hobby 무료 플랜)
 
 - 별도 설정 파일 없이 배포됩니다. Vercel이 루트의 `server.js`를 감지해 Node 서버리스 함수(Node 22)로 실행하고, `public/` 파일은 정적 파일로 제공합니다. `server.js`는 Vercel용으로 `(req, res)` 핸들러를 default export 합니다 (로컬 `node server.js` 실행 방식은 그대로).
@@ -83,6 +94,10 @@ src/analyze.js         분할 → AI → 검증 → 실패 항목 1회 재분석
 src/present.js         화면 상태·표시 여부·안내 문구 결정
 src/eval/score.js      기대/실제 상태, 근거 번호 정확성, 잘못된 not_found 채점
 public/                화면 01(입력) · 02(결과) · 03(원문 상세)
+public/extract.js      파일 → 텍스트 추출 (pdf.js, Tesseract.js OCR, 브라우저 안에서만)
+public/upload-rules.js 업로드 제한·형식 판별·안내 문구 (Node 테스트와 공용)
+public/vendor/         pdf.js·Tesseract.js·언어 데이터 (npm run vendor로 생성해 커밋)
+vercel.json            Vercel 함수 번들에서 public/ 제외 (정적 파일은 CDN이 제공)
 test/                  테스트와 샘플 문서
 scripts/run-samples.js 샘플 결과 기록
 ```
@@ -98,5 +113,6 @@ scripts/run-samples.js 샘플 결과 기록
 
 - 입력 화면에 "입력한 내용은 분석을 위해 AI 서비스로 전송돼요. 이름·주민등록번호·주소 등 개인정보는 가린 뒤 입력해 주세요."를 표시합니다.
 - 서버는 원문을 저장하지 않고, 로그에는 항목 ID·오류 코드·단위 개수만 남깁니다. 브라우저도 원문·결과를 저장소에 남기지 않습니다(새로고침하면 사라짐).
+- 업로드한 파일은 서버로 전송하지 않고 브라우저 메모리에서만 처리합니다. Tesseract.js는 언어 데이터(문서 내용 아님)만 브라우저 저장소(IndexedDB)에 캐시합니다.
 - 보관·삭제 기간에 대한 문구는 API 제공업체의 데이터 처리 정책을 확인한 뒤 확정해야 하므로, 현재 화면에는 넣지 않았습니다.
 - Gemini API **무료 등급**은 유료 등급과 데이터 처리 조건이 다를 수 있습니다(제출 내용이 Google 서비스 개선에 쓰일 수 있음). Gemini API 추가 약관을 확인하기 전까지는 가상 문서로만 테스트하세요.

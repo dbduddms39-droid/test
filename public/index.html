@@ -16,7 +16,7 @@
     <!-- 화면 01: 문서 입력 -->
     <section id="view-input" class="view">
       <h1>근로조건, 문서에 어떻게 적혀 있는지 일단 확인해요</h1>
-      <p class="lead">채용공고, 오퍼 안내, 근로계약서를 붙여넣으면 주요 근로조건이 적혀 있는지 항목별로 정리해 드려요.</p>
+      <p class="lead">채용공고, 오퍼 안내, 근로계약서를 붙여넣거나 파일로 올리면 주요 근로조건이 적혀 있는지 항목별로 정리해 드려요.</p>
 
       <form id="input-form" novalidate>
         <fieldset class="doc-types">
@@ -25,6 +25,17 @@
           <label><input type="radio" name="docType" value="offer"> 오퍼·문자·메일</label>
           <label><input type="radio" name="docType" value="contract"> 근로계약서</label>
         </fieldset>
+
+        <div class="upload">
+          <span class="field-label">파일에서 불러오기 <span class="optional">선택</span></span>
+          <label class="upload-drop" id="upload-drop">
+            <input type="file" id="file-input" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
+            <span class="upload-title">이미지나 PDF 파일 선택</span>
+            <span class="upload-hint">JPG·PNG·WebP·PDF · 10MB, 10쪽까지</span>
+          </label>
+          <p class="upload-note">파일은 이 브라우저 안에서만 읽고 서버로 보내지 않아요. 추출한 텍스트는 아래 입력란에 채워지고, 확인·수정한 뒤 '분석 시작'을 눌렀을 때만 AI 서비스로 전송돼요.</p>
+          <p id="upload-status" class="upload-status" role="status" aria-live="polite" hidden></p>
+        </div>
 
         <label for="doc-text" class="field-label">문서 내용</label>
         <textarea id="doc-text" name="text" rows="14" maxlength="20000"

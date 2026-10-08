@@ -18,7 +18,62 @@ const badge = (status) => el('span', { class: `badge badge-${status}` }, STATUS_
 
 // ---------- 화면 01 ----------
 const textarea = $('#doc-text');
-textarea.addEventListener('input', () => { $('#char-count').textContent = textarea.value.length.toLocaleString(); });
+const updateCount = () => { $('#char-count').textContent = textarea.value.length.toLocaleString(); };
+textarea.addEventListener('input', updateCount);
+
+// 파일 업로드 → 브라우저 안에서 텍스트 추출 → 입력란에 채움 (자동 분석하지 않음)
+const fileInput = $('#file-input');
+const uploadStatus = $('#upload-status');
+const PROGRESS_TEXT = {
+  image: '이미지를 여는 중…',
+  'pdf-load': 'PDF를 여는 중…',
+  'pdf-text': (p) => `PDF ${p.page}/${p.pages}쪽 텍스트를 읽는 중…`,
+  'ocr-load': '글자 인식 도구를 준비하는 중… (처음 한 번은 몇 MB를 내려받아 시간이 걸려요)',
+  ocr: (p) => `글자를 인식하는 중… ${p.page}/${p.pages}`,
+};
+const showUploadStatus = (text, kind = 'info') => {
+  uploadStatus.textContent = text;
+  uploadStatus.className = `upload-status upload-status-${kind}`;
+  uploadStatus.hidden = false;
+};
+
+async function handleFile(file) {
+  if (!file) return;
+  if (textarea.value.trim() && !confirm('입력란의 내용을 파일에서 추출한 텍스트로 바꿀까요?')) return;
+  const btn = $('#submit-btn');
+  btn.disabled = true;
+  fileInput.disabled = true;
+  showUploadStatus('파일을 확인하는 중…');
+  try {
+    const { extractTextFromFile } = await import('./extract.js');
+    const out = await extractTextFromFile(file, (p) => {
+      const t = PROGRESS_TEXT[p.stage];
+      if (t) showUploadStatus(typeof t === 'function' ? t(p) : t);
+    });
+    textarea.value = out.text;
+    updateCount();
+    const what = out.method === 'pdf-text' ? `PDF ${out.pages}쪽에서 텍스트를 추출했어요.`
+      : out.kind === 'pdf' ? `PDF ${out.pages}쪽에서 텍스트를 추출했어요 (스캔된 ${out.ocrPages}쪽은 글자 인식).`
+        : '이미지에서 글자를 인식했어요.';
+    const notes = [what, '원문과 다른 부분이 있을 수 있으니 아래 내용을 확인·수정한 뒤 \'분석 시작\'을 눌러 주세요.'];
+    if (out.method !== 'pdf-text') notes.push('글자 인식 결과에는 오타나 빠진 글자가 있을 수 있어요.');
+    if (out.lowConfidence) notes.push('인식 정확도가 낮아 보여요. 숫자(금액·날짜·시간)를 특히 꼼꼼히 확인해 주세요.');
+    if (out.text.length > 20000) notes.push('추출한 텍스트가 2만 자를 넘어요. 필요한 부분만 남겨 주세요.');
+    showUploadStatus(notes.join(' '), out.lowConfidence ? 'warn' : 'done');
+    textarea.focus();
+  } catch (err) {
+    showUploadStatus(err?.code ? err.message : '파일에서 텍스트를 추출하지 못했어요. 내용을 직접 붙여넣어 주세요.', 'error');
+  } finally {
+    btn.disabled = false;
+    fileInput.disabled = false;
+    fileInput.value = ''; // 같은 파일을 다시 고를 수 있게
+  }
+}
+fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+const drop = $('#upload-drop');
+drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('dragover'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]); });
 
 $('#input-form').addEventListener('submit', async (e) => {
   e.preventDefault();

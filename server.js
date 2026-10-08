@@ -15,7 +15,10 @@ import { createRateLimiter } from './src/rateLimit.js';
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const MAX_BODY_BYTES = 200_000;
 const MAX_TEXT_CHARS = 20_000;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.gz': 'application/gzip', '.bcmap': 'application/octet-stream',
+};
 
 // AI 오류 → 사용자 안내 (키 값이나 원문은 응답·로그에 넣지 않는다)
 const AI_ERROR_RESPONSES = {
