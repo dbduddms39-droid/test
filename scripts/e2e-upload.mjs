@@ -96,7 +96,7 @@ try {
   await page.goto(BASE);
 
   const waitStatus = async () => {
-    await page.waitForFunction(() => /upload-status-(done|warn|error)/.test(document.querySelector('#upload-status').className), null, { timeout: 240_000 });
+    await page.waitForFunction(() => { const e = document.querySelector('#upload-status'); return !e.hidden && /upload-status-(done|warn|error)/.test(e.className); }, null, { timeout: 240_000 });
     return {
       kind: (await page.getAttribute('#upload-status', 'class')).match(/upload-status-(\w+)$/)[1],
       text: await page.textContent('#upload-status'),
@@ -110,6 +110,8 @@ try {
     if (prefill) await page.fill('#doc-text', prefill);
     dialogAnswer = 'accept';
   };
+  // 이전 단계의 안내를 지워, 새 업로드의 안내가 나올 때까지 기다리게 한다 (화면 동작에는 영향 없음)
+  const resetStatus = () => page.evaluate(() => { const e = document.querySelector('#upload-status'); e.hidden = true; e.className = 'upload-status'; e.textContent = ''; });
   const fix = (f) => (typeof f === 'string' ? path.join(FIX, f) : f);
   const names = () => page.$$eval('.image-name', (els) => els.map((e) => e.textContent));
   const analyzeCount = () => posts.filter((p) => p.path === '/api/analyze').length;
@@ -118,6 +120,7 @@ try {
   // 이미지는 목록에 올린 뒤 '텍스트 추출'을 눌러야 추출된다. PDF는 바로 추출된다.
   async function uploadAndExtract(files) {
     const list = [].concat(files);
+    await resetStatus();
     await page.setInputFiles('#file-input', list.map(fix));
     if (list.every((f) => typeof f === 'string' && isImage(f))) {
       await page.waitForSelector('#image-panel:not([hidden])');
@@ -197,6 +200,7 @@ try {
     await page.screenshot({ path: `${OUT}/${label}-list.png`, fullPage: true });
     const before = analyzeCount();
     const t0 = Date.now();
+    await resetStatus();
     await page.click('#extract-btn');
     const status = await waitStatus();
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
@@ -230,15 +234,18 @@ try {
     const s1 = await uploadAndExtract(['blank.png']);
     check('[all-failed] 전부 인식 실패해도 입력란 유지', s1.kind === 'error' && (await page.inputValue('#doc-text')) === KEEP && dialogs === 0, s1.text.slice(0, 60));
 
+    await resetStatus();
     await page.setInputFiles('#file-input', fix('not-really.pdf'));
     const s2 = await waitStatus();
     check('[format-error] 형식 오류에도 입력란·이미지 목록 유지', s2.kind === 'error' && s2.text.includes('JPG, PNG, WebP') && (await page.inputValue('#doc-text')) === KEEP && (await names()).length === 1);
 
+    await resetStatus();
     await page.setInputFiles('#file-input', fix('contract-text.pdf'));
     const s3 = await waitStatus();
     check('[pdf-with-images] 이미지 목록이 있으면 PDF를 함께 처리하지 않음', s3.kind === 'error' && s3.text.includes('PDF는 이미지와 함께') && (await names()).length === 1 && (await page.inputValue('#doc-text')) === KEEP);
 
     await page.click('#clear-images');
+    await resetStatus();
     await page.setInputFiles('#file-input', [fix('contract-text.pdf'), fix('scanned.pdf')]);
     const s4 = await waitStatus();
     check('[two-pdfs] PDF는 1개씩만', s4.kind === 'error' && s4.text.includes('1개만') && (await page.inputValue('#doc-text')) === KEEP);
@@ -262,6 +269,7 @@ try {
   for (const [file, phrase] of ERROR_CASES) {
     await fresh('job_posting', KEEP);
     const name = typeof file === 'string' ? file : file.name;
+    await resetStatus();
     await page.setInputFiles('#file-input', fix(file));
     const status = await waitStatus();
     check(`[${name}] 오류 안내, 입력란 유지`, status.kind === 'error' && status.text.includes(phrase) && (await page.inputValue('#doc-text')) === KEEP, status.text);
