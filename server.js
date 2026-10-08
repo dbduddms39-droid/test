@@ -5,21 +5,35 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzeDocument } from './src/analyze.js';
 import { DOC_TYPES } from './src/items.js';
-import { createClaudeAnalyzer } from './src/ai/claude.js';
+import { createGeminiAnalyzer } from './src/ai/gemini.js';
 import { createDemoAnalyzer } from './src/ai/demo.js';
+import { createRateLimiter } from './src/rateLimit.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const MAX_BODY_BYTES = 200_000;
 const MAX_TEXT_CHARS = 20_000;
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 
+// AI 오류 → 사용자 안내 (키 값이나 원문은 응답·로그에 넣지 않는다)
+const AI_ERROR_RESPONSES = {
+  missing_key: [503, 'AI 분석이 아직 설정되지 않았어요. 관리자가 GEMINI_API_KEY를 등록해야 해요.'],
+  auth_failed: [503, 'AI 분석 키 인증에 실패했어요. 관리자가 GEMINI_API_KEY를 확인해야 해요.'],
+  rate_limited: [429, 'AI 무료 사용량 한도에 도달했어요. 잠시 후 또는 내일 다시 시도해 주세요.'],
+  timeout: [504, 'AI 응답이 늦어져 분석을 중단했어요. 잠시 후 다시 시도해 주세요.'],
+};
+const RATE_LIMIT_MESSAGES = {
+  ip: '요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.',
+  global: '지금 분석 요청이 많아요. 잠시 후 다시 시도해 주세요.',
+  daily: '오늘 분석 가능한 횟수를 모두 사용했어요. 내일 다시 시도해 주세요.',
+};
+
 // 원문을 포함하지 않는 메타 정보만 기록한다.
 const log = (entry) => console.log(JSON.stringify({ time: new Date().toISOString(), ...entry }));
 
-export function createServer({ ai }) {
-  return http.createServer(async (req, res) => {
+export function createServer({ ai, limiter = createRateLimiter(), trustProxy = false }) {
+  const server = http.createServer(async (req, res) => {
     try {
-      if (req.method === 'POST' && req.url === '/api/analyze') return await handleAnalyze(req, res, ai);
+      if (req.method === 'POST' && req.url === '/api/analyze') return await handleAnalyze(req, res, { ai, limiter, trustProxy });
       if (req.method === 'GET' && req.url === '/api/config') return sendJson(res, 200, { mode: ai.name });
       if (req.method === 'GET') return await serveStatic(req, res);
       sendJson(res, 405, { error: '지원하지 않는 요청이에요.' });
@@ -28,9 +42,18 @@ export function createServer({ ai }) {
       if (!res.headersSent) sendJson(res, 500, { error: '서버 오류가 발생했어요. 잠시 후 다시 시도해 주세요.' });
     }
   });
+  // 요청 본문 수신 제한 시간 (AI 응답 시간은 AI_TIMEOUT_MS로 별도 제한)
+  server.requestTimeout = 30_000;
+  server.headersTimeout = 15_000;
+  return server;
 }
 
-async function handleAnalyze(req, res, ai) {
+function clientIp(req, trustProxy) {
+  const fwd = trustProxy && req.headers['x-forwarded-for'];
+  return (fwd ? String(fwd).split(',')[0].trim() : req.socket.remoteAddress) || 'unknown';
+}
+
+async function handleAnalyze(req, res, { ai, limiter, trustProxy }) {
   let body;
   try {
     body = JSON.parse(await readBody(req));
@@ -42,7 +65,21 @@ async function handleAnalyze(req, res, ai) {
   if (typeof text !== 'string' || !text.trim()) return sendJson(res, 400, { error: '문서 내용을 붙여넣어 주세요.' });
   if (text.length > MAX_TEXT_CHARS) return sendJson(res, 400, { error: `문서는 ${MAX_TEXT_CHARS.toLocaleString()}자 이하로 입력해 주세요.` });
 
-  const result = await analyzeDocument({ text, docType, ai, log });
+  const limit = limiter.check(clientIp(req, trustProxy));
+  if (!limit.ok) {
+    log({ event: 'rate_limited', scope: limit.scope });
+    res.setHeader('Retry-After', String(limit.retryAfterSec));
+    return sendJson(res, 429, { error: RATE_LIMIT_MESSAGES[limit.scope], code: `rate_limited_${limit.scope}` });
+  }
+
+  let result;
+  try {
+    result = await analyzeDocument({ text, docType, ai, log });
+  } catch (err) {
+    const known = AI_ERROR_RESPONSES[err.code];
+    if (!known) throw err;
+    return sendJson(res, known[0], { error: known[1], code: err.code });
+  }
   sendJson(res, 200, { ...result, mode: ai.name });
 }
 
@@ -79,10 +116,20 @@ function sendJson(res, status, obj) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const demo = process.env.DEMO_MODE === '1' || !process.env.ANTHROPIC_API_KEY;
-  const ai = demo ? createDemoAnalyzer() : createClaudeAnalyzer();
-  const port = Number(process.env.PORT) || 3000;
-  createServer({ ai }).listen(port, () => {
-    console.log(`일단확인 서버: http://localhost:${port} (분석기: ${ai.name}${demo ? ' — ANTHROPIC_API_KEY가 없어 데모 모드로 실행' : ''})`);
+  // 데모 모드는 DEMO_MODE=true 로 명시했을 때만. 키가 없다고 데모로 바꾸지 않는다.
+  const demo = process.env.DEMO_MODE === 'true';
+  const ai = demo ? createDemoAnalyzer() : createGeminiAnalyzer();
+  const envInt = (name, fallback) => Number(process.env[name]) || fallback;
+  const limiter = createRateLimiter({
+    perIp: envInt('RATE_LIMIT_PER_IP', 5),
+    windowMs: envInt('RATE_LIMIT_WINDOW_MS', 60_000),
+    globalPerMinute: envInt('RATE_LIMIT_GLOBAL_PER_MINUTE', 4),
+    globalPerDay: envInt('RATE_LIMIT_GLOBAL_PER_DAY', 100),
+  });
+  const port = envInt('PORT', 3000);
+  createServer({ ai, limiter, trustProxy: process.env.TRUST_PROXY === 'true' }).listen(port, () => {
+    const mode = demo ? 'demo (DEMO_MODE=true — AI가 아닌 키워드 규칙 결과)' : `gemini (${ai.model})`;
+    console.log(`일단확인 서버: http://localhost:${port} — 분석기: ${mode}`);
+    if (!demo && !process.env.GEMINI_API_KEY) console.log('경고: GEMINI_API_KEY가 없어 분석 요청은 오류로 안내됩니다.');
   });
 }

@@ -66,3 +66,5 @@ textarea { width: 100%; padding: 12px; font: inherit; font-size: 15px; color: va
 .evidence-text { white-space: pre-wrap; word-break: break-word; }
 .follow-ups { padding-left: 20px; }
 .detail-status { margin-bottom: 4px; }
+.analysis-source { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
+.analysis-source-demo { color: var(--text); background: var(--unclear-bg); border: 1px dashed var(--muted); border-radius: 8px; padding: 8px 12px; font-weight: 600; }

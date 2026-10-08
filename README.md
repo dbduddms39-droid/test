@@ -5,24 +5,46 @@
 
 ## 실행 방법
 
-Node.js 20 이상이 필요합니다.
+Node.js 20 이상이 필요합니다. AI 분석은 **Google Gemini API 무료 등급**(`gemini-2.5-flash`)을 사용하며, 유료 모델로 자동 전환하지 않습니다.
 
 ```bash
 npm install
-export ANTHROPIC_API_KEY=sk-ant-...   # 서버에서만 사용, 브라우저로 전달되지 않음
-npm start                             # http://localhost:3000
+# GEMINI_API_KEY 는 서버 환경변수로만 등록합니다 (코드·채팅·브라우저에 넣지 않음).
+npm start                 # 실제 AI 분석, http://localhost:3000
+npm run demo              # DEMO_MODE=true — 키워드 규칙 데모 (AI 아님)
 ```
 
-- `ANTHROPIC_API_KEY`가 없거나 `DEMO_MODE=1`이면 **데모 모드**로 실행됩니다. 데모 모드는 AI 대신 키워드 규칙을 쓰며, 화면 상단에 '데모 모드'가 표시됩니다. 흐름 확인용이며 정확도는 낮습니다.
-- 선택 환경변수: `PORT`(기본 3000), `ANTHROPIC_MODEL`(기본 `claude-opus-5-5`), `ANTHROPIC_EFFORT`(기본 `medium`).
+- 키 발급: Google AI Studio(https://aistudio.google.com/apikey)에서 **결제 수단을 연결하지 않은 프로젝트**로 발급하면 무료 등급으로만 동작합니다. 결제(billing)를 켜면 유료 요금이 적용될 수 있으니 켜지 마세요.
+- `GEMINI_API_KEY`가 없으면 데모로 바뀌지 않고, 분석 요청에 "AI 분석이 아직 설정되지 않았어요" 오류를 안내합니다.
+- 데모 모드는 `DEMO_MODE=true`를 명시했을 때만 켜집니다. 데모 결과는 헤더 배지와 결과 화면 안내로 AI 결과와 구분됩니다.
+- 무료 사용량 한도(HTTP 429)에 도달하면 "AI 무료 사용량 한도에 도달했어요"를 안내합니다.
+
+### 환경변수
+
+| 이름 | 기본값 | 설명 |
+|---|---|---|
+| `GEMINI_API_KEY` | (없음) | Gemini API 키. 서버에서만 읽음 |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | 사용할 모델 |
+| `DEMO_MODE` | (꺼짐) | `true`일 때만 데모 분석기 사용 |
+| `AI_TIMEOUT_MS` | `60000` | AI 호출 1회 제한 시간 |
+| `RATE_LIMIT_PER_IP` / `RATE_LIMIT_WINDOW_MS` | `5` / `60000` | IP별 요청 제한 |
+| `RATE_LIMIT_GLOBAL_PER_MINUTE` | `4` | 서버 전체 분당 분석 수 |
+| `RATE_LIMIT_GLOBAL_PER_DAY` | `100` | 서버 전체 하루(UTC) 분석 수 |
+| `TRUST_PROXY` | (꺼짐) | `true`면 `X-Forwarded-For`로 IP 판단 (프록시 뒤에서만) |
+| `PORT` | `3000` | 포트 |
+
+분석 1건은 검증 실패 시 AI를 최대 2번 호출합니다. 요청 제한 기본값은 무료 등급 한도의 절반 이하가 되도록 잡았지만, 무료 한도는 Google이 바꿀 수 있으므로 AI Studio에서 현재 한도를 확인한 뒤 조정하세요. 요청 제한은 메모리 기반이라 서버를 재시작하면 초기화됩니다.
 
 ## 테스트
 
 ```bash
-npm test             # 단위·통합 테스트 (AI 호출 없음)
+npm test             # 단위·통합 테스트 (실제 AI 호출 없음)
 npm run report       # 샘플 8종을 데모 분석기로 실행 → docs/test-report-demo.md
-npm run eval:live    # 샘플 8종을 Claude API로 실행 → docs/test-report-live.md (API 키 필요, 비용 발생)
+npm run eval:live    # 샘플 8종을 실제 Gemini API로 실행 → docs/test-report-live.md (GEMINI_API_KEY 필요)
+npm run eval:live -- --samples=S2_vague   # 일부 샘플만 실행 (무료 사용량 절약)
 ```
+
+샘플은 모두 가상 문서입니다. 무료 등급 API에는 실제 개인정보가 담긴 문서를 넣지 마세요.
 
 ## 구조
 
@@ -31,7 +53,9 @@ server.js              HTTP 서버 (정적 파일 + POST /api/analyze)
 src/items.js           8개 항목, 문서 유형, 화면 상태·문구 정의
 src/segment.js         원문 → 번호가 붙은 줄 단위(위치 정보 보존)
 src/ai/prompt.js       AI 지시문, 구조화 응답 JSON 스키마
-src/ai/claude.js       Claude API 호출 (structured outputs, 거절 시 서버 측 fallback)
+src/ai/gemini.js       Gemini API 호출 (구조화 JSON 응답, 타임아웃, fallback 없음)
+src/ai/errors.js       AI 오류 코드 (키 없음·한도 초과·타임아웃은 재분석하지 않음)
+src/rateLimit.js       IP별·서버 전체 요청 제한
 src/ai/demo.js         데모용 키워드 규칙 분석기
 src/validate.js        AI 응답 서버 검증
 src/analyze.js         분할 → AI → 검증 → 실패 항목 1회 재분석 → 화면용 결과
@@ -54,3 +78,4 @@ scripts/run-samples.js 샘플 결과 기록
 - 입력 화면에 "입력한 내용은 분석을 위해 AI 서비스로 전송돼요. 이름·주민등록번호·주소 등 개인정보는 가린 뒤 입력해 주세요."를 표시합니다.
 - 서버는 원문을 저장하지 않고, 로그에는 항목 ID·오류 코드·단위 개수만 남깁니다. 브라우저도 원문·결과를 저장소에 남기지 않습니다(새로고침하면 사라짐).
 - 보관·삭제 기간에 대한 문구는 API 제공업체의 데이터 처리 정책을 확인한 뒤 확정해야 하므로, 현재 화면에는 넣지 않았습니다.
+- Gemini API **무료 등급**은 유료 등급과 데이터 처리 조건이 다를 수 있습니다(제출 내용이 Google 서비스 개선에 쓰일 수 있음). Gemini API 추가 약관을 확인하기 전까지는 가상 문서로만 테스트하세요.

@@ -57,6 +57,11 @@ $('#input-form').addEventListener('submit', async (e) => {
 // ---------- 화면 02 ----------
 function renderResult() {
   $('#result-doc-type').textContent = result.docTypeLabel;
+  const source = $('#analysis-source');
+  source.textContent = result.mode === 'demo'
+    ? '데모 결과예요. AI 분석이 아니라 개발용 키워드 규칙으로 만든 결과라서 실제 판단에 쓰면 안 돼요.'
+    : 'AI(Gemini)가 분석하고 서버가 근거 번호를 검증한 결과예요.';
+  source.classList.toggle('analysis-source-demo', result.mode === 'demo');
   $('#result-notice').textContent = result.notice;
 
   $('#summary').replaceChildren(...STATUS_ORDER
