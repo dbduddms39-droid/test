@@ -23,8 +23,8 @@ for (const p of ['/', '/?refresh=1', '/index.html']) {
   const res = await fetch(`${BASE}${p}`, { headers: NO_CACHE, redirect: 'follow' });
   const text = await res.text();
   const ok = res.status === 200 && /text\/html/.test(res.headers.get('content-type') ?? '') && text.includes('<title>일단확인</title>');
-  const hint = res.status === 401 ? ' (Vercel Deployment Protection으로 보호된 주소일 수 있음)' : '';
-  check(`GET ${p} → 메인 화면`, ok, `HTTP ${res.status} ${res.headers.get('content-type')}${ok ? '' : ` ${text.slice(0, 80)}${hint}`}`);
+  const hint = res.status === 401 || text.includes('Log in to Vercel') ? ' (Vercel 로그인 페이지: Deployment Protection으로 보호된 주소. 공개 운영 도메인으로 다시 실행하세요)' : '';
+  check(`GET ${p} → 메인 화면`, ok, `HTTP ${res.status} ${res.headers.get('content-type')}${ok ? '' : ` ${text.slice(0, 80).replace(/\s+/g, ' ')}${hint}`}`);
 }
 
 // 2) 정적 파일: 저장소 파일과 내용이 같은지 (vendor 포함)

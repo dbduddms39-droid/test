@@ -1,7 +1,9 @@
 // 실제 브라우저로 사용자 흐름을 확인한다: 문서 유형 선택 → 가상 채용공고 붙여넣기 → 분석 시작
-// → 결과(8개 항목) 표시 → 항목별 원문 근거 확인. 키 노출 여부도 함께 검사한다.
+// → 결과(8개 항목) 표시 → 항목별 원문 근거 확인 → '담당자에게 이렇게 물어보세요' 질문 복사.
+// 키 노출 여부도 함께 검사한다.
 //   DEMO_MODE=true node scripts/e2e-browser.mjs          (키 없이 흐름만 확인, 데모 결과)
 //   GEMINI_API_KEY=... E2E_REQUIRE_AI=true node scripts/e2e-browser.mjs   (실제 AI 분석)
+//   E2E_BASE_URL=https://배포주소 E2E_REQUIRE_AI=true node scripts/e2e-browser.mjs   (배포된 사이트를 직접 검사)
 // 출력에는 API 키와 문서 원문을 남기지 않는다 (항목 이름·상태·근거 줄 번호·일치 여부만).
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
@@ -10,12 +12,15 @@ import { chromium } from 'playwright';
 import { SAMPLES } from '../test/samples.js';
 
 const PORT = Number(process.env.E2E_PORT) || 3210;
-const BASE = `http://127.0.0.1:${PORT}`;
+const REMOTE = process.env.E2E_BASE_URL ? new URL(process.env.E2E_BASE_URL).origin : null;
+const BASE = REMOTE ?? `http://127.0.0.1:${PORT}`;
 const OUT = 'e2e-artifacts';
 const REQUIRE_AI = process.env.E2E_REQUIRE_AI === 'true';
 const KEY = process.env.GEMINI_API_KEY || '';
 const sample = SAMPLES.find((s) => s.key === 'X3_intern_word'); // 가상 채용공고
 const UNIQUE_PHRASE = '지표 대시보드'; // 원문이 서버 로그에 남는지 확인용 (가상 문서의 일부)
+const missing = SAMPLES.find((s) => s.key === 'S3_missing'); // 조건 일부가 빠진 가상 오퍼 (찾지 못함 항목 확인용)
+const ASK_STATUSES = ['unclear', 'not_found'];
 
 const checks = [];
 const check = (name, ok, detail = '') => {
@@ -24,10 +29,10 @@ const check = (name, ok, detail = '') => {
 };
 
 await mkdir(OUT, { recursive: true });
-const server = spawn(process.execPath, ['server.js'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] });
+const server = REMOTE ? null : spawn(process.execPath, ['server.js'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] });
 let serverLog = '';
-server.stdout.on('data', (d) => { serverLog += d; });
-server.stderr.on('data', (d) => { serverLog += d; });
+server?.stdout.on('data', (d) => { serverLog += d; });
+server?.stderr.on('data', (d) => { serverLog += d; });
 
 let browser;
 try {
@@ -41,7 +46,9 @@ try {
   check('분석 모드', !REQUIRE_AI || config.mode === 'gemini', `mode=${config.mode}`);
 
   browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 375, height: 812 } });
+  // 질문 복사 확인을 위해 클립보드 권한을 준다
+  const context = await browser.newContext({ viewport: { width: 375, height: 812 }, permissions: ['clipboard-read', 'clipboard-write'] });
+  const page = await context.newPage();
   const pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push(e.message));
   // 브라우저가 받은 모든 응답 본문에 키가 들어 있는지 검사
@@ -87,6 +94,14 @@ try {
   const sourceText = await page.textContent('#analysis-source');
   check('결과 화면의 분석 주체 안내', REQUIRE_AI ? sourceText.includes('AI(Gemini)') : true, sourceText.includes('데모') ? '데모 결과 표시' : 'AI 결과 표시');
 
+  // 상세 화면의 질문 영역: '분명하지 않음'·'찾지 못함'에만 있고, 다른 상태에는 없어야 한다
+  const askMismatch = [];
+  const checkAsk = async (it) => {
+    const hasAsk = await page.isVisible('#ask-copy');
+    if (hasAsk !== ASK_STATUSES.includes(it.status)) askMismatch.push(`${it.label}(${it.statusLabel})`);
+    return hasAsk;
+  };
+
   // 5) 항목별 원문 근거 확인
   let evidenceOk = true;
   for (const [k, it] of visible.entries()) {
@@ -96,12 +111,54 @@ try {
     const sameAsApi = shown.length === it.evidence.length && shown.every((t, n) => t === it.evidence[n].text);
     const fromInput = shown.every((t) => sample.text.includes(t));
     if (!sameAsApi || !fromInput) evidenceOk = false;
-    console.log(`      ${it.label}: 원문 근거 ${shown.length}줄, 입력 원문과 일치 ${fromInput ? '예' : '아니오'}`);
+    const hasAsk = await checkAsk(it);
+    console.log(`      ${it.label}: 원문 근거 ${shown.length}줄, 입력 원문과 일치 ${fromInput ? '예' : '아니오'}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
     if (k === 0) await page.screenshot({ path: `${OUT}/03-detail.png`, fullPage: true });
     await page.goBack();
     await page.waitForSelector('#view-result:not([hidden])');
   }
   check('원문 근거가 입력 원문 그대로 표시됨', evidenceOk);
+
+  // 6) 조건 일부가 빠진 가상 오퍼로 다시 분석 → '찾지 못함' 항목에서 질문 복사
+  await page.goto(`${BASE}/#/`);
+  await page.waitForSelector('#view-input:not([hidden])');
+  await page.check(`input[name=docType][value=${missing.docType}]`);
+  await page.fill('#doc-text', missing.text);
+  const res2Promise = page.waitForResponse((r) => r.url().endsWith('/api/analyze'), { timeout: 150_000 });
+  await page.click('#submit-btn');
+  const res2 = await res2Promise;
+  const data2 = await res2.json();
+  check('두 번째 분석 API 응답 (조건 일부가 빠진 오퍼)', res2.status() === 200, `HTTP ${res2.status()}${data2.code ? `, ${data2.code}` : ''}`);
+  if (res2.status() !== 200) throw new Error('second analysis failed');
+  await page.waitForSelector('#view-result:not([hidden])', { timeout: 10_000 });
+  const visible2 = data2.items.filter((i) => i.visible);
+  let copied = null;
+  for (const [k, it] of visible2.entries()) {
+    await page.click(`.item-row >> nth=${k}`);
+    await page.waitForSelector('#view-detail:not([hidden])');
+    const hasAsk = await checkAsk(it);
+    console.log(`      ${it.label}: ${it.statusLabel}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
+    if (hasAsk && !copied) {
+      const shownQ = await page.textContent('#ask-text');
+      await page.click('#ask-copy');
+      await page.waitForSelector('.ask-status-done, .ask-status-error', { timeout: 5_000 });
+      const statusMsg = await page.textContent('.ask-status');
+      const clip = await page.evaluate(() => navigator.clipboard.readText());
+      copied = { label: it.label, ok: clip === shownQ && statusMsg.includes('질문을 복사했어요'), noDigits: !/\d/.test(shownQ),
+        sections: await page.$$eval('#view-detail h2', (els) => els.map((e) => e.textContent)) };
+      const noScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+      check('질문 영역 모바일 화면(375px)에서 가로 스크롤 없음', noScroll);
+      await page.screenshot({ path: `${OUT}/04-ask-copied.png`, fullPage: true });
+    }
+    await page.goBack();
+    await page.waitForSelector('#view-result:not([hidden])');
+  }
+  const hidden2 = data2.items.filter((i) => !i.visible).map((i) => i.label);
+  console.log(`      숨김 항목(질문 없음): ${hidden2.join(', ') || '없음'}`);
+  check('질문 영역은 분명하지 않음·찾지 못함 항목에만 표시', askMismatch.length === 0, askMismatch.join(', '));
+  check('찾지 못함 항목에서 질문 복사 → 클립보드에 같은 문장 + 완료 안내', Boolean(copied?.ok), copied ? copied.label : '질문 영역이 있는 항목 없음');
+  check('복사한 질문에 숫자(금액·날짜) 없음', Boolean(copied?.noDigits));
+  check('상세 화면 기존 영역 유지', Boolean(copied) && ['이 결과의 의미', '추가로 확인해 보세요', '담당자에게 이렇게 물어보세요'].every((h) => copied.sections.some((x) => x.includes(h))), copied?.sections.join(' / '));
   check('브라우저 스크립트 오류 없음', pageErrors.length === 0, pageErrors.length ? `${pageErrors.length}건` : '');
 
   // 보안 검사: 키가 브라우저 응답·페이지에 없고, 서버 로그에 키·원문이 없음
@@ -112,12 +169,12 @@ try {
   } else {
     check('API 키 노출 검사', true, '키가 설정되지 않은 실행이라 생략');
   }
-  check('서버 로그에 입력 원문 없음', !serverLog.includes(UNIQUE_PHRASE));
+  if (!REMOTE) check('서버 로그에 입력 원문 없음', !serverLog.includes(UNIQUE_PHRASE));
 } catch (err) {
   check('예외 없이 완료', false, err.message);
 } finally {
   if (browser) await browser.close();
-  server.kill();
+  server?.kill();
 }
 
 const failed = checks.filter((c) => !c.ok);

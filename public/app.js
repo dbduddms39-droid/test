@@ -1,4 +1,5 @@
 import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-rules.js';
+import { buildQuestion, copyText } from './questions.js';
 
 // 일단확인 클라이언트. 입력 원문과 결과는 메모리에만 두고 브라우저 저장소에 남기지 않는다.
 const STATUS_ORDER = ['stated', 'unclear', 'not_found', 'unavailable'];
@@ -321,6 +322,35 @@ function renderDetail(id) {
 
   blocks.push(el('h2', {}, '추가로 확인해 보세요'));
   blocks.push(el('ul', { class: 'follow-ups' }, it.followUps.map((f) => el('li', {}, f))));
+
+  // '분명하지 않음'·'찾지 못함'인 표시 항목에만 담당자 질문을 보여 준다 (템플릿 문장, 문서 내용·추측 값은 넣지 않음)
+  const question = buildQuestion(it, result.docType);
+  if (question) {
+    const status = el('p', { class: 'ask-status', role: 'status', 'aria-live': 'polite' });
+    const text = el('p', { class: 'ask-text', id: 'ask-text' }, question);
+    const btn = el('button', { type: 'button', class: 'ask-copy', id: 'ask-copy' }, '질문 복사');
+    btn.addEventListener('click', async () => {
+      if (await copyText(question)) {
+        status.textContent = '질문을 복사했어요. 문자·메일·메신저에 붙여넣어 보내세요.';
+        status.className = 'ask-status ask-status-done';
+      } else {
+        // 복사가 막힌 환경: 문장을 선택해 두고 직접 복사하도록 안내
+        const range = document.createRange();
+        range.selectNodeContents(text);
+        getSelection().removeAllRanges();
+        getSelection().addRange(range);
+        status.textContent = '자동 복사가 되지 않았어요. 선택된 문장을 길게 눌러 직접 복사해 주세요.';
+        status.className = 'ask-status ask-status-error';
+      }
+    });
+    blocks.push(el('section', { class: 'ask', 'aria-labelledby': 'ask-title' },
+      el('h2', { id: 'ask-title' }, '담당자에게 이렇게 물어보세요'),
+      text,
+      btn,
+      status,
+      el('p', { class: 'ask-note' }, '보내기 전에 상황에 맞게 고쳐 쓰세요. 이름·연락처 등 개인정보는 필요한 만큼만 적어 주세요.')));
+  }
+
   blocks.push(el('p', { class: 'notice' }, result.notice));
   $('#detail').replaceChildren(...blocks);
   return true;

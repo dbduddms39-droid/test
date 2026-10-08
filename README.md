@@ -29,6 +29,13 @@ npm run demo              # DEMO_MODE=true — 키워드 규칙 데모 (AI 아�
 - 라이브러리와 언어 데이터는 외부 CDN이 아니라 같은 사이트의 `public/vendor/`에서 제공합니다 (처음 업로드할 때만 내려받음: PDF 약 2MB, OCR 약 8.5MB). `public/vendor/`는 `npm run vendor`로 `node_modules`에서 복사해 커밋한 파일입니다. Vercel은 빌드 스크립트보다 먼저 `public/`을 정적 파일로 수집하므로 빌드 때 생성하지 않고 커밋해 둡니다.
 - 한계: OCR은 사진 품질·글꼴·기울기에 따라 오타가 생깁니다 (예: 테스트에서 '센텀중앙로'를 'MESURE'로, 'OO'를 '00'으로 인식). 표 테두리가 '_' 같은 기호로 섞일 수 있고, 여러 단 배치는 줄 순서가 섞일 수 있습니다. 연속 캡처가 겹치면 겹친 줄이 두 번 들어가므로 직접 지워야 합니다. 처음 OCR 때 내려받는 데이터 때문에 느린 네트워크·저사양 휴대폰에서는 시간이 걸립니다. 암호가 걸린 PDF는 열지 않습니다.
 
+### 담당자에게 질문 복사
+
+- 상세 화면에서 상태가 **분명하지 않음** 또는 **찾지 못함**인 항목에만 '담당자에게 이렇게 물어보세요' 영역을 보여 줍니다. 명시됨·분석 확인 불가 항목과 화면에서 숨긴 항목에는 질문을 만들지 않습니다.
+- 질문은 `public/questions.js`의 고정 템플릿(8개 항목 × 문서 유형 × 사유)으로 브라우저에서 만듭니다. **AI를 추가로 호출하지 않고**, 문서에 적힌 금액·날짜·조건이나 근거 원문을 질문에 넣지 않습니다.
+- '질문 복사'를 누르면 클립보드에 복사하고 "질문을 복사했어요"를 안내합니다. 복사가 막힌 브라우저에서는 문장을 선택해 두고 직접 복사하도록 안내합니다.
+- 기존 '이 결과의 의미', 원문 근거, '추가로 확인해 보세요' 영역은 그대로 둡니다.
+
 ### 환경변수
 
 | 이름 | 기본값 | 설명 |
@@ -63,10 +70,10 @@ npm run eval:live -- --samples=S2_vague   # 일부 샘플만 실행 (무료 사�
 
 ### 브라우저 사용자 흐름 확인 (E2E)
 
-`.github/workflows/web-e2e.yml` — 수동 실행 전용. 러너에서 웹 서버를 띄우고 실제 브라우저로 문서 유형 선택 → 가상 채용공고 붙여넣기 → 분석 시작 → 8개 항목 결과 → 원문 근거 확인을 진행합니다. 브라우저로 전달된 응답·페이지·서버 로그에 API 키가 없는지도 검사하고, 화면 캡처를 `web-e2e-screenshots` 아티팩트로 올립니다.
+`.github/workflows/web-e2e.yml` — 수동 실행 전용. 러너에서 웹 서버를 띄우고 실제 브라우저로 문서 유형 선택 → 가상 채용공고 붙여넣기 → 분석 시작 → 8개 항목 결과 → 원문 근거 확인을 진행하고, 조건 일부가 빠진 가상 오퍼를 한 번 더 분석해 '찾지 못함' 항목의 질문 영역 표시·질문 복사(클립보드)·숨김 항목 질문 없음을 확인합니다. 브라우저로 전달된 응답·페이지·서버 로그에 API 키가 없는지도 검사하고, 화면 캡처를 `web-e2e-screenshots` 아티팩트로 올립니다.
 로컬: `DEMO_MODE=true node scripts/e2e-browser.mjs` (키 없이 흐름만, 데모 결과)
 
-업로드 흐름은 `scripts/e2e-upload.mjs`가 가상 문서 파일(`test/fixtures/upload/`, 생성: `scripts/make-upload-fixtures.mjs`)로 일반 PDF·한국어 이미지(PNG·WebP·사진형 JPG)·스캔 PDF·연속 캡처 3장 추출 정확도, 여러 장 미리보기·삭제·순서 변경, 일부 실패, 입력 내용 유지, 확인 체크, 수정한 텍스트의 분석 전달, 오류 안내(암호화·쪽수 초과·형식 오류·손상·10MB 초과), 외부 전송 없음을 검사합니다. 워크플로 입력 `base_url`에 배포 주소를 넣으면 배포된 사이트를 대상으로 검사합니다.
+업로드 흐름은 `scripts/e2e-upload.mjs`가 가상 문서 파일(`test/fixtures/upload/`, 생성: `scripts/make-upload-fixtures.mjs`)로 일반 PDF·한국어 이미지(PNG·WebP·사진형 JPG)·스캔 PDF·연속 캡처 3장 추출 정확도, 여러 장 미리보기·삭제·순서 변경, 일부 실패, 입력 내용 유지, 확인 체크, 수정한 텍스트의 분석 전달, 오류 안내(암호화·쪽수 초과·형식 오류·손상·10MB 초과), 외부 전송 없음을 검사합니다. 워크플로 입력 `base_url`에 배포 주소를 넣으면 붙여넣기·질문 복사 흐름과 업로드 흐름을 배포된 사이트를 대상으로 검사합니다.
 로컬: `DEMO_MODE=true node scripts/e2e-upload.mjs`
 
 ### Vercel 배포 (Hobby 무료 플랜)
@@ -81,6 +88,7 @@ npm run eval:live -- --samples=S2_vague   # 일부 샘플만 실행 (무료 사�
 배포 점검:
 - **Vercel build check** 워크플로: 배포 관련 파일이 바뀌어 푸시되면 공식 CLI로 `vercel build`(계정 불필요)를 실행하고 `scripts/check-vercel-output.mjs`로 `/`·정적 파일·API를 확인합니다.
 - **Deploy smoke test** 워크플로: 수동 실행, `base_url`에 배포 주소를 넣으면 새로고침(`/`), 정적·vendor 파일, `/api/config`, `/api/analyze`(가상 문서 1건)를 확인합니다. 로컬: `node scripts/smoke-deployed.mjs https://배포주소`
+- 점검에는 **공개 운영 도메인**(예: `https://프로젝트명.vercel.app`)을 쓰세요. 배포마다 생기는 개별 주소(`프로젝트-해시-계정.vercel.app`)는 Vercel Deployment Protection 때문에 로그인 페이지가 나와 점검이 실패합니다 (앱 오류 아님).
 
 ### 웹앱 서버에 키 등록
 
@@ -103,6 +111,7 @@ src/present.js         화면 상태·표시 여부·안내 문구 결정
 src/eval/score.js      기대/실제 상태, 근거 번호 정확성, 잘못된 not_found 채점
 public/                화면 01(입력) · 02(결과) · 03(원문 상세)
 public/extract.js      파일 → 텍스트 추출 (pdf.js, Tesseract.js OCR, 브라우저 안에서만)
+public/questions.js    '담당자에게 이렇게 물어보세요' 질문 템플릿·복사 (AI 호출 없음)
 public/upload-rules.js 업로드 제한·형식 판별·안내 문구 (Node 테스트와 공용)
 public/vendor/         pdf.js·Tesseract.js·언어 데이터 (npm run vendor로 생성해 커밋)
 vercel.json            Vercel 함수 번들에서 public/vendor/만 제외 (메인 화면은 함수가 제공)
