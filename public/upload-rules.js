@@ -5,6 +5,7 @@ export const MAX_PDF_PAGES = 10;
 export const MAX_OCR_PAGES = 5; // 글자 인식(OCR)은 느려서 스캔 쪽수를 따로 제한
 export const MIN_PAGE_TEXT_CHARS = 20; // 이보다 글자가 적은 PDF 쪽은 스캔 이미지로 보고 OCR
 export const LOW_CONFIDENCE = 60; // OCR 평균 신뢰도(0~100)가 이보다 낮으면 주의 안내
+export const UNCERTAIN_NUMBER_BELOW = 75; // 숫자가 든 단어의 신뢰도가 이보다 낮으면 '확인할 숫자'로 알린다
 export const MAX_IMAGE_SIDE = 3000; // OCR 전에 긴 변을 이 크기로 줄인다 (메모리·속도)
 export const MAX_IMAGES = 5; // 같은 문서의 연속 캡처로 보고 한 번에 처리하는 이미지 수
 
@@ -63,6 +64,13 @@ export function needsOcr(pageText) {
   return countChars(pageText) < MIN_PAGE_TEXT_CHARS;
 }
 
+// OCR이 칸 사이 넓은 빈 곳·버튼 테두리에서 만들어 내는 기호 조각('_', '|', '、')만 지운다.
+// 글자·숫자·'~'·'-' 같은 내용 기호는 건드리지 않으며, 다른 글자에 붙은 기호도 그대로 둔다.
+const OCR_JUNK_TOKEN = /(^|[ \t])[_|¦、]+(?=[ \t]|$)/g;
+export function stripOcrJunk(text) {
+  return text.split('\n').map((line) => line.replace(OCR_JUNK_TOKEN, '$1').replace(/[ \t]{2,}/g, ' ')).join('\n');
+}
+
 // 줄 끝 공백 제거, 3줄 이상 연속 빈 줄은 1줄로. 줄 순서와 내용은 바꾸지 않는다.
 export function tidyText(text) {
   return text
@@ -112,19 +120,42 @@ export function moveItem(list, index, delta) {
   return next;
 }
 
+// 이미지 1장의 OCR 결과를 평가한다. 인식한 글자는 고치지 않고, 사용자가 원본과 비교해 확인할 곳만 알려 준다.
+//   words: [{ text, confidence }], confidence: 평균 신뢰도, lines: 인식한 줄 수, inkLines: 이미지에서 찾은 글자 줄 수
+// 반환: { quality: 'good' | 'check'(확인할 숫자 있음) | 'low'(신뢰도 낮음·일부만 인식), uncertain: [단어], partial }
+const MIXED_NUMBER = /\d[OoIlS|]|[OoIlS|]\d/; // 숫자 사이에 섞인 비슷한 모양의 글자 (예: 2O27, 1l:00)
+// 날짜·시간에 없는 형태 (예: 2027.12.31에서 점이 빠진 202712.31, 18:300)
+const ODD_NUMBER = /\d{5,}[.:/]\d|\d[.:/]\d{5,}|\d:\d{3}/;
+export function reviewOcr({ words = [], confidence = 0, lines = 0, inkLines = 0 }) {
+  const uncertain = [...new Set(words
+    .filter((w) => /\d/.test(w.text) && (w.confidence < UNCERTAIN_NUMBER_BELOW || MIXED_NUMBER.test(w.text) || ODD_NUMBER.test(w.text)))
+    .map((w) => w.text.trim()))].slice(0, 6);
+  const partial = inkLines >= 3 && lines < inkLines * 0.6;
+  const quality = confidence < LOW_CONFIDENCE || partial ? 'low' : uncertain.length ? 'check' : 'good';
+  return { quality, uncertain, partial };
+}
+
 // 이미지별 OCR 결과를 사용자가 정한 순서대로 하나의 문서로 합친다.
-// results: [{ ok: true, text, confidence } | { ok: false, code }] (목록 순서)
+// results: [{ ok: true, text, confidence, quality, uncertain } | { ok: false, code }] (목록 순서)
+// review: 확인이 필요한 이미지 [{ index, quality, uncertain }]
 export function combineImageResults(results) {
   const okTexts = [];
   const failed = [];
+  const review = [];
   results.forEach((r, index) => {
-    if (r.ok && hasText(r.text)) okTexts.push(r.text);
-    else failed.push({ index, code: r.ok ? 'no_text_found' : r.code });
+    if (r.ok && hasText(r.text)) {
+      okTexts.push(r.text);
+      const quality = r.quality ?? (r.confidence < LOW_CONFIDENCE ? 'low' : 'good');
+      if (quality !== 'good') review.push({ index, quality, uncertain: r.uncertain ?? [] });
+    } else {
+      failed.push({ index, code: r.ok ? 'no_text_found' : r.code });
+    }
   });
   return {
     text: joinPages(okTexts),
     okCount: okTexts.length,
     failed,
-    lowConfidence: results.some((r) => r.ok && hasText(r.text) && r.confidence < LOW_CONFIDENCE),
+    review,
+    lowConfidence: review.some((r) => r.quality === 'low'),
   };
 }

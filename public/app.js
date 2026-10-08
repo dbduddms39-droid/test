@@ -45,6 +45,12 @@ const ITEM_FAIL_TEXT = {
   unsupported_type: '지원하지 않는 형식이에요',
   extract_failed: '글자를 읽지 못했어요',
 };
+// 인식은 됐지만 원본과 비교해 확인이 필요한 이미지 (글자를 고치지 않고 확인할 곳만 알림)
+const ITEM_REVIEW_TEXT = {
+  low: '일부만 읽혔거나 인식이 불확실해요. 원본과 꼭 비교해 주세요',
+  check: '확인할 숫자가 있어요',
+};
+const uncertainNote = (list) => (list.length ? `인식이 불확실한 숫자: ${list.map((t) => `'${t}'`).join(', ')}. 원본 이미지와 비교해 고쳐 주세요.` : '');
 const PROGRESS_TEXT = {
   image: '이미지를 여는 중…',
   'pdf-load': 'PDF를 여는 중…',
@@ -86,12 +92,14 @@ function renderImages() {
       b.disabled = busy || disabled;
       return b;
     };
-    return el('li', { class: `image-item${img.fail ? ' image-item-failed' : ''}` },
+    const review = !img.fail && img.quality && img.quality !== 'good' ? ITEM_REVIEW_TEXT[img.quality] : null;
+    return el('li', { class: `image-item${img.fail ? ' image-item-failed' : review ? ' image-item-review' : ''}` },
       el('img', { src: img.url, alt: `${i + 1}번째 이미지 미리보기`, class: 'image-thumb' }),
       el('div', { class: 'image-meta' },
         el('span', { class: 'image-order' }, `${i + 1}`),
         el('span', { class: 'image-name' }, img.file.name),
-        img.fail ? el('span', { class: 'image-fail' }, ITEM_FAIL_TEXT[img.fail] ?? ITEM_FAIL_TEXT.extract_failed) : null),
+        img.fail ? el('span', { class: 'image-fail' }, ITEM_FAIL_TEXT[img.fail] ?? ITEM_FAIL_TEXT.extract_failed) : null,
+        review ? el('span', { class: 'image-review' }, review) : null),
       el('div', { class: 'image-buttons' },
         btn('위로', 'up', i === 0),
         btn('아래로', 'down', i === images.length - 1),
@@ -179,8 +187,9 @@ async function extractPdf(file, notes = []) {
     const msg = [what, reviewNote, ...notes];
     if (out.method !== 'pdf-text') msg.push('글자 인식 결과에는 오타나 빠진 글자가 있을 수 있어요.');
     if (out.lowConfidence) msg.push('인식 정확도가 낮아 보여요. 숫자(금액·날짜·시간)를 특히 꼼꼼히 확인해 주세요.');
+    if (out.uncertain?.length) msg.push(uncertainNote(out.uncertain));
     if (out.text.length > 20000) msg.push('추출한 텍스트가 2만 자를 넘어요. 필요한 부분만 남겨 주세요.');
-    showUploadStatus(msg.join(' '), out.lowConfidence || notes.length ? 'warn' : 'done');
+    showUploadStatus(msg.join(' '), out.lowConfidence || out.uncertain?.length || notes.length ? 'warn' : 'done');
   } catch (err) {
     showUploadStatus(err?.code ? err.message : '파일에서 텍스트를 추출하지 못했어요. 내용을 직접 붙여넣어 주세요.', 'error');
   } finally {
@@ -190,13 +199,14 @@ async function extractPdf(file, notes = []) {
 
 extractBtn.addEventListener('click', async () => {
   if (busy || !images.length) return;
-  images.forEach((img) => { img.fail = null; });
+  images.forEach((img) => { img.fail = null; img.quality = null; });
   setBusy(true);
   showUploadStatus('이미지를 확인하는 중…');
   try {
     const { extractTextFromImages } = await loadExtractor();
     const out = await extractTextFromImages(images.map((img) => img.file), onProgress, (i, r) => {
       images[i].fail = r.ok ? null : r.code;
+      images[i].quality = r.ok ? r.quality : null;
     });
     if (!out.okCount) {
       return showUploadStatus('이미지에서 글자를 찾지 못했어요. 더 선명한 이미지로 바꾸거나 내용을 직접 입력해 주세요. 입력란은 그대로 두었어요.', 'error');
@@ -207,9 +217,12 @@ extractBtn.addEventListener('click', async () => {
       msg.push(`${out.failed.map((f) => `${f.index + 1}번째`).join(', ')} 이미지는 ${out.failed.length === 1 ? ITEM_FAIL_TEXT[out.failed[0].code] ?? '읽지 못했어요' : '읽지 못했어요'}. 그 부분은 직접 입력하거나 다른 이미지로 바꿔 주세요.`);
     }
     msg.push(reviewNote, '글자 인식 결과에는 오타나 빠진 글자가 있을 수 있어요.');
-    if (out.lowConfidence) msg.push('인식 정확도가 낮아 보여요. 숫자(금액·날짜·시간)를 특히 꼼꼼히 확인해 주세요.');
+    const low = out.review.filter((r) => r.quality === 'low');
+    if (low.length) msg.push(`${low.map((r) => `${r.index + 1}번째`).join(', ')} 이미지는 일부만 읽혔거나 인식이 불확실해요. 원본과 꼭 비교해 빠진 내용을 채워 주세요.`);
+    const uncertain = [...new Set(out.review.flatMap((r) => r.uncertain))].slice(0, 6);
+    if (uncertain.length) msg.push(uncertainNote(uncertain));
     if (out.text.length > 20000) msg.push('추출한 텍스트가 2만 자를 넘어요. 필요한 부분만 남겨 주세요.');
-    showUploadStatus(msg.join(' '), out.failed.length || out.lowConfidence ? 'warn' : 'done');
+    showUploadStatus(msg.join(' '), out.failed.length || out.review.length ? 'warn' : 'done');
   } catch (err) {
     showUploadStatus(err?.code ? `${err.message} 입력란은 그대로 두었어요.` : '텍스트를 추출하지 못했어요. 입력란은 그대로 두었어요.', 'error');
   } finally {

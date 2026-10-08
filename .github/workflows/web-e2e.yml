@@ -75,6 +75,14 @@ jobs:
           E2E_REQUIRE_AI: 'true'
         run: node scripts/e2e-upload.mjs
 
+      - name: OCR accuracy benchmark (fictional images, browser only, no API calls)
+        if: always()
+        env:
+          OCR_BENCH_BASE: ${{ inputs.base_url }}
+        run: |
+          if [ -z "$OCR_BENCH_BASE" ]; then unset OCR_BENCH_BASE; fi
+          node scripts/ocr-bench.mjs --json=e2e-artifacts/ocr-bench.json
+
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4

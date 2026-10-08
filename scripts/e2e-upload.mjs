@@ -227,6 +227,21 @@ try {
     check(`[${label}] 성공한 이미지 텍스트는 입력란에`, extracted.includes('고객센터') && extracted.includes('240'));
   }
 
+  // 3-1) 일부만 읽힌 이미지: 성공으로만 처리하지 않고 '확인 필요'로 알린다 (인식한 글자는 고치지 않고 입력란에 그대로)
+  {
+    const label = 'partial-read';
+    await fresh('job_posting');
+    const status = await uploadAndExtract(['../ocr-bench/check-blur-1.png', '../ocr-bench/check-blur-2.png']);
+    const extracted = await page.inputValue('#doc-text');
+    const reviewItems = await page.$$eval('.image-item', (els) => els.map((e) => (e.classList.contains('image-item-review') ? e.querySelector('.image-review').textContent : '')));
+    check(`[${label}] 흐린 2번째 이미지에 확인 필요 표시`, reviewItems[1].includes('일부만 읽혔거나') && !reviewItems[0].includes('일부만'), reviewItems.join(' / '));
+    check(`[${label}] 안내에 확인할 이미지 번호`, status.kind === 'warn' && status.text.includes('2번째 이미지는 일부만 읽혔거나'), status.text.slice(0, 120));
+    check(`[${label}] 읽힌 텍스트는 순서대로 입력란에 (사용자가 확인·수정)`, extracted.indexOf('급여') >= 0 && extracted.indexOf('담당업무') > extracted.indexOf('급여') && (await page.isVisible('#confirm-row')));
+    const nums = status.text.match(/인식이 불확실한 숫자: (.+?)\. 원본 이미지와/)?.[1] ?? '';
+    await page.screenshot({ path: `${OUT}/partial-read.png`, fullPage: true });
+    check(`[${label}] 확인할 숫자는 인식한 그대로 안내 (고친 값을 만들지 않음)`, [...nums.matchAll(/'([^']+)'/g)].every((m) => extracted.includes(m[1])), nums || '없음');
+  }
+
   // 4) 실패해도 이미 입력한 내용은 그대로: 전부 인식 실패 / 형식 오류 / PDF와 이미지 섞음 / 바꾸기 취소
   const KEEP = '이미 입력해 둔 내용입니다 (가상 예시)\n급여: 월 200만원';
   {
