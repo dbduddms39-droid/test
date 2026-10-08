@@ -1,0 +1,46 @@
+# Vercel 빌드 결과 점검 — 배포 설정 회귀 방지 (Vercel 계정·토큰 없이 로컬 빌드만 함)
+# - 공식 Vercel CLI로 `vercel build`를 실행해 .vercel/output을 만들고,
+#   scripts/check-vercel-output.mjs로 정적 파일 목록, 함수 번들(메인 화면 포함·vendor 제외),
+#   GET / · /api/config · POST /api/analyze(데모 분석기, 외부 API 호출 없음)를 확인한다.
+# - 배포 관련 파일이 바뀌어 푸시될 때와 수동 실행 때만 돈다.
+name: Vercel build check
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'vercel.json'
+      - 'server.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'public/**'
+      - 'src/**'
+      - 'scripts/check-vercel-output.mjs'
+      - '.github/workflows/vercel-build-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  vercel-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Vercel build (local, no account)
+        env:
+          VERCEL_TELEMETRY_DISABLED: '1'
+        run: |
+          mkdir -p .vercel
+          echo '{"projectId":"prj_local","orgId":"team_local","settings":{"framework":"node","nodeVersion":"22.x"}}' > .vercel/project.json
+          npx --yes vercel@63.1.0 build --yes
+
+      - name: Check build output (routing, static files, function)
+        run: node scripts/check-vercel-output.mjs .

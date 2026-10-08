@@ -71,10 +71,16 @@ npm run eval:live -- --samples=S2_vague   # 일부 샘플만 실행 (무료 사�
 
 ### Vercel 배포 (Hobby 무료 플랜)
 
-- 별도 설정 파일 없이 배포됩니다. Vercel이 루트의 `server.js`를 감지해 Node 서버리스 함수(Node 22)로 실행하고, `public/` 파일은 정적 파일로 제공합니다. `server.js`는 Vercel용으로 `(req, res)` 핸들러를 default export 합니다 (로컬 `node server.js` 실행 방식은 그대로).
+- Vercel이 루트의 `server.js`를 감지해 Node 서버리스 함수(Node 22)로 실행하고, `public/` 파일은 정적 파일로도 제공합니다. `server.js`는 Vercel용으로 `(req, res)` 핸들러를 default export 합니다 (로컬 `node server.js` 실행 방식은 그대로).
+- **`/`(메인 화면)는 함수가 처리합니다.** 빌드 결과에서 함수가 `functions/index.func`(경로 `/`)라서 정적 `index.html`보다 함수가 먼저 받습니다. 그래서 함수 번들에 `public/index.html`이 있어야 합니다. `vercel.json`은 함수 번들에서 **`public/vendor/**`(약 20MB)만** 제외합니다. `public/**` 전체를 제외하면 배포 사이트의 `/`가 `{"error":"not found"}`가 됩니다 (실제로 겪은 장애, `test/vendor.test.js`가 막음).
+- `/app.js`, `/styles.css`, `/vendor/...` 같은 나머지 파일은 정적 파일로 제공됩니다.
 - Vercel 프로젝트의 **Settings → Environment Variables**에 `GEMINI_API_KEY`를 등록합니다. `NEXT_PUBLIC_` 같은 접두사를 붙이지 않습니다. `DEMO_MODE`는 등록하지 않습니다.
 - 요청 제한은 함수 인스턴스 메모리에 저장되므로 인스턴스마다 따로 세고, 인스턴스가 바뀌면 초기화됩니다. 무제한 호출을 완전히 막지 못하며, 최종 상한은 Gemini 무료 등급 한도(HTTP 429)입니다. 결제가 연결되지 않은 키라면 한도 초과 시 요금이 아니라 분석 불가로 끝납니다.
 - Vercel에서는 `X-Forwarded-For`의 첫 IP로 사용자를 구분합니다 (`VERCEL=1`일 때 자동).
+
+배포 점검:
+- **Vercel build check** 워크플로: 배포 관련 파일이 바뀌어 푸시되면 공식 CLI로 `vercel build`(계정 불필요)를 실행하고 `scripts/check-vercel-output.mjs`로 `/`·정적 파일·API를 확인합니다.
+- **Deploy smoke test** 워크플로: 수동 실행, `base_url`에 배포 주소를 넣으면 새로고침(`/`), 정적·vendor 파일, `/api/config`, `/api/analyze`(가상 문서 1건)를 확인합니다. 로컬: `node scripts/smoke-deployed.mjs https://배포주소`
 
 ### 웹앱 서버에 키 등록
 
@@ -99,7 +105,9 @@ public/                화면 01(입력) · 02(결과) · 03(원문 상세)
 public/extract.js      파일 → 텍스트 추출 (pdf.js, Tesseract.js OCR, 브라우저 안에서만)
 public/upload-rules.js 업로드 제한·형식 판별·안내 문구 (Node 테스트와 공용)
 public/vendor/         pdf.js·Tesseract.js·언어 데이터 (npm run vendor로 생성해 커밋)
-vercel.json            Vercel 함수 번들에서 public/ 제외 (정적 파일은 CDN이 제공)
+vercel.json            Vercel 함수 번들에서 public/vendor/만 제외 (메인 화면은 함수가 제공)
+scripts/check-vercel-output.mjs  vercel build 결과 점검 (정적 파일·함수 번들·/ ·API)
+scripts/smoke-deployed.mjs       실제 배포 주소 점검 (새로고침·정적 파일·API)
 test/                  테스트와 샘플 문서
 scripts/run-samples.js 샘플 결과 기록
 ```

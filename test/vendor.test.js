@@ -28,7 +28,23 @@ test('커밋된 vendor 파일이 설치된 라이브러리와 같다', async () 
   for (const [src, dest] of PAIRS) assert.equal(await sha(dest), await sha(src), dest);
 });
 
-test('Vercel 함수 번들에서 public/을 제외한다 (정적 파일은 CDN이 제공)', async () => {
+// vercel.json excludeFiles 패턴(간단한 glob: ** 와 *)을 정규식으로 바꾼다
+const globToRegExp = (g) => new RegExp(`^${g
+  .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  .replace(/\*\*/g, '\u0000')
+  .replace(/\*/g, '[^/]*')
+  .replace(/\u0000/g, '.*')}$`);
+
+test('Vercel 함수 번들에서 vendor만 제외하고 메인 화면 파일은 남긴다 (/ 는 함수가 처리)', async () => {
+  // 회귀: excludeFiles를 public/** 로 넓히면 함수에서 index.html이 빠져 배포 사이트의 / 가 {"error":"not found"}가 된다.
   const cfg = JSON.parse(await readFile('vercel.json', 'utf8'));
-  assert.equal(cfg.functions['server.js'].excludeFiles, 'public/**');
+  const patterns = [].concat(cfg.functions['server.js'].excludeFiles ?? []);
+  const excluded = (p) => patterns.some((g) => globToRegExp(g).test(p));
+  for (const keep of ['public/index.html', 'public/styles.css', 'public/app.js', 'public/upload-rules.js', 'public/extract.js']) {
+    assert.equal(excluded(keep), false, `${keep}가 함수에서 제외되면 안 됨`);
+  }
+  assert.equal(excluded('public/vendor/tessdata/kor.traineddata.gz'), true);
+  assert.equal(excluded('public/vendor/pdfjs/pdf.min.mjs'), true);
+  // 이전의 잘못된 설정은 이 검사에 걸린다
+  assert.equal(globToRegExp('public/**').test('public/index.html'), true);
 });

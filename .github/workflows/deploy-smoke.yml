@@ -1,0 +1,42 @@
+# 실제 배포 주소 점검 — 수동 실행 전용
+# - 새로고침(/), 정적 파일(화면·업로드·vendor), /api/config, /api/analyze(가상 문서 1건, Gemini 무료 등급 1회)를 확인한다.
+# - 배포된 서버의 환경변수를 쓰며, 이 워크플로는 API 키를 읽지 않는다.
+name: Deploy smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: '배포 주소 (예: https://xxx.vercel.app)'
+        required: true
+      skip_analyze:
+        description: '분석 API 호출(Gemini 1회) 생략'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Smoke test deployed site
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          SKIP_ANALYZE: ${{ inputs.skip_analyze }}
+        run: |
+          if [ "$SKIP_ANALYZE" = "true" ]; then
+            node scripts/smoke-deployed.mjs "$BASE_URL" --skip-analyze
+          else
+            node scripts/smoke-deployed.mjs "$BASE_URL"
+          fi
