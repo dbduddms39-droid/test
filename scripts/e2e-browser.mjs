@@ -83,6 +83,7 @@ try {
   const rowsMatch = rows.length === visible.length && rows.every((r, k) => r.label === visible[k].label && r.status === visible[k].statusLabel);
   check('화면 항목 = 표시 대상 항목', rowsMatch, `표시 ${rows.length}개 / 숨김 ${8 - visible.length}개`);
   for (const it of data.items) console.log(`      ${it.visible ? '표시' : '숨김'}  ${it.label}: ${it.statusLabel}${it.evidence.length ? ` (근거 ${it.evidence.map((e) => e.id).join(',')}번 줄)` : ''}`);
+  check('붙여넣기 결과에는 추출 텍스트 안내가 없음', !(await page.isVisible('#input-source-note')));
   const sourceText = await page.textContent('#analysis-source');
   check('결과 화면의 분석 주체 안내', REQUIRE_AI ? sourceText.includes('AI(Gemini)') : true, sourceText.includes('데모') ? '데모 결과 표시' : 'AI 결과 표시');
 

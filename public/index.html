@@ -29,10 +29,18 @@
         <div class="upload">
           <span class="field-label">파일에서 불러오기 <span class="optional">선택</span></span>
           <label class="upload-drop" id="upload-drop">
-            <input type="file" id="file-input" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
+            <input type="file" id="file-input" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
             <span class="upload-title">이미지나 PDF 파일 선택</span>
-            <span class="upload-hint">JPG·PNG·WebP·PDF · 10MB, 10쪽까지</span>
+            <span class="upload-hint">캡처 이미지 최대 5장(JPG·PNG·WebP) 또는 PDF 1개 · 파일당 10MB</span>
           </label>
+          <div id="image-panel" class="image-panel" hidden>
+            <p class="image-panel-help">같은 문서를 이어서 캡처한 이미지로 보고, 아래 순서대로 글자를 읽어 하나의 문서로 합쳐요. 순서를 확인해 주세요.</p>
+            <ol id="image-list" class="image-list"></ol>
+            <div class="image-actions">
+              <button type="button" id="extract-btn" class="secondary">텍스트 추출</button>
+              <button type="button" id="clear-images" class="text-btn">이미지 모두 지우기</button>
+            </div>
+          </div>
           <p class="upload-note">파일은 이 브라우저 안에서만 읽고 서버로 보내지 않아요. 추출한 텍스트는 아래 입력란에 채워지고, 확인·수정한 뒤 '분석 시작'을 눌렀을 때만 AI 서비스로 전송돼요.</p>
           <p id="upload-status" class="upload-status" role="status" aria-live="polite" hidden></p>
         </div>
@@ -41,6 +49,10 @@
         <textarea id="doc-text" name="text" rows="14" maxlength="20000"
           placeholder="문서 내용을 그대로 붙여넣어 주세요."></textarea>
         <div class="char-count"><span id="char-count">0</span> / 20,000자</div>
+        <label id="confirm-row" class="confirm-row" hidden>
+          <input type="checkbox" id="confirm-extracted">
+          <span>파일에서 추출한 텍스트를 원본과 비교해 확인·수정했어요</span>
+        </label>
 
         <p class="privacy" role="note">입력한 내용은 분석을 위해 AI 서비스로 전송돼요. 이름·주민등록번호·주소 등 개인정보는 가린 뒤 입력해 주세요.</p>
 
@@ -55,6 +67,7 @@
       <p class="doc-type-chip" id="result-doc-type"></p>
       <h1>분석 결과</h1>
       <p id="analysis-source" class="analysis-source"></p>
+      <p id="input-source-note" class="input-source-note" hidden></p>
       <ul id="summary" class="summary"></ul>
       <ul id="item-list" class="item-list"></ul>
       <p class="notice" id="result-notice"></p>

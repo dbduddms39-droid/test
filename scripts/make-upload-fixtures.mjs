@@ -34,6 +34,28 @@ const TRUTH = {
 수습기간: 없음`,
 };
 
+// 여러 장 캡처용 채용공고 (가상 예시)
+const TRUTH_MULTI_ROWS = {
+  title: '[채용] 고객센터 상담원 모집',
+  company: 'OO서비스 (가상 예시)',
+  table: [
+    ['고용형태', '정규직'],
+    ['근무지', '대전광역시 서구 둔산로 00'],
+    ['근무시간', '09:00~18:00, 주 5일'],
+    ['급여', '월 240만원'],
+  ],
+  sections: [
+    ['담당업무', ['고객 문의 전화 응대', '상담 내역 기록 및 관리']],
+    ['수습기간', ['3개월 (수습 기간 급여 월 216만원)']],
+    ['지원 방법', ['이메일 접수 (가상 예시)']],
+  ],
+};
+TRUTH.multi = [
+  TRUTH_MULTI_ROWS.title, TRUTH_MULTI_ROWS.company,
+  ...TRUTH_MULTI_ROWS.table.map(([k, v]) => `${k} ${v}`),
+  ...TRUTH_MULTI_ROWS.sections.flatMap(([h, lines]) => [h, ...lines]),
+].join('\n');
+
 const page = (text, { size = 22 } = {}) => `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
   body { margin: 48px; font-family: 'WenQuanYi Zen Hei', 'Noto Sans CJK KR', sans-serif; font-size: ${size}px; line-height: 1.7; color: #111; background: #fff; }
   p { margin: 0 0 6px; white-space: pre-wrap; }
@@ -80,9 +102,39 @@ await p.pdf({ path: `${OUT}/scanned.pdf`, format: 'A4', printBackground: true })
 await p.setContent(`<!doctype html><html><body>${Array.from({ length: 12 }, (_, i) => `<p style="page-break-after:always">가상 문서 ${i + 1}쪽</p>`).join('')}</body></html>`);
 await p.pdf({ path: `${OUT}/too-many-pages.pdf`, format: 'A4' });
 
+// 5) 여러 장 연속 캡처: 모바일 채용공고 화면(머리글·표·본문)을 블록 경계에서 3장으로 나눠 캡처
+const rows = TRUTH_MULTI_ROWS;
+const mobile = await browser.newContext({ deviceScaleFactor: 2, viewport: { width: 420, height: 800 } });
+const mp = await mobile.newPage();
+await mp.setContent(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
+  body { margin: 0; font-family: 'WenQuanYi Zen Hei', 'Noto Sans CJK KR', sans-serif; color: #1b1f24; background: #fff; font-size: 16px; }
+  .top { background: #2f5d8a; color: #fff; padding: 18px 16px; } .top h1 { font-size: 19px; margin: 0 0 4px; } .top p { margin: 0; font-size: 14px; }
+  table { width: calc(100% - 32px); margin: 12px 16px; border-collapse: collapse; }
+  th, td { border-top: 1px solid #d6dbe0; padding: 10px 6px; text-align: left; vertical-align: top; }
+  th { width: 88px; color: #4b5563; font-weight: 600; }
+  section { padding: 6px 16px 12px; } h2 { font-size: 17px; margin: 8px 0; } p { margin: 0 0 6px; line-height: 1.6; }
+</style></head><body>
+<div class="top cut"><h1>${rows.title}</h1><p>${rows.company}</p></div>
+<table class="cut">${rows.table.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
+${rows.sections.map(([h, lines]) => `<section class="cut"><h2>${h}</h2>${lines.map((l) => `<p>${l}</p>`).join('')}</section>`).join('')}
+</body></html>`);
+// 캡처 경계: 블록 요소의 아래쪽 경계에서만 자른다 (글자가 잘리지 않게, 겹치지 않게)
+const bottoms = await mp.$$eval('.cut', (els) => els.map((e) => Math.ceil(e.getBoundingClientRect().bottom)));
+const cuts = [0, bottoms[1], bottoms[2], bottoms[bottoms.length - 1]];
+for (let k = 0; k < 3; k += 1) {
+  await writeFile(`${OUT}/multi-${k + 1}.png`, await mp.screenshot({ clip: { x: 0, y: cuts[k], width: 420, height: cuts[k + 1] - cuts[k] }, fullPage: true }));
+}
+// 글자가 없는 이미지 (일부 실패 확인용)
+await mp.setContent('<!doctype html><html><body style="margin:0;background:#f4f4f4"><div style="width:420px;height:300px"></div></body></html>');
+await writeFile(`${OUT}/blank.png`, await mp.screenshot({ clip: { x: 0, y: 0, width: 420, height: 300 } }));
+await mobile.close();
+
 await browser.close();
 
-// 5) 암호화 PDF
+// 6) 손상된 이미지 (PNG 시그니처만 맞고 내용은 깨짐)
+await writeFile(`${OUT}/corrupt.png`, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('broken image data (가상)')]));
+
+// 7) 암호화 PDF
 execFileSync('python3', ['-c', `
 from pypdf import PdfReader, PdfWriter
 w = PdfWriter(clone_from=PdfReader("${OUT}/contract-text.pdf"))
@@ -90,7 +142,7 @@ w.encrypt(user_password="test-only-password", algorithm="AES-256")
 w.write("${OUT}/encrypted.pdf")
 `]);
 
-// 6) 확장자만 PDF인 텍스트 파일, 손상된 PDF
+// 8) 확장자만 PDF인 텍스트 파일, 손상된 PDF
 await writeFile(`${OUT}/not-really.pdf`, '이 파일은 PDF가 아닙니다 (가상 예시).\n');
 await writeFile(`${OUT}/broken.pdf`, '%PDF-1.7\n이 파일은 손상된 PDF입니다.\n');
 

@@ -6,6 +6,7 @@ export const MAX_OCR_PAGES = 5; // 글자 인식(OCR)은 느려서 스캔 쪽수
 export const MIN_PAGE_TEXT_CHARS = 20; // 이보다 글자가 적은 PDF 쪽은 스캔 이미지로 보고 OCR
 export const LOW_CONFIDENCE = 60; // OCR 평균 신뢰도(0~100)가 이보다 낮으면 주의 안내
 export const MAX_IMAGE_SIDE = 3000; // OCR 전에 긴 변을 이 크기로 줄인다 (메모리·속도)
+export const MAX_IMAGES = 5; // 같은 문서의 연속 캡처로 보고 한 번에 처리하는 이미지 수
 
 export const UPLOAD_MESSAGES = {
   too_large: `파일이 너무 커요. ${MAX_FILE_BYTES / 1024 / 1024}MB 이하 파일만 올릴 수 있어요.`,
@@ -19,6 +20,10 @@ export const UPLOAD_MESSAGES = {
   image_decode_failed: '이미지를 열지 못했어요. 파일이 손상되지 않았는지 확인해 주세요.',
   library_failed: '파일을 읽는 도구를 불러오지 못했어요. 네트워크를 확인한 뒤 다시 시도해 주세요.',
   extract_failed: '파일에서 텍스트를 추출하지 못했어요. 내용을 직접 붙여넣어 주세요.',
+  too_many_images: `이미지는 한 번에 최대 ${MAX_IMAGES}장까지 올릴 수 있어요.`,
+  multiple_pdfs: 'PDF는 한 번에 1개만 올릴 수 있어요.',
+  pdf_with_images: 'PDF는 이미지와 함께 올릴 수 없어요. PDF만 따로 올리거나 이미지 목록을 비워 주세요.',
+  all_images_failed: '이미지에서 글자를 찾지 못했어요. 더 선명한 이미지를 올리거나 내용을 직접 입력해 주세요.',
 };
 
 // 파일 앞부분 바이트(시그니처)로 형식을 판별한다. 확장자·MIME은 바꿀 수 있어 믿지 않는다.
@@ -80,4 +85,46 @@ export function hasText(text) {
 export function fitSize(width, height, maxSide = MAX_IMAGE_SIDE) {
   const scale = Math.min(1, maxSide / Math.max(width, height));
   return { width: Math.round(width * scale), height: Math.round(height * scale), scale };
+}
+
+// 새로 고른 파일들을 이미지 목록에 넣을지, PDF 1개로 처리할지 정한다.
+// checked: [{ name, check: checkFile() 결과 }], queuedCount: 이미 목록에 있는 이미지 수
+// 반환: { pdf } | { images, overflow } | { error }, 그리고 형식·크기 검사에서 빠진 파일(rejected)
+export function planSelection(checked, queuedCount) {
+  const rejected = checked.filter((c) => !c.check.ok).map((c) => ({ name: c.name, code: c.check.code }));
+  const pdfs = checked.filter((c) => c.check.ok && c.check.kind === 'pdf');
+  const images = checked.filter((c) => c.check.ok && c.check.kind !== 'pdf');
+  if (pdfs.length > 1) return { error: 'multiple_pdfs', rejected };
+  if (pdfs.length === 1) {
+    if (images.length || queuedCount) return { error: 'pdf_with_images', rejected };
+    return { pdf: pdfs[0], rejected };
+  }
+  const room = Math.max(0, MAX_IMAGES - queuedCount);
+  return { images: images.slice(0, room), overflow: Math.max(0, images.length - room), rejected };
+}
+
+// 목록에서 index 항목을 delta(-1 위로, +1 아래로)만큼 옮긴 새 배열
+export function moveItem(list, index, delta) {
+  const to = index + delta;
+  if (to < 0 || to >= list.length) return list.slice();
+  const next = list.slice();
+  [next[index], next[to]] = [next[to], next[index]];
+  return next;
+}
+
+// 이미지별 OCR 결과를 사용자가 정한 순서대로 하나의 문서로 합친다.
+// results: [{ ok: true, text, confidence } | { ok: false, code }] (목록 순서)
+export function combineImageResults(results) {
+  const okTexts = [];
+  const failed = [];
+  results.forEach((r, index) => {
+    if (r.ok && hasText(r.text)) okTexts.push(r.text);
+    else failed.push({ index, code: r.ok ? 'no_text_found' : r.code });
+  });
+  return {
+    text: joinPages(okTexts),
+    okCount: okTexts.length,
+    failed,
+    lowConfidence: results.some((r) => r.ok && hasText(r.text) && r.confidence < LOW_CONFIDENCE),
+  };
 }
