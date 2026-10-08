@@ -11,7 +11,7 @@ async function callAndValidate(ai, { docType, segments, itemIds, feedback }, { t
     return validateResponse(raw, itemIds, segments.length);
   } catch (err) {
     if (throwFatal && err.fatal) throw err;
-    const code = `ai_call_failed:${err.code || 'unknown'}`;
+    const code = `ai_call_failed:${err.code || 'unknown'}${err.httpStatus ? `:${err.httpStatus}` : ''}`;
     return { valid: {}, errors: Object.fromEntries(itemIds.map((id) => [id, [code]])) };
   }
 }
@@ -22,7 +22,8 @@ export async function analyzeDocument({ text, docType, ai, log = () => {} }) {
   try {
     first = await callAndValidate(ai, { docType, segments, itemIds: ITEM_IDS }, { throwFatal: true });
   } catch (err) {
-    log({ event: 'analysis_failed', analyzer: ai.name, docType, segments: segments.length, error: err.code });
+    // 오류 코드·HTTP 상태·제공업체 오류 유형만 기록한다 (제공업체 메시지·원문·키는 기록하지 않음)
+    log({ event: 'analysis_failed', analyzer: ai.name, docType, segments: segments.length, error: err.code, httpStatus: err.httpStatus ?? null, providerStatus: err.providerStatus ?? null });
     throw err;
   }
   const valid = { ...first.valid };

@@ -20,6 +20,8 @@ const AI_ERROR_RESPONSES = {
   auth_failed: [503, 'AI 분석 키 인증에 실패했어요. 관리자가 GEMINI_API_KEY를 확인해야 해요.'],
   rate_limited: [429, 'AI 무료 사용량 한도에 도달했어요. 잠시 후 또는 내일 다시 시도해 주세요.'],
   timeout: [504, 'AI 응답이 늦어져 분석을 중단했어요. 잠시 후 다시 시도해 주세요.'],
+  bad_request: [502, 'AI 요청 설정에 문제가 있어 분석하지 못했어요. 관리자에게 알려 주세요.'],
+  model_not_found: [502, 'AI 모델 설정에 문제가 있어 분석하지 못했어요. 관리자에게 알려 주세요.'],
 };
 const RATE_LIMIT_MESSAGES = {
   ip: '요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.',

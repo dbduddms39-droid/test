@@ -100,3 +100,61 @@ test('첫 호출의 치명 오류는 요청 전체 오류, 재분석 중 오류�
   assert.equal(result.items.find((i) => i.id === 'salary').status, 'unavailable');
   assert.equal(result.items.find((i) => i.id === 'duties').status, 'stated');
 });
+
+// Google 오류 본문 형태의 ApiError
+const googleError = (status, providerStatus, message, reason) => new ApiError({
+  status,
+  message: JSON.stringify({ error: { code: status, message, status: providerStatus, details: reason ? [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason }] : [] } }),
+});
+
+test('HTTP 상태와 제공업체 오류 유형·메시지를 구분해 담는다', async () => {
+  const ai = createGeminiAnalyzer({ client: fakeClient(() => { throw googleError(400, 'INVALID_ARGUMENT', 'Invalid JSON payload: unknown schema field'); }) });
+  await assert.rejects(ai.analyze(args(SAMPLES[0])), (e) => e.code === 'bad_request' && e.fatal
+    && e.httpStatus === 400 && e.providerStatus === 'INVALID_ARGUMENT' && e.providerMessage.includes('unknown schema field'));
+});
+
+test('404는 모델 없음, 잘못된 키(400 API_KEY_INVALID)는 인증 오류', async () => {
+  const mk = (err) => createGeminiAnalyzer({ client: fakeClient(() => { throw err; }) });
+  await assert.rejects(mk(googleError(404, 'NOT_FOUND', 'models/x is not found')).analyze(args(SAMPLES[0])), (e) => e.code === 'model_not_found' && e.fatal && e.httpStatus === 404);
+  await assert.rejects(mk(googleError(400, 'INVALID_ARGUMENT', 'API key not valid.', 'API_KEY_INVALID')).analyze(args(SAMPLES[0])),
+    (e) => e.code === 'auth_failed' && e.providerStatus === 'INVALID_ARGUMENT/API_KEY_INVALID');
+  await assert.rejects(mk(googleError(503, 'UNAVAILABLE', 'overloaded')).analyze(args(SAMPLES[0])), (e) => e.code === 'api_error' && !e.fatal && e.httpStatus === 503);
+});
+
+test('제공업체 메시지에서 키처럼 보이는 값을 가린다', async () => {
+  const ai = createGeminiAnalyzer({ client: fakeClient(() => { throw googleError(400, 'INVALID_ARGUMENT', 'bad request for key=AIzaSyFAKEFAKEFAKEFAKE1234 ?key=abc'); }) });
+  await assert.rejects(ai.analyze(args(SAMPLES[0])), (e) => !e.providerMessage.includes('AIzaSy') && !e.providerMessage.includes('abc'));
+});
+
+test('요청 설정 오류(400)는 같은 요청을 재시도하지 않는다', async () => {
+  const sample = SAMPLES[0];
+  const client = fakeClient(() => { throw googleError(400, 'INVALID_ARGUMENT', 'schema error'); });
+  await assert.rejects(
+    analyzeDocument({ text: sample.text, docType: sample.docType, ai: createGeminiAnalyzer({ client }) }),
+    (e) => e.code === 'bad_request',
+  );
+  assert.equal(client.requests.length, 1);
+});
+
+test('일시 오류(5xx)는 기존 규칙대로 한 번만 재분석하고, 실패 코드에 HTTP 상태를 남긴다', async () => {
+  const sample = SAMPLES[0];
+  const client = fakeClient(() => { throw googleError(500, 'INTERNAL', 'internal'); });
+  const result = await analyzeDocument({ text: sample.text, docType: sample.docType, ai: createGeminiAnalyzer({ client }) });
+  assert.equal(client.requests.length, 2);
+  assert.deepEqual(result.items[0].errorCodes, ['ai_call_failed:api_error:500']);
+});
+
+test('모델 사전 점검: 성공 / 404면 flash 모델 이름만 참고로 수집', async () => {
+  const okClient = { models: { get: async () => ({ name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' }) } };
+  assert.equal((await createGeminiAnalyzer({ client: okClient }).checkModel()).ok, true);
+  const missing = {
+    models: {
+      get: async () => { throw googleError(404, 'NOT_FOUND', 'not found'); },
+      list: async () => [{ name: 'models/gemini-x-flash', supportedActions: ['generateContent'] }, { name: 'models/gemini-x-pro', supportedActions: ['generateContent'] }],
+    },
+  };
+  const r = await createGeminiAnalyzer({ client: missing }).checkModel();
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'model_not_found');
+  assert.deepEqual(r.availableFlashModels, ['models/gemini-x-flash']);
+});
