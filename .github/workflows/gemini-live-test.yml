@@ -1,0 +1,61 @@
+# 실제 Gemini API(무료 등급) 연결 테스트 — 수동 실행 전용
+# - 가상 채용공고 샘플 1건(X3_intern_word)만 분석한다. 실제 개인정보 문서는 쓰지 않는다.
+# - GEMINI_API_KEY는 GitHub Actions Secrets에서만 읽고, 로그에 출력하지 않는다.
+# - 모델은 무료 등급 gemini-2.5-flash로 고정한다. 앱 코드에 유료 모델 자동 전환(fallback)은 없다.
+name: Gemini live test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gemini-live-test
+  cancel-in-progress: false
+
+jobs:
+  live-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests (no API calls)
+        run: npm test
+
+      - name: Check that the secret is registered
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::error::GEMINI_API_KEY secret is not registered (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+          echo "GEMINI_API_KEY is registered."
+
+      - name: Live Gemini test (1 fictional job posting)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-2.5-flash
+          AI_TIMEOUT_MS: '60000'
+        run: npm run eval:live -- --samples=X3_intern_word
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemini-live-report
+          path: docs/test-report-live.md
+          if-no-files-found: warn
+          retention-days: 14

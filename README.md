@@ -46,6 +46,11 @@ npm run eval:live -- --samples=S2_vague   # 일부 샘플만 실행 (무료 사�
 
 샘플은 모두 가상 문서입니다. 무료 등급 API에는 실제 개인정보가 담긴 문서를 넣지 마세요.
 
+### GitHub Actions에서 실제 Gemini 연결 테스트
+
+`.github/workflows/gemini-live-test.yml` — 수동 실행 전용. 저장소 Secrets의 `GEMINI_API_KEY`로 가상 채용공고 1건(`X3_intern_word`)을 `gemini-2.5-flash`로 분석하고, 보고서(`gemini-live-report`)를 아티팩트로 올립니다.
+실행: 저장소 **Actions** 탭 → 왼쪽 **Gemini live test** → **Run workflow** → **Run workflow**.
+
 ## 구조
 
 ```

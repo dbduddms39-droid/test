@@ -15,6 +15,10 @@ import { SAMPLES as ALL_SAMPLES } from '../test/samples.js';
 const live = process.argv.includes('--live');
 const only = process.argv.find((a) => a.startsWith('--samples='))?.slice('--samples='.length).split(',');
 const SAMPLES = only ? ALL_SAMPLES.filter((s) => only.includes(s.key)) : ALL_SAMPLES;
+if (!SAMPLES.length) {
+  console.error(`일치하는 샘플이 없어요: ${only.join(', ')}`);
+  process.exit(1);
+}
 // 무료 등급 분당 요청 한도를 넘지 않도록 실제 API 실행 시 샘플 사이에 쉰다.
 const PAUSE_MS = live ? Number(process.env.EVAL_PAUSE_MS) || 15_000 : 0;
 if (live && !process.env.GEMINI_API_KEY) {
@@ -33,6 +37,7 @@ const ai = {
   },
 };
 const apiErrors = [];
+let callFailure = null;
 const log = (e) => { if (e.event === 'analysis_done' && Object.keys(e.firstPassErrors).length) apiErrors.push(e); };
 const out = `docs/test-report-${live ? 'live' : 'demo'}.md`;
 
@@ -48,7 +53,10 @@ for (const [i, sample] of SAMPLES.entries()) {
   try {
     result = await analyzeDocument({ text: sample.text, docType: sample.docType, ai, log });
   } catch (err) {
-    console.error(`${sample.key}: AI 호출 실패 (${err.code ?? err.message}) — 중단합니다.`);
+    // 오류 코드만 남긴다 (키·원문이 섞일 수 있는 원본 메시지는 출력하지 않음)
+    callFailure = `${sample.key}: ${err.code ?? 'unknown_error'}`;
+    console.error(`${sample.key}: AI 호출 실패 (${err.code ?? 'unknown_error'}) — 중단합니다.`);
+    process.exitCode = 1;
     break;
   }
   const rows = scoreSample(sample, result);
@@ -75,6 +83,7 @@ const header = [
   `- 실행 시각: ${new Date().toISOString()}`,
   `- 분석기: ${ai.name}${live ? ` / ${ai.model}` : ''}`,
   `- 샘플: ${SAMPLES.map((x) => x.key).join(', ')} (모두 가상 문서)`,
+  `- AI 호출 실패: ${callFailure ?? '없음'}`,
   `- 1차 응답 검증 실패(재분석 발생): ${apiErrors.length ? apiErrors.map((e) => JSON.stringify(e.firstPassErrors)).join('; ') : '없음'}`,
   `- 상태 일치: ${s.statusOk}/${s.total} (${(s.statusAccuracy * 100).toFixed(1)}%)`,
   `- 근거 정확(정확히 일치): ${s.evidenceExact}/${s.evidenceTotal}, 부분 일치: ${s.evidencePartial}, 틀림·누락: ${s.evidenceWrongOrMissing}`,
