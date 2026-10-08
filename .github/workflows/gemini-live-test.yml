@@ -1,7 +1,7 @@
 # 실제 Gemini API(무료 등급) 연결 테스트 — 수동 실행 전용
 # - 가상 채용공고 샘플 1건(X3_intern_word)만 분석한다. 실제 개인정보 문서는 쓰지 않는다.
 # - GEMINI_API_KEY는 GitHub Actions Secrets에서만 읽고, 로그에 출력하지 않는다.
-# - 모델은 무료 등급 gemini-2.5-flash로 고정한다. 앱 코드에 유료 모델 자동 전환(fallback)은 없다.
+# - 모델은 무료 등급 gemini-3.8-flash로 고정한다. 앱 코드에 유료 모델 자동 전환(fallback)은 없다.
 name: Gemini live test
 
 on:
@@ -47,7 +47,7 @@ jobs:
       - name: Live Gemini test (1 fictional job posting)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: gemini-2.5-flash
+          GEMINI_MODEL: gemini-3.8-flash
           AI_TIMEOUT_MS: '60000'
         run: npm run eval:live -- --samples=X3_intern_word
 

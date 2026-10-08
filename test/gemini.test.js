@@ -24,14 +24,14 @@ function fakeClient(respond) {
 const ok = (obj, finishReason = 'STOP') => ({ text: JSON.stringify(obj), candidates: [{ finishReason }] });
 const args = (sample) => ({ docType: sample.docType, segments: segmentText(sample.text), itemIds: ITEM_IDS });
 
-test('gemini-2.5-flash에 구조화 JSON 스키마로 요청하고, 유료 fallback 설정이 없다', async () => {
+test('gemini-3.8-flash에 구조화 JSON 스키마로 요청하고, 유료 fallback 설정이 없다', async () => {
   const sample = SAMPLES[0];
   const client = fakeClient(() => ok(idealResponse(sample)));
   const ai = createGeminiAnalyzer({ client });
   const raw = await ai.analyze(args(sample));
   assert.equal(raw.items.length, 8);
   const req = client.requests[0];
-  assert.equal(req.model, 'gemini-2.5-flash');
+  assert.equal(req.model, 'gemini-3.8-flash');
   assert.equal(req.config.responseMimeType, 'application/json');
   assert.deepEqual(req.config.responseJsonSchema.properties.items.items.properties.id.enum, ITEM_IDS);
   assert.ok(req.config.abortSignal, '타임아웃 신호를 건다');
@@ -145,7 +145,7 @@ test('일시 오류(5xx)는 기존 규칙대로 한 번만 재분석하고, 실�
 });
 
 test('모델 사전 점검: 성공 / 404면 flash 모델 이름만 참고로 수집', async () => {
-  const okClient = { models: { get: async () => ({ name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' }) } };
+  const okClient = { models: { get: async () => ({ name: 'models/gemini-3.8-flash', displayName: 'Gemini 3.8 Flash' }) } };
   assert.equal((await createGeminiAnalyzer({ client: okClient }).checkModel()).ok, true);
   const missing = {
     models: {

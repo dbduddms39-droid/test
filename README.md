@@ -5,7 +5,7 @@
 
 ## 실행 방법
 
-Node.js 20 이상이 필요합니다. AI 분석은 **Google Gemini API 무료 등급**(`gemini-2.5-flash`)을 사용하며, 유료 모델로 자동 전환하지 않습니다.
+Node.js 20 이상이 필요합니다. AI 분석은 **Google Gemini API 무료 등급**(`gemini-3.8-flash`)을 사용하며, 유료 모델로 자동 전환하지 않습니다.
 
 ```bash
 npm install
@@ -24,7 +24,7 @@ npm run demo              # DEMO_MODE=true — 키워드 규칙 데모 (AI 아�
 | 이름 | 기본값 | 설명 |
 |---|---|---|
 | `GEMINI_API_KEY` | (없음) | Gemini API 키. 서버에서만 읽음 |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | 사용할 모델 |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | 사용할 모델 |
 | `DEMO_MODE` | (꺼짐) | `true`일 때만 데모 분석기 사용 |
 | `AI_TIMEOUT_MS` | `60000` | AI 호출 1회 제한 시간 |
 | `RATE_LIMIT_PER_IP` / `RATE_LIMIT_WINDOW_MS` | `5` / `60000` | IP별 요청 제한 |
@@ -48,7 +48,7 @@ npm run eval:live -- --samples=S2_vague   # 일부 샘플만 실행 (무료 사�
 
 ### GitHub Actions에서 실제 Gemini 연결 테스트
 
-`.github/workflows/gemini-live-test.yml` — 수동 실행 전용. 저장소 Secrets의 `GEMINI_API_KEY`로 가상 채용공고 1건(`X3_intern_word`)을 `gemini-2.5-flash`로 분석하고, 보고서(`gemini-live-report`)를 아티팩트로 올립니다.
+`.github/workflows/gemini-live-test.yml` — 수동 실행 전용. 저장소 Secrets의 `GEMINI_API_KEY`로 가상 채용공고 1건(`X3_intern_word`)을 `gemini-3.8-flash`로 분석하고, 보고서(`gemini-live-report`)를 아티팩트로 올립니다.
 실행: 저장소 **Actions** 탭 → 왼쪽 **Gemini live test** → **Run workflow** → **Run workflow**.
 
 ## 구조

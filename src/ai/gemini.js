@@ -8,7 +8,7 @@ const BLOCKED_FINISH = ['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT
 
 export function createGeminiAnalyzer({
   apiKey = process.env.GEMINI_API_KEY,
-  model = process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+  model = process.env.GEMINI_MODEL || 'gemini-3.8-flash',
   timeoutMs = Number(process.env.AI_TIMEOUT_MS) || 60_000,
   client = apiKey ? new GoogleGenAI({ apiKey }) : null,
 } = {}) {
