@@ -1,0 +1,20 @@
+{
+  "name": "ildan-hwagin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "일단확인 — 채용공고·오퍼·근로계약서의 근로조건 기재 상태 확인 MVP",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test \"test/*.test.js\"",
+    "report": "node scripts/run-samples.js",
+    "eval:live": "node scripts/run-samples.js --live"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.132.1"
+  }
+}

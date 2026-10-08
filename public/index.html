@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>일단확인</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#/" class="brand">일단확인</a>
+    <span id="mode-badge" class="mode-badge" hidden>데모 모드</span>
+  </header>
+
+  <main>
+    <!-- 화면 01: 문서 입력 -->
+    <section id="view-input" class="view">
+      <h1>근로조건, 문서에 어떻게 적혀 있는지 일단 확인해요</h1>
+      <p class="lead">채용공고, 오퍼 안내, 근로계약서를 붙여넣으면 주요 근로조건이 적혀 있는지 항목별로 정리해 드려요.</p>
+
+      <form id="input-form" novalidate>
+        <fieldset class="doc-types">
+          <legend>문서 유형</legend>
+          <label><input type="radio" name="docType" value="job_posting" checked> 채용공고</label>
+          <label><input type="radio" name="docType" value="offer"> 오퍼·문자·메일</label>
+          <label><input type="radio" name="docType" value="contract"> 근로계약서</label>
+        </fieldset>
+
+        <label for="doc-text" class="field-label">문서 내용</label>
+        <textarea id="doc-text" name="text" rows="14" maxlength="20000"
+          placeholder="문서 내용을 그대로 붙여넣어 주세요."></textarea>
+        <div class="char-count"><span id="char-count">0</span> / 20,000자</div>
+
+        <p class="privacy" role="note">입력한 내용은 분석을 위해 AI 서비스로 전송돼요. 이름·주민등록번호·주소 등 개인정보는 가린 뒤 입력해 주세요.</p>
+
+        <p id="input-error" class="error" role="alert" hidden></p>
+        <button type="submit" id="submit-btn" class="primary">분석 시작</button>
+      </form>
+    </section>
+
+    <!-- 화면 02: 분석 결과 -->
+    <section id="view-result" class="view" hidden>
+      <a href="#/" class="back">← 다시 입력</a>
+      <p class="doc-type-chip" id="result-doc-type"></p>
+      <h1>분석 결과</h1>
+      <ul id="summary" class="summary"></ul>
+      <ul id="item-list" class="item-list"></ul>
+      <p class="notice" id="result-notice"></p>
+    </section>
+
+    <!-- 화면 03: 원문 상세 -->
+    <section id="view-detail" class="view" hidden>
+      <a href="#/result" class="back">← 결과로 돌아가기</a>
+      <div id="detail"></div>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
