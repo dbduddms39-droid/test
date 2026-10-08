@@ -56,6 +56,13 @@ npm run eval:live -- --samples=S2_vague   # 일부 샘플만 실행 (무료 사�
 `.github/workflows/web-e2e.yml` — 수동 실행 전용. 러너에서 웹 서버를 띄우고 실제 브라우저로 문서 유형 선택 → 가상 채용공고 붙여넣기 → 분석 시작 → 8개 항목 결과 → 원문 근거 확인을 진행합니다. 브라우저로 전달된 응답·페이지·서버 로그에 API 키가 없는지도 검사하고, 화면 캡처를 `web-e2e-screenshots` 아티팩트로 올립니다.
 로컬: `DEMO_MODE=true node scripts/e2e-browser.mjs` (키 없이 흐름만, 데모 결과)
 
+### Vercel 배포 (Hobby 무료 플랜)
+
+- 별도 설정 파일 없이 배포됩니다. Vercel이 루트의 `server.js`를 감지해 Node 서버리스 함수(Node 22)로 실행하고, `public/` 파일은 정적 파일로 제공합니다. `server.js`는 Vercel용으로 `(req, res)` 핸들러를 default export 합니다 (로컬 `node server.js` 실행 방식은 그대로).
+- Vercel 프로젝트의 **Settings → Environment Variables**에 `GEMINI_API_KEY`를 등록합니다. `NEXT_PUBLIC_` 같은 접두사를 붙이지 않습니다. `DEMO_MODE`는 등록하지 않습니다.
+- 요청 제한은 함수 인스턴스 메모리에 저장되므로 인스턴스마다 따로 세고, 인스턴스가 바뀌면 초기화됩니다. 무제한 호출을 완전히 막지 못하며, 최종 상한은 Gemini 무료 등급 한도(HTTP 429)입니다. 결제가 연결되지 않은 키라면 한도 초과 시 요금이 아니라 분석 불가로 끝납니다.
+- Vercel에서는 `X-Forwarded-For`의 첫 IP로 사용자를 구분합니다 (`VERCEL=1`일 때 자동).
+
 ### 웹앱 서버에 키 등록
 
 GitHub Actions Secrets는 Actions 실행에만 쓰이고, 웹앱을 배포한 서버에는 자동으로 들어가지 않습니다. 웹앱을 실행하는 서버(호스팅 서비스)의 **환경변수 설정**에 `GEMINI_API_KEY`를 따로 등록하세요. 키는 서버 프로세스만 읽고(`src/ai/gemini.js`), 브라우저로 보내는 응답(`/api/config`, `/api/analyze`, 정적 파일)에는 포함되지 않습니다. 코드·`.env` 커밋·프런트엔드 파일에 키를 넣지 마세요.

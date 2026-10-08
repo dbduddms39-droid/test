@@ -5,7 +5,7 @@
   "description": "일단확인 — 채용공고·오퍼·근로계약서의 근로조건 기재 상태 확인 MVP",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   },
   "scripts": {
     "start": "node server.js",

@@ -1,4 +1,7 @@
 // 일단확인 MVP 서버: 정적 파일 제공 + POST /api/analyze
+// - 로컬: `node server.js` 로 직접 실행 (아래 맨 끝 블록)
+// - Vercel: 루트의 server.js를 Node 서버리스 함수로 import 해서 default export (req, res) 핸들러를 호출한다.
+//   public/ 정적 파일은 Vercel이 직접 제공한다.
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -32,18 +35,24 @@ const RATE_LIMIT_MESSAGES = {
 // 원문을 포함하지 않는 메타 정보만 기록한다.
 const log = (entry) => console.log(JSON.stringify({ time: new Date().toISOString(), ...entry }));
 
-export function createServer({ ai, limiter = createRateLimiter(), trustProxy = false }) {
-  const server = http.createServer(async (req, res) => {
+// (req, res) 요청 처리기. 로컬 http 서버와 Vercel 함수가 같은 처리기를 쓴다.
+export function createHandler({ ai, limiter = createRateLimiter(), trustProxy = false }) {
+  return async (req, res) => {
     try {
       if (req.method === 'POST' && req.url === '/api/analyze') return await handleAnalyze(req, res, { ai, limiter, trustProxy });
       if (req.method === 'GET' && req.url === '/api/config') return sendJson(res, 200, { mode: ai.name });
       if (req.method === 'GET') return await serveStatic(req, res);
       sendJson(res, 405, { error: '지원하지 않는 요청이에요.' });
     } catch (err) {
-      log({ event: 'server_error', message: err.message });
+      // 오류 메시지에는 입력 일부가 섞일 수 있어(예: JSON 파싱 오류) 오류 종류만 기록한다.
+      log({ event: 'server_error', name: err?.name ?? 'Error', code: err?.code ?? null });
       if (!res.headersSent) sendJson(res, 500, { error: '서버 오류가 발생했어요. 잠시 후 다시 시도해 주세요.' });
     }
-  });
+  };
+}
+
+export function createServer(options) {
+  const server = http.createServer(createHandler(options));
   // 요청 본문 수신 제한 시간 (AI 응답 시간은 AI_TIMEOUT_MS로 별도 제한)
   server.requestTimeout = 30_000;
   server.headersTimeout = 15_000;
@@ -117,19 +126,37 @@ function sendJson(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+const envInt = (name, fallback) => Number(process.env[name]) || fallback;
+
+// 환경변수로 서버 구성을 만든다. 키는 서버 환경변수(GEMINI_API_KEY)에서만 읽는다.
+export function configFromEnv(env = process.env) {
   // 데모 모드는 DEMO_MODE=true 로 명시했을 때만. 키가 없다고 데모로 바꾸지 않는다.
-  const demo = process.env.DEMO_MODE === 'true';
-  const ai = demo ? createDemoAnalyzer() : createGeminiAnalyzer();
-  const envInt = (name, fallback) => Number(process.env[name]) || fallback;
-  const limiter = createRateLimiter({
-    perIp: envInt('RATE_LIMIT_PER_IP', 5),
-    windowMs: envInt('RATE_LIMIT_WINDOW_MS', 60_000),
-    globalPerMinute: envInt('RATE_LIMIT_GLOBAL_PER_MINUTE', 4),
-    globalPerDay: envInt('RATE_LIMIT_GLOBAL_PER_DAY', 100),
-  });
+  const demo = env.DEMO_MODE === 'true';
+  return {
+    demo,
+    ai: demo ? createDemoAnalyzer() : createGeminiAnalyzer(),
+    limiter: createRateLimiter({
+      perIp: envInt('RATE_LIMIT_PER_IP', 5),
+      windowMs: envInt('RATE_LIMIT_WINDOW_MS', 60_000),
+      globalPerMinute: envInt('RATE_LIMIT_GLOBAL_PER_MINUTE', 4),
+      globalPerDay: envInt('RATE_LIMIT_GLOBAL_PER_DAY', 100),
+    }),
+    // Vercel(VERCEL=1)은 프록시 뒤에서 실행되므로 X-Forwarded-For로 사용자 IP를 판단한다.
+    trustProxy: env.TRUST_PROXY === 'true' || env.VERCEL === '1',
+  };
+}
+
+// Vercel 함수 진입점. 첫 요청 때 구성을 만들고, 같은 인스턴스가 살아 있는 동안 재사용한다.
+let vercelHandler = null;
+export default async function handler(req, res) {
+  vercelHandler ??= createHandler(configFromEnv());
+  return vercelHandler(req, res);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const { demo, ai, limiter, trustProxy } = configFromEnv();
   const port = envInt('PORT', 3000);
-  createServer({ ai, limiter, trustProxy: process.env.TRUST_PROXY === 'true' }).listen(port, () => {
+  createServer({ ai, limiter, trustProxy }).listen(port, () => {
     const mode = demo ? 'demo (DEMO_MODE=true — AI가 아닌 키워드 규칙 결과)' : `gemini (${ai.model})`;
     console.log(`일단확인 서버: http://localhost:${port} — 분석기: ${mode}`);
     if (!demo && !process.env.GEMINI_API_KEY) console.log('경고: GEMINI_API_KEY가 없어 분석 요청은 오류로 안내됩니다.');
