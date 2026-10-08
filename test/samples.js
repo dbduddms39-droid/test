@@ -190,4 +190,71 @@ export const SAMPLES = [
       probation_pay: { status: 'hidden', presence: 'not_found' },
     },
   },
+  // --- S3 계약기간 오판 회귀 샘플: 시작일만 있으면 계약기간 아님, 종료일·기간 길이가 있으면 계약기간 ---
+  {
+    key: 'X4_start_date_only',
+    title: '추가: 근무 시작일만 있고 계약기간은 없음',
+    docType: 'contract',
+    text: `근로계약서 (요약본)
+근무 시작일: 2026년 12월 1일
+고용형태: 정규직
+근무장소: 인천광역시 연수구 송도과학로 00
+업무내용: 물류 시스템 운영 지원
+근로시간: 09:00~18:00 (휴게 1시간), 주 5일
+월 기본급: 2,800,000원`,
+    expected: {
+      salary: { status: 'stated', evidence: ['월 기본급'] },
+      work_hours: { status: 'stated', evidence: ['근로시간'] },
+      workplace: { status: 'stated', evidence: ['근무장소'] },
+      duties: { status: 'stated', evidence: ['업무내용'] },
+      employment_type: { status: 'stated', evidence: ['고용형태'], employment: 'permanent' },
+      contract_period: { status: 'hidden', presence: 'not_found' },
+      probation_period: { status: 'hidden', presence: 'not_found' },
+      probation_pay: { status: 'hidden', presence: 'not_found' },
+    },
+  },
+  {
+    key: 'X5_contract_end_date',
+    title: '추가: 시작일과 종료일이 있는 계약기간',
+    docType: 'offer',
+    text: `[OO리서치] 연구보조원 합격 안내
+고용형태: 계약직(기간제)
+계약 기간은 2026년 11월 10일부터 2027년 5월 9일까지입니다.
+근무시간: 10:00~17:00, 주 5일
+근무지: 광주광역시 북구 첨단과기로
+업무: 설문 데이터 정리 및 입력
+급여: 월 230만원`,
+    expected: {
+      salary: { status: 'stated', evidence: ['급여'] },
+      work_hours: { status: 'stated', evidence: ['근무시간'] },
+      workplace: { status: 'stated', evidence: ['근무지'] },
+      duties: { status: 'stated', evidence: ['업무:'] },
+      employment_type: { status: 'stated', evidence: ['고용형태'], employment: 'fixed_term' },
+      contract_period: { status: 'stated', evidence: ['계약 기간은'] },
+      probation_period: { status: 'hidden', presence: 'not_found' },
+      probation_pay: { status: 'hidden', presence: 'not_found' },
+    },
+  },
+  {
+    key: 'X6_contract_duration_only',
+    title: '추가: 기간 길이(6개월)로 적힌 계약기간',
+    docType: 'job_posting',
+    text: `행사 운영 스태프 모집
+채용형태: 계약직
+근무 기간: 6개월 (2027년 1월 4일 입사)
+근무시간: 평일 09:00~18:00
+근무지: 서울 송파구 올림픽로
+담당업무: 행사장 안내 및 운영 보조
+시급: 11,000원`,
+    expected: {
+      salary: { status: 'stated', evidence: ['시급'] },
+      work_hours: { status: 'stated', evidence: ['근무시간'] },
+      workplace: { status: 'stated', evidence: ['근무지'] },
+      duties: { status: 'stated', evidence: ['담당업무'] },
+      employment_type: { status: 'stated', evidence: ['채용형태'], employment: 'fixed_term' },
+      contract_period: { status: 'stated', evidence: ['근무 기간: 6개월'] },
+      probation_period: { status: 'hidden', presence: 'not_found' },
+      probation_pay: { status: 'hidden', presence: 'not_found' },
+    },
+  },
 ];

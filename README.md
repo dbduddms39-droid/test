@@ -5,7 +5,7 @@
 
 ## 실행 방법
 
-Node.js 20 이상이 필요합니다. AI 분석은 **Google Gemini API 무료 등급**(`gemini-3.8-flash`)을 사용하며, 유료 모델로 자동 전환하지 않습니다.
+Node.js 20 이상이 필요합니다. AI 분석은 **Google Gemini API 무료 등급**(`gemini-3.5-flash-lite`)을 사용하며, 유료 모델로 자동 전환하지 않습니다.
 
 ```bash
 npm install
@@ -24,7 +24,7 @@ npm run demo              # DEMO_MODE=true — 키워드 규칙 데모 (AI 아�
 | 이름 | 기본값 | 설명 |
 |---|---|---|
 | `GEMINI_API_KEY` | (없음) | Gemini API 키. 서버에서만 읽음 |
-| `GEMINI_MODEL` | `gemini-3.8-flash` | 사용할 모델 |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | 사용할 모델 |
 | `DEMO_MODE` | (꺼짐) | `true`일 때만 데모 분석기 사용 |
 | `AI_TIMEOUT_MS` | `60000` | AI 호출 1회 제한 시간 |
 | `RATE_LIMIT_PER_IP` / `RATE_LIMIT_WINDOW_MS` | `5` / `60000` | IP별 요청 제한 |
@@ -48,8 +48,17 @@ npm run eval:live -- --samples=S2_vague   # 일부 샘플만 실행 (무료 사�
 
 ### GitHub Actions에서 실제 Gemini 연결 테스트
 
-`.github/workflows/gemini-live-test.yml` — 수동 실행 전용. 저장소 Secrets의 `GEMINI_API_KEY`로 가상 문서 샘플 8건 전체를 `gemini-3.5-flash-lite`(테스트 전용, 앱 기본 모델 `gemini-3.8-flash`와 별개)로 분석하고, 보고서(`gemini-live-report`)를 아티팩트로 올립니다.
-실행: 저장소 **Actions** 탭 → 왼쪽 **Gemini live test** → **Run workflow** → **Run workflow**.
+`.github/workflows/gemini-live-test.yml` — 수동 실행 전용. 저장소 Secrets의 `GEMINI_API_KEY`로 가상 문서 샘플 8건 전체를 앱 기본 모델과 같은 `gemini-3.5-flash-lite`로 분석하고, 보고서(`gemini-live-report`)를 아티팩트로 올립니다.
+실행: 저장소 **Actions** 탭 → 왼쪽 **Gemini live test** → **Run workflow** → (선택) `samples`에 `S3_missing`처럼 샘플 키 입력 → **Run workflow**.
+
+### 브라우저 사용자 흐름 확인 (E2E)
+
+`.github/workflows/web-e2e.yml` — 수동 실행 전용. 러너에서 웹 서버를 띄우고 실제 브라우저로 문서 유형 선택 → 가상 채용공고 붙여넣기 → 분석 시작 → 8개 항목 결과 → 원문 근거 확인을 진행합니다. 브라우저로 전달된 응답·페이지·서버 로그에 API 키가 없는지도 검사하고, 화면 캡처를 `web-e2e-screenshots` 아티팩트로 올립니다.
+로컬: `DEMO_MODE=true node scripts/e2e-browser.mjs` (키 없이 흐름만, 데모 결과)
+
+### 웹앱 서버에 키 등록
+
+GitHub Actions Secrets는 Actions 실행에만 쓰이고, 웹앱을 배포한 서버에는 자동으로 들어가지 않습니다. 웹앱을 실행하는 서버(호스팅 서비스)의 **환경변수 설정**에 `GEMINI_API_KEY`를 따로 등록하세요. 키는 서버 프로세스만 읽고(`src/ai/gemini.js`), 브라우저로 보내는 응답(`/api/config`, `/api/analyze`, 정적 파일)에는 포함되지 않습니다. 코드·`.env` 커밋·프런트엔드 파일에 키를 넣지 마세요.
 
 ## 구조
 

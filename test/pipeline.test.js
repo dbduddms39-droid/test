@@ -129,3 +129,29 @@ test('상단 요약은 표시되는 항목만 센다', async () => {
   const result = await analyzeDocument({ text: sample.text, docType: sample.docType, ai: scriptedAI(idealResponse(sample)) });
   assert.deepEqual(result.summary, { stated: 2, unclear: 0, not_found: 3, unavailable: 0 });
 });
+
+test('계약기간 지시문: 시작일만으로는 계약기간이 아니고, 종료일·기간 길이가 있으면 계약기간', async () => {
+  const { SYSTEM_PROMPT } = await import('../src/ai/prompt.js');
+  assert.match(SYSTEM_PROMPT, /시작 날짜만 있는 문장은 계약기간이 아닙니다/);
+  assert.match(SYSTEM_PROMPT, /종료일이나 기간 길이가 함께 적혀 있지 않으면 not_found/);
+});
+
+test('시작일만 있는 문서(X4)는 계약기간을 숨기고, 종료일(X5)·기간 길이(X6)가 있으면 명시됨으로 표시', async () => {
+  for (const [key, visible, status] of [['X4_start_date_only', false, 'not_found'], ['X5_contract_end_date', true, 'stated'], ['X6_contract_duration_only', true, 'stated']]) {
+    const sample = byKey(key);
+    const result = await analyzeDocument({ text: sample.text, docType: sample.docType, ai: scriptedAI(idealResponse(sample)) });
+    const cp = itemOf(result, 'contract_period');
+    assert.equal(cp.visible, visible, key);
+    assert.equal(cp.status, status, key);
+  }
+});
+
+test('AI가 시작일 문장을 계약기간으로 잘못 고르면(S3 오판) 채점에서 불일치로 잡힌다', async () => {
+  const sample = byKey('S3_missing');
+  const wrong = idealResponse(sample);
+  Object.assign(wrong.items.find((i) => i.id === 'contract_period'), { presence: 'found', specificity: 'specific', evidence_ids: [3] });
+  const result = await analyzeDocument({ text: sample.text, docType: sample.docType, ai: scriptedAI(wrong) });
+  const row = scoreSample(sample, result).find((r) => r.item === 'contract_period');
+  assert.equal(row.statusMatch, false);
+  assert.equal(row.actualStatus, 'stated');
+});

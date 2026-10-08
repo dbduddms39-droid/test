@@ -1,0 +1,54 @@
+# 웹앱 실제 사용자 흐름 확인 (브라우저 E2E) — 수동 실행 전용
+# - 러너 안에서 웹 서버를 띄우고, 실제 브라우저(Chromium)로 가상 채용공고 1건을 분석한다.
+#   문서 유형 선택 → 붙여넣기 → 분석 시작 → 8개 항목 결과 → 항목별 원문 근거 확인.
+# - GEMINI_API_KEY는 GitHub Actions Secrets에서 서버 프로세스 환경변수로만 전달한다.
+#   브라우저 응답·페이지·서버 로그에 키가 없는지 스크립트가 함께 검사한다.
+# - 모델은 무료 등급 gemini-3.5-flash-lite. 유료 모델 자동 전환(fallback)은 없다.
+name: Web E2E (browser)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-e2e
+  cancel-in-progress: false
+
+jobs:
+  browser-flow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser flow with real Gemini analysis (1 fictional job posting)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-3.5-flash-lite
+          AI_TIMEOUT_MS: '60000'
+          E2E_REQUIRE_AI: 'true'
+        run: node scripts/e2e-browser.mjs
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-e2e-screenshots
+          path: e2e-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
