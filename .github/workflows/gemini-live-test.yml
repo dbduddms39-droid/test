@@ -1,5 +1,5 @@
 # 실제 Gemini API(무료 등급) 연결 테스트 — 수동 실행 전용
-# - 가상 채용공고 샘플 1건(X3_intern_word)만 분석한다. 실제 개인정보 문서는 쓰지 않는다.
+# - 가상 문서 샘플 8건 전체를 분석한다 (샘플 사이 15초 대기). 실제 개인정보 문서는 쓰지 않는다.
 # - GEMINI_API_KEY는 GitHub Actions Secrets에서만 읽고, 로그에 출력하지 않는다.
 # - 이 테스트는 무료 등급 gemini-3.5-flash-lite로 고정한다 (앱 기본 모델 gemini-3.8-flash가 503 과부하로 응답하지 않아 테스트용으로만 변경).
 #   앱 코드의 기본 모델은 바뀌지 않으며, 유료 모델 자동 전환(fallback)은 없다.
@@ -18,7 +18,7 @@ concurrency:
 jobs:
   live-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,12 +45,17 @@ jobs:
           fi
           echo "GEMINI_API_KEY is registered."
 
-      - name: Live Gemini test (1 fictional job posting)
+      - name: Live Gemini test (8 fictional documents)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: gemini-3.5-flash-lite
           AI_TIMEOUT_MS: '60000'
-        run: npm run eval:live -- --samples=X3_intern_word
+        run: npm run eval:live
+
+      # 보고서에는 상태·근거 번호·AI 응답 JSON만 있고 문서 원문과 키는 없다.
+      - name: Print report
+        if: always()
+        run: cat docs/test-report-live.md || true
 
       - name: Upload report
         if: always()
