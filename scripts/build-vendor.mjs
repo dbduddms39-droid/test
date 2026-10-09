@@ -17,6 +17,8 @@ const tess = pkgDir('tesseract.js');
 const core = pkgDir('tesseract.js-core');
 const kor = pkgDir('@tesseract.js-data/kor');
 const eng = pkgDir('@tesseract.js-data/eng');
+const pretendard = pkgDir('pretendard');
+const jbMono = pkgDir('@fontsource/jetbrains-mono');
 
 const COPIES = [
   // pdf.js (구형 모바일 브라우저 호환을 위해 legacy 빌드)
@@ -35,6 +37,13 @@ const COPIES = [
   // 언어 데이터 (best_int: 정확도와 크기의 절충)
   [path.join(kor, '4.0.0_best_int/kor.traineddata.gz'), 'tessdata/kor.traineddata.gz'],
   [path.join(eng, '4.0.0_best_int/eng.traineddata.gz'), 'tessdata/eng.traineddata.gz'],
+  // 글꼴 (SIL OFL 1.1). Pretendard는 유니코드 범위별 분할 파일이라 화면에 쓰인 글자 묶음만 내려받는다.
+  [path.join(pretendard, 'dist/web/variable/pretendardvariable-dynamic-subset.css'), 'fonts/pretendard/pretendardvariable-dynamic-subset.css'],
+  [path.join(pretendard, 'dist/web/variable/woff2-dynamic-subset'), 'fonts/pretendard/woff2-dynamic-subset'],
+  [path.join(pretendard, 'dist/LICENSE.txt'), 'fonts/pretendard/LICENSE.txt'],
+  [path.join(jbMono, 'files/jetbrains-mono-latin-400-normal.woff2'), 'fonts/jetbrains-mono/jetbrains-mono-latin-400-normal.woff2'],
+  [path.join(jbMono, 'files/jetbrains-mono-latin-500-normal.woff2'), 'fonts/jetbrains-mono/jetbrains-mono-latin-500-normal.woff2'],
+  [path.join(jbMono, 'LICENSE'), 'fonts/jetbrains-mono/LICENSE'],
 ];
 
 await rm(OUT, { recursive: true, force: true });

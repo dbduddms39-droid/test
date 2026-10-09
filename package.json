@@ -17,10 +17,12 @@
     "vendor": "node scripts/build-vendor.mjs"
   },
   "dependencies": {
+    "@fontsource/jetbrains-mono": "5.3.0",
     "@google/genai": "^2.28.0",
     "@tesseract.js-data/eng": "1.0.0",
     "@tesseract.js-data/kor": "1.0.0",
     "pdfjs-dist": "6.4.299",
+    "pretendard": "1.3.9",
     "tesseract.js": "7.0.0"
   },
   "devDependencies": {

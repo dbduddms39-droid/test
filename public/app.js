@@ -1,5 +1,6 @@
 import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-rules.js';
 import { buildQuestion, copyText } from './questions.js';
+import { el, statusBadge } from './components.js';
 
 // 일단확인 클라이언트. 입력 원문과 결과는 메모리에만 두고 브라우저 저장소에 남기지 않는다.
 const STATUS_ORDER = ['stated', 'unclear', 'not_found', 'unavailable'];
@@ -12,16 +13,7 @@ const EXTRACTED_NOTE = {
 };
 
 const $ = (sel) => document.querySelector(sel);
-const el = (tag, attrs = {}, ...children) => {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === 'class') node.className = v;
-    else node.setAttribute(k, v);
-  }
-  for (const c of children.flat()) if (c != null) node.append(c);
-  return node;
-};
-const badge = (status) => el('span', { class: `badge badge-${status}` }, STATUS_LABEL[status]);
+const badge = (status) => statusBadge(status, STATUS_LABEL[status]);
 
 // ---------- 화면 01 ----------
 const textarea = $('#doc-text');
