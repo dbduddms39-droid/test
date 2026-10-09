@@ -119,6 +119,14 @@ try {
     console.log(`      ${it.label} 설명 [${it.reasonKind}] 인용 ${quotes.length}개, 우선 확인: ${firstFollowUp}`);
   };
 
+  // '추가로 확인해 보세요': 분석 결과의 확인 사항과 화면 목록이 같고, 확인 사항이 없으면 제목·목록을 숨긴다
+  const followUpProblems = [];
+  const checkFollowUps = async (it) => {
+    const shown = await page.$$eval('#detail .follow-ups li', (els) => els.map((e) => e.textContent));
+    const heading = await page.$$eval('#detail h2', (els) => els.some((e) => e.textContent === '추가로 확인해 보세요'));
+    if (JSON.stringify(shown) !== JSON.stringify(it.followUps) || heading !== it.followUps.length > 0) followUpProblems.push(it.label);
+  };
+
   // 5) 항목별 원문 근거 확인
   let evidenceOk = true;
   for (const [k, it] of visible.entries()) {
@@ -130,6 +138,7 @@ try {
     if (!sameAsApi || !fromInput) evidenceOk = false;
     const hasAsk = await checkAsk(it);
     await checkReason(it, sample.text);
+    await checkFollowUps(it);
     console.log(`      ${it.label}: 원문 근거 ${shown.length}줄, 입력 원문과 일치 ${fromInput ? '예' : '아니오'}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
     if (k === 0) await page.screenshot({ path: `${OUT}/03-detail.png`, fullPage: true });
     await page.goBack();
@@ -156,6 +165,7 @@ try {
     await page.waitForSelector('#view-detail:not([hidden])');
     const hasAsk = await checkAsk(it);
     await checkReason(it, missing.text);
+    await checkFollowUps(it);
     console.log(`      ${it.label}: ${it.statusLabel}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
     if (hasAsk && !copied) {
       const shownQ = await page.textContent('#ask-text');
@@ -174,6 +184,7 @@ try {
   }
   const hidden2 = data2.items.filter((i) => !i.visible).map((i) => i.label);
   console.log(`      숨김 항목(질문 없음): ${hidden2.join(', ') || '없음'}`);
+  check("'추가로 확인해 보세요' 목록 = 분석 결과 (없으면 제목까지 숨김)", followUpProblems.length === 0, followUpProblems.join(', '));
   check('분명하지 않음 설명: 적힌 사실/확인 필요 구분, 원문 인용만, 원문에 없는 사유 없음, 핵심 확인 사항 우선', reasonProblems.length === 0, reasonProblems.join(', '));
   check('질문 영역은 분명하지 않음·찾지 못함 항목에만 표시', askMismatch.length === 0, askMismatch.join(', '));
   check('찾지 못함 항목에서 질문 복사 → 클립보드에 같은 문장 + 완료 안내', Boolean(copied?.ok), copied ? copied.label : '질문 영역이 있는 항목 없음');

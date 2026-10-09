@@ -1,8 +1,9 @@
 // 검증된 AI 결과를 화면 상태로 바꾼다. 상태 라벨·표시 여부·문구는 모두 여기서 결정한다.
 import {
-  ITEMS, STATUS, NOT_FOUND_TEMPLATES, COMMON_NOTICE, FOLLOW_UPS, DOC_TYPES,
+  ITEMS, STATUS, NOT_FOUND_TEMPLATES, COMMON_NOTICE, DOC_TYPES,
 } from './items.js';
 import { describeUnclear } from './reason.js';
+import { followUpsFor } from './followups.js';
 
 export function statusOf(result) {
   if (!result) return 'unavailable';
@@ -46,10 +47,16 @@ export function present({ docType, segments, valid, errors }) {
     const reason = status === 'unclear'
       ? describeUnclear({ itemId: item.id, docType, result, texts: evidence.map((s) => s.text) })
       : null;
+    // 추가로 확인할 내용: 근거 원문에 이미 적힌 사실은 빼고, 일부만 적힌 것은 빠진 부분만 묻는다.
     // 분명하지 않음: 이 문서에서 확인되지 않은 핵심 사항을 맨 앞에 둔다
-    const followUps = reason
-      ? [reason.keyFollowUp, ...FOLLOW_UPS[item.id].filter((f) => f !== reason.keyFollowUp)]
-      : FOLLOW_UPS[item.id];
+    const rest = followUpsFor(item.id, {
+      status,
+      reasonCode: result?.reason_code ?? null,
+      texts: evidence.map((s) => s.text),
+      probationNone: item.id === 'probation_period' && result?.probation_status === 'none',
+      employmentCategory: result?.employment_category ?? null,
+    });
+    const followUps = reason ? [reason.keyFollowUp, ...rest.filter((f) => f !== reason.keyFollowUp)] : rest;
     return {
       id: item.id,
       label: item.label,

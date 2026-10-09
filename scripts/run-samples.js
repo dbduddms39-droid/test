@@ -111,6 +111,10 @@ for (const [i, sample] of SAMPLES.entries()) {
     for (const it of explained) lines.push(`- ${it.label} [${it.reasonKind}] ${it.reasonFact} / ${it.reasonPending} / 우선 확인: ${it.followUps[0]}`);
     lines.push('');
   }
+  // 상세 화면의 '추가로 확인해 보세요' (근거 원문에 이미 적힌 사실은 빠짐, 비어 있으면 영역 숨김)
+  lines.push('추가로 확인해 보세요:', '');
+  for (const it of result.items.filter((i) => i.visible)) lines.push(`- ${it.label} [${it.statusLabel}] ${it.followUps.length ? it.followUps.join(' / ') : '(영역 숨김)'}`);
+  lines.push('');
   if (live) {
     lines.push('<details><summary>AI 원본 응답 JSON</summary>', '', '```json', ...(rawResponses.length ? rawResponses.map((r) => JSON.stringify(r, null, 1)) : ['(성공한 응답 없음)']), '```', '</details>', '');
   }

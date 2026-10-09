@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { analyzeDocument } from '../src/analyze.js';
 import { createDemoAnalyzer } from '../src/ai/demo.js';
 import { findVerbatim, josa, payNoun } from '../src/reason.js';
-import { FOLLOW_UPS } from '../src/items.js';
+import { DEFAULT_FOLLOW_UPS as FOLLOW_UPS } from '../src/followups.js';
 import { buildQuestion } from '../public/questions.js';
 import { SAMPLES } from './samples.js';
 import { idealResponse, scriptedAI } from './helpers.js';
@@ -39,7 +39,8 @@ test('정확한 급여 금액: 명시됨, 분명하지 않음 설명·핵심 질
   assert.equal(salary.status, 'stated');
   assert.equal(salary.reasonFact, null);
   assert.equal(salary.reasonPending, null);
-  assert.deepEqual(salary.followUps, FOLLOW_UPS.salary);
+  // 원문에 금액·구성(기본급·식대 금액)·지급일이 적혀 있어 그 부분은 묻지 않는다 (test/followups.test.js)
+  assert.deepEqual(salary.followUps, ['세전 금액인지 세후 금액인지', '지급 방법']);
 });
 
 test('모호한 표현만 있는 급여: 원문에 있는 표현만 인용', async () => {

@@ -338,8 +338,11 @@ function renderDetail(id) {
       : '이 항목에 해당하는 원문이 없어요.'));
   }
 
-  blocks.push(el('h2', {}, '추가로 확인해 보세요'));
-  blocks.push(el('ul', { class: 'follow-ups' }, it.followUps.map((f) => el('li', {}, f))));
+  // 문서에 이미 다 적혀 있어 더 확인할 것이 없으면 제목과 목록을 함께 숨긴다
+  if (it.followUps.length) {
+    blocks.push(el('h2', {}, '추가로 확인해 보세요'));
+    blocks.push(el('ul', { class: 'follow-ups' }, it.followUps.map((f) => el('li', {}, f))));
+  }
 
   // '분명하지 않음'·'찾지 못함'인 표시 항목에만 담당자 질문을 보여 준다 (템플릿 문장, 문서 내용·추측 값은 넣지 않음)
   const question = buildQuestion(it, result.docType);
