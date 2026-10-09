@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+
+<html lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>일단확인 - 근로조건 점검 리포트</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Pretendard:wght@400;500;600;700&amp;family=Work+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface": "#F8F7F2",
+            "paper": "#FFFEFA",
+            "primary": "#1A1A1A",
+            "on-surface-variant": "#585B5C",
+            "outline": "#747878",
+            "outline-variant": "#DEDDD5",
+            "surface-container": "#F0EEE5",
+            "surface-container-low": "#F5F4EB",
+            "surface-container-high": "#EAE8E0",
+            "surface-container-highest": "#E2E0D6",
+            "secondary": "#426A9B",
+            "secondary-subtle": "#EDF2F8",
+            "highlight": "#F5DF76",
+            "highlight-active": "#EDCE43",
+          },
+          fontFamily: {
+            sans: ['Pretendard', 'Work Sans', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    };
+  </script>
+<style>
+    body {
+      background-color: #F8F7F2;
+      color: #1A1A1A;
+      font-family: 'Pretendard', 'Work Sans', -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 5px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: #F0EEE5;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #C4C2B8;
+      border-radius: 2px;
+    }
+    .paper-texture {
+      background-color: #FFFEFA;
+      box-shadow: 0 1px 3px rgba(30, 30, 30, 0.05), 0 4px 16px rgba(30, 30, 30, 0.02);
+    }
+    /* Active line in right panel */
+    .active-line {
+      background-color: #F5DF76 !important;
+      font-weight: 600;
+      color: #1A1A1A !important;
+      border-left: 3px solid #426A9B !important;
+    }
+    /* Selected card style on the left */
+    .item-row.selected {
+      border-color: #426A9B !important;
+      background-color: #FFFEFA !important;
+      box-shadow: 0 0 0 1px #426A9B !important;
+    }
+    .source-line {
+      transition: all 0.2s ease;
+      border-left: 3px solid transparent;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-highlight/50">
+<!-- Header: Cleaned minimal header -->
+<header class="w-full border-b border-outline-variant/60 bg-paper/90 backdrop-blur-md sticky top-0 z-40 transition-all">
+<div class="max-w-[1440px] mx-auto px-6 lg:px-12 h-16 flex items-center justify-between">
+<div class="flex items-center gap-3">
+<span class="font-bold text-xl tracking-tight text-primary">일단확인</span>
+<span class="text-xs text-outline font-mono">/</span>
+<span class="text-xs sm:text-sm text-on-surface-variant font-medium">근로조건 점검 리포트</span>
+</div>
+</div>
+</header>
+<!-- Main Content Layout (2-Column Desktop, 1-Column Responsive) -->
+<main class="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-12 py-8 lg:py-10 flex-1">
+<!-- Top Editorial Header & Status Legend -->
+<section class="max-w-4xl mb-5">
+<div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+<div class="flex items-center gap-2 font-mono text-xs text-secondary font-medium">
+<span>점검 기준 v2.2</span>
+</div>
+<div class="flex items-center gap-3 text-xs font-mono text-on-surface-variant flex-wrap">
+<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-primary inline-block"></span> 주요 내용 기재됨</span>
+<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full border border-secondary inline-block"></span> 일부 내용만 기재됨</span>
+<span class="inline-flex items-center gap-1.5"><span class="font-mono font-bold leading-none text-outline">—</span> 관련 내용 찾지 못함</span>
+<span class="inline-flex items-center gap-1.5"><span class="font-mono font-medium text-outline text-xs">?</span> 분석 확인 불가</span>
+</div>
+</div>
+<div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 pb-3 border-b border-outline-variant/60">
+<h1 class="text-xl sm:text-2xl font-bold tracking-tight text-primary">
+        오퍼 안내문 점검 결과
+      </h1>
+<p class="text-xs sm:text-sm text-on-surface-variant">
+        문서에 적힌 근로조건을 항목별로 정리했어요.
+      </p>
+</div>
+</section>
+<!-- Split Container -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-8 lg:gap-10 items-start">
+<!-- LEFT COLUMN: 10 Check Items -->
+<div class="md:col-span-7 flex flex-col gap-3">
+<div class="flex items-center justify-between px-1 pb-1 border-b border-outline-variant/60 font-mono text-xs text-on-surface-variant">
+<span>점검 항목 (총 10개)</span>
+<span>상태 및 대조</span>
+</div>
+<!-- § 01 임금 -->
+<article class="item-row selected bg-paper border border-outline-variant/70 rounded-sm p-3.5 transition-all hover:border-secondary/60 cursor-pointer" id="card-01" onclick="handleItemSelect('01')">
+<div class="flex items-center justify-between gap-2">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-xs font-semibold text-secondary">§ 01</span>
+<h2 class="text-base font-bold text-primary">임금</h2>
+</div>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-surface-container-high text-primary shrink-0">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> 주요 내용 기재됨
+          </span>
+</div>
+<p class="text-xs sm:text-sm text-on-surface-variant mt-1.5 leading-snug">
+          연봉 금액과 산정 단위가 확인돼요. 지급일은 별도로 확인할 수 있어요.
+        </p>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/40 flex items-center justify-between text-xs">
+<span class="text-outline font-mono truncate max-w-[70%]">발췌: 연봉: 3,600만원</span>
+<button class="text-secondary font-medium inline-flex items-center gap-1 hover:underline group" onclick="event.stopPropagation(); handleActionClick('01')" type="button">
+<span>원문 근거 보기</span>
+<span class="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+</div>
+<!-- Mobile Accordion -->
+<div class="mobile-excerpt hidden md:hidden mt-2.5 p-2.5 bg-surface-container-low rounded text-xs border border-outline-variant/50">
+<span class="font-mono text-secondary text-[11px] block mb-1">원문 발췌 근거</span>
+<span class="bg-highlight px-1.5 py-0.5 rounded font-mono font-medium text-primary">연봉: 3,600만원</span>
+</div>
+</article>
+<!-- § 02 근무시간 -->
+<article class="item-row bg-paper border border-outline-variant/70 rounded-sm p-3.5 transition-all hover:border-secondary/60 cursor-pointer" id="card-02" onclick="handleItemSelect('02')">
+<div class="flex items-center justify-between gap-2">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-xs font-semibold text-secondary">§ 02</span>
+<h2 class="text-base font-bold text-primary">근무시간</h2>
+</div>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-surface-container text-secondary shrink-0">
+<span class="w-1.5 h-1.5 rounded-full border border-secondary"></span> 일부 내용만 기재됨
+          </span>
+</div>
+<p class="text-xs sm:text-sm text-on-surface-variant mt-1.5 leading-snug">
+          주 소정근로일과 근무 시간대는 적혀 있으나, 휴게시간(점심시간 등)은 확인되지 않아요.
+        </p>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/40 flex items-center justify-between text-xs">
+<span class="text-outline font-mono truncate max-w-[70%]">발췌: 근무시간: 주 5일, 09:00~18:00</span>
+<button class="text-secondary font-medium inline-flex items-center gap-1 hover:underline group" onclick="event.stopPropagation(); handleActionClick('02')" type="button">
+<span>원문 근거 보기</span>
+<span class="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+</div>
+<!-- Mobile Accordion -->
+<div class="mobile-excerpt hidden md:hidden mt-2.5 p-2.5 bg-surface-container-low rounded text-xs border border-outline-variant/50">
+<span class="font-mono text-secondary text-[11px] block mb-1">원문 발췌 근거</span>
+<span class="bg-highlight px-1.5 py-0.5 rounded font-mono font-medium text-primary">근무시간: 주 5일, 09:00~18:00</span>
+</div>
+</article>
+<!-- § 03 근무장소 -->
+<article class="item-row bg-paper border border-outline-variant/70 rounded-sm p-3.5 transition-all hover:border-secondary/60 cursor-pointer" id="card-03" onclick="handleItemSelect('03')">
+<div class="flex items-center justify-between gap-2">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-xs font-semibold text-secondary">§ 03</span>
+<h2 class="text-base font-bold text-primary">근무장소</h2>
+</div>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-surface-container text-secondary shrink-0">
+<span class="w-1.5 h-1.5 rounded-full border border-secondary"></span> 일부 내용만 기재됨
+          </span>
+</div>
+<p class="text-xs sm:text-sm text-on-surface-variant mt-1.5 leading-snug">
+          서울 소재 사업장으로 적혀 있지만 구체적인 위치는 확인되지 않아요.
+        </p>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/40 flex items-center justify-between text-xs">
+<span class="text-outline font-mono truncate max-w-[70%]">발췌: 근무장소: 서울 소재 사업장</span>
+<button class="text-secondary font-medium inline-flex items-center gap-1 hover:underline group" onclick="event.stopPropagation(); handleActionClick('03')" type="button">
+<span>원문 근거 보기</span>
+<span class="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+</div>
+<!-- Mobile Accordion -->
+<div class="mobile-excerpt hidden md:hidden mt-2.5 p-2.5 bg-surface-container-low rounded text-xs border border-outline-variant/50">
+<span class="font-mono text-secondary text-[11px] block mb-1">원문 발췌 근거</span>
+<span class="bg-highlight px-1.5 py-0.5 rounded font-mono font-medium text-primary">근무장소: 서울 소재 사업장</span>
+</div>
+</article>
+<!-- § 04 담당업무 -->
+<article class="item-row bg-paper border border-outline-variant/70 rounded-sm p-3.5 transition-all hover:border-secondary/60 cursor-pointer" id="card-04" onclick="handleItemSelect('04')">
+<div class="flex items-center justify-between gap-2">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-xs font-semibold text-secondary">§ 04</span>
+<h2 class="text-base font-bold text-primary">담당업무</h2>
+</div>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-surface-container-high text-primary shrink-0">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> 주요 내용 기재됨
+          </span>
+</div>
+<p class="text-xs sm:text-sm text-on-surface-variant mt-1.5 leading-snug">
+          수행할 직무 분야와 구체적인 세부 업무 범위가 명시되어 있어요.
+        </p>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/40 flex items-center justify-between text-xs">
+<span class="text-outline font-mono truncate max-w-[70%]">발췌: 담당업무: 콘텐츠 기획 및 SNS 채널 운영</span>
+<button class="text-secondary font-medium inline-flex items-center gap-1 hover:underline group" onclick="event.stopPropagation(); handleActionClick('04')" type="button">
+<span>원문 근거 보기</span>
+<span class="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+</div>
+<!-- Mobile Accordion -->
+<div class="mobile-excerpt hidden md:hidden mt-2.5 p-2.5 bg-surface-container-low rounded text-xs border border-outline-variant/50">
+<span class="font-mono text-secondary text-[11px] block mb-1">원문 발췌 근거</span>
+<span class="bg-highlight px-1.5 py-0.5 rounded font-mono font-medium text-primary">담당업무: 콘텐츠 기획 및 SNS 채널 운영</span>
+</div>
+</article>
+<!-- § 05 고용형태 -->
+<article class="item-row bg-paper border border-outline-variant/70 rounded-sm p-3.5 transition-all hover:border-secondary/60 cursor-pointer" id="card-05" onclick="handleItemSelect('05')">
+<div class="flex items-center justify-between gap-2">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-xs font-semibold text-secondary">§ 05</span>
+<h2 class="text-base font-bold text-primary">고용형태</h2>
+</div>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-surface-container-high text-primary shrink-0">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> 주요 내용 기재됨
+          </span>
+</div>
+<p class="text-xs sm:text-sm text-on-surface-variant mt-1.5 leading-snug">
+          정규직 형태로 명시되어 있으며 별도의 기간제 표시는 없어요.
+        </p>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/40 flex items-center justify-between text-xs">
+<span class="text-outline font-mono truncate max-w-[70%]">발췌: 고용형태: 정규직</span>
+<button class="text-secondary font-medium inline-flex items-center gap-1 hover:underline group" onclick="event.stopPropagation(); handleActionClick('05')" type="button">
+<span>원문 근거 보기</span>
+<span class="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+</div>
+<!-- Mobile Accordion -->
+<div class="mobile-excerpt hidden md:hidden mt-2.5 p-2.5 bg-surface-container-low rounded text-xs border border-outline-variant/50">
+<span class="font-mono text-secondary text-[11px] block mb-1">원문 발췌 근거</span>
+<span class="bg-highlight px-1.5 py-0.5 rounded font-mono font-medium text-primary">고용형태: 정규직</span>
+</div>
+</article>
+<!-- § 06 계약기간 -->
+<article class="item-row bg-paper border border-outline-variant/70 rounded-sm p-3.5 transition-all hover:border-secondary/60 opacity-90 cursor-pointer" id="card-06" onclick="handleItemSelect('06')">
+<div class="flex items-center justify-between gap-2">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-xs font-semibold text-outline">§ 06</span>
+<h2 class="text-base font-bold text-on-surface-variant">계약기간</h2>
+</div>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-surface-container-low text-outline shrink-0">
+<span class="font-mono font-bold leading-none">—</span> 관련 내용 찾지 못함
+          </span>
+</div>
+<p class="text-xs sm:text-sm text-outline leading-snug mt-1.5">
+          근로계약 기간의 시작일 또는 종료일에 대한 내용이 문서에서 발견되지 않았어요.
+        </p>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/40 flex items-center justify-between text-xs">
+<span class="text-outline font-mono">원문 대조: 기재 구절 없음</span>
+<button class="text-outline font-medium inline-flex items-center gap-1 hover:underline group" onclick="event.stopPropagation(); handleActionClick('06')" type="button">
+<span>미기재 확인</span>
+<span class="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+</div>
+<!-- Mobile Accordion -->
+<div class="mobile-excerpt hidden md:hidden mt-2.5 p-2.5 bg-surface-container-low rounded text-xs border border-outline-variant/50 text-outline">
+          원문에 관련 내용이 기재되어 있지 않습니다.
+        </div>
+</article>
+<!-- § 07 수습기간 -->
+<article class="item-row bg-paper border border-outline-variant/70 rounded-sm p-3.5 transition-all hover:border-secondary/60 cursor-pointer" id="card-07" onclick="handleItemSelect('07')">
+<div class="flex items-center justify-between gap-2">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-xs font-semibold text-secondary">§ 07</span>
+<h2 class="text-base font-bold text-primary">수습기간</h2>
+</div>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-surface-container-high text-primary shrink-0">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> 주요 내용 기재됨
+          </span>
+</div>
+<p class="text-xs sm:text-sm text-on-surface-variant mt-1.5 leading-snug">
+          수습 적용 기간(3개월)이 명시되어 있어요.
+        </p>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/40 flex items-center justify-between text-xs">
+<span class="text-outline font-mono truncate max-w-[70%]">발췌: 수습기간: 3개월</span>
+<button class="text-secondary font-medium inline-flex items-center gap-1 hover:underline group" onclick="event.stopPropagation(); handleActionClick('07')" type="button">
+<span>원문 근거 보기</span>
+<span class="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+</div>
+<!-- Mobile Accordion -->
+<div class="mobile-excerpt hidden md:hidden mt-2.5 p-2.5 bg-surface-container-low rounded text-xs border border-outline-variant/50">
+<span class="font-mono text-secondary text-[11px] block mb-1">원문 발췌 근거</span>
+<span class="bg-highlight px-1.5 py-0.5 rounded font-mono font-medium text-primary">수습기간: 3개월</span>
+</div>
+</article>
+<!-- § 08 수습 중 급여 -->
+<article class="item-row bg-paper border border-outline-variant/70 rounded-sm p-3.5 transition-all hover:border-secondary/60 cursor-pointer" id="card-08" onclick="handleItemSelect('08')">
+<div class="flex items-center justify-between gap-2">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-xs font-semibold text-secondary">§ 08</span>
+<h2 class="text-base font-bold text-primary">수습 중 급여</h2>
+</div>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-surface-container text-secondary shrink-0">
+<span class="w-1.5 h-1.5 rounded-full border border-secondary"></span> 일부 내용만 기재됨
+          </span>
+</div>
+<p class="text-xs sm:text-sm text-on-surface-variant mt-1.5 leading-snug">
+          수습 중 급여가 별도 협의로 안내되어 구체적인 금액은 확인되지 않아요.
+        </p>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/40 flex items-center justify-between text-xs">
+<span class="text-outline font-mono truncate max-w-[70%]">발췌: 수습 중 급여: 별도 협의</span>
+<button class="text-secondary font-medium inline-flex items-center gap-1 hover:underline group" onclick="event.stopPropagation(); handleActionClick('08')" type="button">
+<span>원문 근거 보기</span>
+<span class="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+</div>
+<!-- Mobile Accordion -->
+<div class="mobile-excerpt hidden md:hidden mt-2.5 p-2.5 bg-surface-container-low rounded text-xs border border-outline-variant/50">
+<span class="font-mono text-secondary text-[11px] block mb-1">원문 발췌 근거</span>
+<span class="bg-highlight px-1.5 py-0.5 rounded font-mono font-medium text-primary">수습 중 급여: 별도 협의</span>
+</div>
+</article>
+<!-- § 09 휴일 -->
+<article class="item-row bg-paper border border-outline-variant/70 rounded-sm p-3.5 transition-all hover:border-secondary/60 opacity-90 cursor-pointer" id="card-09" onclick="handleItemSelect('09')">
+<div class="flex items-center justify-between gap-2">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-xs font-semibold text-outline">§ 09</span>
+<h2 class="text-base font-bold text-on-surface-variant">휴일</h2>
+</div>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-surface-container-low text-outline shrink-0">
+<span class="font-mono font-bold leading-none">—</span> 관련 내용 찾지 못함
+          </span>
+</div>
+<p class="text-xs sm:text-sm text-outline leading-snug mt-1.5">
+          주휴일 및 유급휴일 등에 관한 규정이 문서에서 확인되지 않아요.
+        </p>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/40 flex items-center justify-between text-xs">
+<span class="text-outline font-mono">원문 대조: 기재 구절 없음</span>
+<button class="text-outline font-medium inline-flex items-center gap-1 hover:underline group" onclick="event.stopPropagation(); handleActionClick('09')" type="button">
+<span>미기재 확인</span>
+<span class="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+</div>
+<!-- Mobile Accordion -->
+<div class="mobile-excerpt hidden md:hidden mt-2.5 p-2.5 bg-surface-container-low rounded text-xs border border-outline-variant/50 text-outline">
+          원문에 관련 내용이 기재되어 있지 않습니다.
+        </div>
+</article>
+<!-- § 10 연차 유급휴가 -->
+<article class="item-row bg-paper border border-outline-variant/70 rounded-sm p-3.5 transition-all hover:border-secondary/60 cursor-pointer" id="card-10" onclick="handleItemSelect('10')">
+<div class="flex items-center justify-between gap-2">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-xs font-semibold text-secondary">§ 10</span>
+<h2 class="text-base font-bold text-primary">연차 유급휴가</h2>
+</div>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-surface-container text-secondary shrink-0">
+<span class="w-1.5 h-1.5 rounded-full border border-secondary"></span> 일부 내용만 기재됨
+          </span>
+</div>
+<p class="text-xs sm:text-sm text-on-surface-variant mt-1.5 leading-snug">
+          회사 내규에 따른다고 적혀 있지만 구체적인 부여 기준은 확인되지 않아요.
+        </p>
+<div class="mt-2.5 pt-2 border-t border-outline-variant/40 flex items-center justify-between text-xs">
+<span class="text-outline font-mono truncate max-w-[70%]">발췌: 연차 유급휴가: 회사 내규에 따름</span>
+<button class="text-secondary font-medium inline-flex items-center gap-1 hover:underline group" onclick="event.stopPropagation(); handleActionClick('10')" type="button">
+<span>원문 근거 보기</span>
+<span class="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+</div>
+<!-- Mobile Accordion -->
+<div class="mobile-excerpt hidden md:hidden mt-2.5 p-2.5 bg-surface-container-low rounded text-xs border border-outline-variant/50">
+<span class="font-mono text-secondary text-[11px] block mb-1">원문 발췌 근거</span>
+<span class="bg-highlight px-1.5 py-0.5 rounded font-mono font-medium text-primary">연차 유급휴가: 회사 내규에 따름</span>
+</div>
+</article>
+</div>
+<!-- RIGHT COLUMN (Sticky Panel): Desktop only (hidden md:block) -->
+<aside class="md:col-span-5 sticky top-20 hidden md:block">
+<div class="bg-paper border border-outline-variant/70 rounded-sm paper-texture overflow-hidden flex flex-col">
+<!-- Panel Header -->
+<div class="px-5 py-3.5 border-b border-outline-variant/60 bg-surface-container-low/70 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-base">menu_book</span>
+<h3 class="font-bold text-sm text-primary">원문 대조 패널</h3>
+</div>
+<span class="font-mono text-xs text-outline">오퍼 안내문</span>
+</div>
+<!-- Active Focus Banner -->
+<div class="px-5 py-2 bg-secondary-subtle border-b border-secondary/20 text-xs flex items-center justify-between text-secondary" id="active-focus-bar">
+<span class="font-medium" id="focus-status-text">§ 01 임금 대조 중</span>
+<span class="font-mono text-[11px] tracking-wider font-semibold" id="focus-item-tag">§ 01</span>
+</div>
+<!-- Document Viewer Paper Sheet (Strict raw offer letter text only) -->
+<div class="p-6 text-sm text-primary leading-relaxed custom-scroll max-h-[calc(100vh-14rem)] overflow-y-auto space-y-1.5">
+<div class="source-line text-on-surface-variant py-1 px-2.5 rounded" id="line-opening">
+            최종합격을 축하드립니다.
+          </div>
+<div class="source-line py-1 px-2.5 rounded" id="line-05">
+            고용형태: 정규직
+          </div>
+<div class="source-line active-line py-1 px-2.5 rounded" id="line-01">
+            연봉: 3,600만원
+          </div>
+<div class="source-line py-1 px-2.5 rounded" id="line-02">
+            근무시간: 주 5일, 09:00~18:00
+          </div>
+<div class="source-line py-1 px-2.5 rounded" id="line-03">
+            근무장소: 서울 소재 사업장
+          </div>
+<div class="source-line py-1 px-2.5 rounded" id="line-04">
+            담당업무: 콘텐츠 기획 및 SNS 채널 운영
+          </div>
+<div class="source-line py-1 px-2.5 rounded" id="line-07">
+            수습기간: 3개월
+          </div>
+<div class="source-line py-1 px-2.5 rounded" id="line-08">
+            수습 중 급여: 별도 협의
+          </div>
+<div class="source-line py-1 px-2.5 rounded" id="line-10">
+            연차 유급휴가: 회사 내규에 따름
+          </div>
+<div class="source-line text-on-surface-variant py-1 px-2.5 rounded" id="line-closing">
+            상세 근로조건은 입사 시 안내드립니다.
+          </div>
+<!-- Not-found Notice Box (Shown prominently for 06, 09) -->
+<div class="mt-4 pt-3 border-t border-outline-variant/40 p-3 bg-surface-container-low rounded text-xs text-on-surface-variant leading-relaxed transition-all hidden border border-outline-variant/60" id="not-found-box">
+<span class="font-semibold text-primary block mb-0.5 font-mono">※ 원문 미기재 항목 안내</span>
+<span id="not-found-message">계약기간 항목은 제출된 원문에 기재 문장이 없습니다.</span>
+</div>
+</div>
+<!-- Neutral footer info -->
+<div class="px-5 py-2.5 bg-surface-container-low border-t border-outline-variant/50 text-[11px] text-outline font-mono flex justify-between items-center">
+<span>제출 원문 전문 대조</span>
+<span>총 10개 기준 점검</span>
+</div>
+</div>
+</aside>
+</div>
+<!-- Bottom Action & Legal Statement Section -->
+<section class="mt-12 pt-8 border-t border-outline-variant/60 flex flex-col sm:flex-row items-center justify-between gap-6">
+<div class="flex items-start gap-2.5 max-w-2xl">
+<span class="material-symbols-outlined text-outline text-lg mt-0.5 shrink-0">info</span>
+<p class="text-xs sm:text-sm text-on-surface-variant leading-relaxed">
+        이 결과는 입력한 문서에 적힌 내용을 기준으로 정리한 것이며, 법률적 판단이나 효력 유무를 결정하지 않습니다.
+      </p>
+</div>
+<div class="flex items-center gap-3 w-full sm:w-auto">
+<button class="w-full sm:w-auto px-6 h-11 bg-primary text-paper hover:bg-black transition-colors rounded-sm text-sm font-semibold flex items-center justify-center gap-2" type="button">
+<span class="material-symbols-outlined text-lg">post_add</span>
+<span>다른 문서 확인하기</span>
+</button>
+</div>
+</section>
+</main>
+<!-- Interactive Linking Script -->
+<script>
+  const itemMeta = {
+    '01': { name: '임금', lineId: 'line-01', found: true },
+    '02': { name: '근무시간', lineId: 'line-02', found: true },
+    '03': { name: '근무장소', lineId: 'line-03', found: true },
+    '04': { name: '담당업무', lineId: 'line-04', found: true },
+    '05': { name: '고용형태', lineId: 'line-05', found: true },
+    '06': { name: '계약기간', lineId: null, found: false },
+    '07': { name: '수습기간', lineId: 'line-07', found: true },
+    '08': { name: '수습 중 급여', lineId: 'line-08', found: true },
+    '09': { name: '휴일', lineId: null, found: false },
+    '10': { name: '연차 유급휴가', lineId: 'line-10', found: true }
+  };
+
+  let currentSelectedId = '01';
+
+  function applySelection(itemNumber) {
+    currentSelectedId = itemNumber;
+
+    // 1. Left card selection state
+    document.querySelectorAll('.item-row').forEach(row => {
+      row.classList.remove('selected');
+    });
+    const activeCard = document.getElementById('card-' + itemNumber);
+    if (activeCard) {
+      activeCard.classList.add('selected');
+    }
+
+    // 2. Right panel header update
+    const info = itemMeta[itemNumber];
+    const statusText = document.getElementById('focus-status-text');
+    const itemTag = document.getElementById('focus-item-tag');
+    if (statusText && info) {
+      statusText.textContent = '§ ' + itemNumber + ' ' + info.name + ' 대조 중';
+      itemTag.textContent = '§ ' + itemNumber;
+    }
+
+    // 3. Right panel line highlight synchronization
+    // Reset all lines
+    document.querySelectorAll('.source-line').forEach(line => {
+      line.classList.remove('active-line');
+    });
+
+    const notFoundBox = document.getElementById('not-found-box');
+    const notFoundMsg = document.getElementById('not-found-message');
+
+    if (info && info.found && info.lineId) {
+      if (notFoundBox) notFoundBox.classList.add('hidden');
+      const targetLine = document.getElementById(info.lineId);
+      if (targetLine) {
+        targetLine.classList.add('active-line');
+        targetLine.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    } else {
+      // Missing item: no highlight on any text, display clear notice box
+      if (notFoundBox && notFoundMsg) {
+        notFoundMsg.textContent = info.name + ' 항목은 제출된 원문에 기재 문장이 없습니다.';
+        notFoundBox.classList.remove('hidden');
+        notFoundBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }
+
+  // Handle card click
+  function handleItemSelect(itemNumber) {
+    applySelection(itemNumber);
+  }
+
+  // Handle "원문 근거 보기" button click: sync desktop + toggle mobile accordion
+  function handleActionClick(itemNumber) {
+    const activeCard = document.getElementById('card-' + itemNumber);
+    if (activeCard) {
+      const mobileExcerpt = activeCard.querySelector('.mobile-excerpt');
+      if (mobileExcerpt) {
+        const isCurrentlyHidden = mobileExcerpt.classList.contains('hidden');
+        // Close all other mobile excerpts
+        document.querySelectorAll('.mobile-excerpt').forEach(el => el.classList.add('hidden'));
+        if (isCurrentlyHidden) {
+          mobileExcerpt.classList.remove('hidden');
+        }
+      }
+    }
+    applySelection(itemNumber);
+  }
+
+  // Initial load sync
+  window.addEventListener('DOMContentLoaded', () => {
+    applySelection('01');
+  });
+</script>
+</body></html>

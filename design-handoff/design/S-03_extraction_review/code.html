@@ -1,0 +1,334 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><meta content="web_standard" name="shell-type"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;family=Work+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+<style>
+  body, input, textarea, button, select { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif !important; }
+  .font-mono-index, .font-mono-meta { font-family: 'JetBrains Mono', 'Pretendard', monospace !important; }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      "colors": {
+        "secondary": "#386091",
+        "on-secondary-fixed-variant": "#1c4877",
+        "on-surface-variant": "#444748",
+        "surface-container-high": "#eae8e0",
+        "tertiary-fixed-dim": "#dcc761",
+        "surface-variant": "#e4e3da",
+        "primary-fixed-dim": "#c8c6c5",
+        "inverse-primary": "#c8c6c5",
+        "surface-bright": "#fbf9f1",
+        "error-container": "#ffdad6",
+        "on-tertiary-fixed-variant": "#524600",
+        "primary-fixed": "#e4e2e1",
+        "surface-container-low": "#f5f4eb",
+        "on-secondary": "#ffffff",
+        "outline": "#747878",
+        "primary-container": "#262626",
+        "on-tertiary-fixed": "#211b00",
+        "on-secondary-container": "#2a5484",
+        "inverse-surface": "#30312b",
+        "surface-container-highest": "#e4e3da",
+        "on-error": "#ffffff",
+        "inverse-on-surface": "#f2f1e8",
+        "on-secondary-fixed": "#001c38",
+        "on-tertiary-container": "#4a3f00",
+        "on-primary-fixed-variant": "#474746",
+        "tertiary": "#6d5e00",
+        "on-tertiary": "#ffffff",
+        "background": "#fbf9f1",
+        "secondary-container": "#a2c9ff",
+        "tertiary-container": "#bfab48",
+        "surface-container-lowest": "#ffffff",
+        "on-background": "#1b1c17",
+        "on-primary-container": "#8e8d8c",
+        "on-primary-fixed": "#1b1c1c",
+        "surface": "#fbf9f1",
+        "tertiary-fixed": "#f9e379",
+        "error": "#ba1a1a",
+        "secondary-fixed-dim": "#a2c9ff",
+        "secondary-fixed": "#d3e4ff",
+        "surface-container": "#f0eee5",
+        "surface-dim": "#dbdad2",
+        "primary": "#111111",
+        "on-error-container": "#93000a",
+        "on-surface": "#1b1c17",
+        "surface-tint": "#5f5e5e",
+        "outline-variant": "#c4c7c7",
+        "on-primary": "#ffffff"
+      },
+      "borderRadius": {
+        "DEFAULT": "0.25rem",
+        "lg": "0.5rem",
+        "xl": "0.75rem",
+        "full": "9999px"
+      },
+      "spacing": {
+        "space-lg": "1.5rem",
+        "gutter": "1.5rem",
+        "space-xs": "0.25rem",
+        "space-md": "0.875rem",
+        "gutter-mobile": "1rem",
+        "space-xl": "2.5rem",
+        "space-sm": "0.5rem",
+        "margin": "3rem",
+        "margin-mobile": "1.25rem"
+      },
+      "fontFamily": {
+        "display": ["Work Sans"],
+        "headline-lg": ["Work Sans"],
+        "editorial-badge": ["Work Sans"],
+        "mono-meta": ["JetBrains Mono"],
+        "mono-index": ["JetBrains Mono"],
+        "body-sm": ["Work Sans"],
+        "display-mobile": ["Work Sans"],
+        "headline-sm": ["Work Sans"],
+        "body-lg": ["Work Sans"],
+        "headline-md": ["Work Sans"],
+        "body-md": ["Work Sans"]
+      },
+      "fontSize": {
+        "display": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+        "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "600"}],
+        "editorial-badge": ["12px", {"lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "500"}],
+        "mono-meta": ["11px", {"lineHeight": "16px", "letterSpacing": "0.04em", "fontWeight": "400"}],
+        "mono-index": ["13px", {"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+        "body-sm": ["13px", {"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"}],
+        "display-mobile": ["26px", {"lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+        "headline-sm": ["17px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+        "body-lg": ["17px", {"lineHeight": "28px", "letterSpacing": "-0.005em", "fontWeight": "400"}],
+        "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+        "body-md": ["15px", {"lineHeight": "24px", "letterSpacing": "-0.005em", "fontWeight": "400"}]
+      }
+    }
+  }
+}</script></head><body class="bg-background font-body-md text-on-surface min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface/90 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.03)]"><div class="h-16 max-w-7xl mx-auto px-margin-mobile lg:px-margin flex items-center justify-between"><div class="flex items-center gap-4"><a class="inline-flex items-center gap-1 text-[14px] text-on-surface-variant hover:text-on-surface transition-colors" data-path="document-upload" href="#"><span class="material-symbols-outlined text-[18px]">arrow_back</span><span class="">이전으로</span></a><span class="h-4 w-px bg-outline-variant"></span><span class="text-[18px] text-on-surface font-semibold tracking-tight">일단확인</span></div></div></header><main class="w-full pt-16 bg-background"><div class="flex flex-col w-full">
+<!-- Subtle Desk Ambient Layer -->
+<div class="w-full bg-surface py-space-md sm:py-space-lg">
+<div class="max-w-7xl mx-auto px-margin-mobile lg:px-margin space-y-space-md">
+<!-- Editorial Guide & Metadata Header -->
+<section class="space-y-space-xs"><div class="flex flex-col lg:flex-row lg:items-end justify-between gap-space-sm pt-2"><div><h1 class="text-[24px] font-semibold text-on-surface tracking-tight leading-snug">문서 내용을 확인해 주세요.</h1><p class="text-[15px] text-on-surface-variant mt-1">파일에서 추출한 텍스트예요. 원본과 비교해 잘못 읽힌 부분이 있다면 수정해 주세요.</p></div><div class="inline-flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-none text-[13px] text-on-surface"><span class="material-symbols-outlined text-secondary text-[16px]">tips_and_updates</span><span class="">특히 <strong class="font-semibold text-secondary">금액 · 날짜 · 근무시간 · 숫자</strong>를 꼼꼼히 확인해 주세요.</span></div></div></section>
+<!-- Mobile Tab Switcher (Visible only below lg breakpoint) -->
+<div class="md:hidden flex bg-surface-container p-1 rounded-none shadow-sm mb-2" id="mobile-tab-bar"><button class="flex-1 py-2 text-center text-[14px] font-medium bg-surface-container-lowest text-on-surface shadow-sm transition-colors" id="tab-btn-original" onclick="switchMobileTab('original')" type="button">원본 문서 보기</button><button class="flex-1 py-2 text-center text-[14px] font-medium text-on-surface-variant hover:text-on-surface transition-colors" id="tab-btn-extracted" onclick="switchMobileTab('extracted')" type="button">추출 텍스트 수정</button></div>
+<!-- Main Dual-Pane Comparison Workbench -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-space-lg items-start">
+<!-- Left Pane: Source Document (Read-Only Sheet) -->
+<div class="flex flex-col bg-surface-container-lowest rounded-none shadow-sm w-full" id="pane-original">
+<!-- Viewer Toolbar -->
+<div class="flex items-center justify-between px-space-md py-space-sm bg-surface-container-low">
+<div class="flex items-center gap-space-xs min-w-0">
+<span class="material-symbols-outlined text-secondary text-[20px]">description</span>
+<span class="font-mono-index text-mono-index text-on-surface truncate max-w-[140px] sm:max-w-[220px]">오퍼안내문_예시.pdf</span>
+<span class="px-1.5 py-0.5 bg-surface-variant font-mono-meta text-mono-meta text-on-surface-variant uppercase tracking-wider">원본 대조본</span>
+</div>
+<!-- Page & Zoom Controls -->
+<div class="flex items-center gap-space-xs shrink-0">
+<div class="flex items-center bg-surface-container px-2 py-0.5 rounded-none font-mono-meta text-mono-meta text-on-surface">
+<button class="hover:text-secondary opacity-40 cursor-not-allowed" disabled="" title="이전 페이지">
+<span class="material-symbols-outlined text-[15px] align-middle">chevron_left</span>
+</button>
+<span class="mx-1 font-mono-index">1 / 1</span>
+<button class="hover:text-secondary opacity-40 cursor-not-allowed" disabled="" title="다음 페이지">
+<span class="material-symbols-outlined text-[15px] align-middle">chevron_right</span>
+</button>
+</div>
+<div class="h-4 w-px bg-surface-variant mx-1"></div>
+<div class="flex items-center gap-0.5">
+<button class="w-7 h-7 flex items-center justify-center bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors" onclick="adjustZoom(-10)" title="축소">
+<span class="material-symbols-outlined text-[16px]">remove</span>
+</button>
+<span class="font-mono-meta text-mono-meta text-on-surface px-1 min-w-[38px] text-center" id="zoom-indicator">100%</span>
+<button class="w-7 h-7 flex items-center justify-center bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors" onclick="adjustZoom(10)" title="확대">
+<span class="material-symbols-outlined text-[16px]">add</span>
+</button>
+<button class="w-7 h-7 flex items-center justify-center bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors ml-1" onclick="resetZoom()" title="맞춤 보기">
+<span class="material-symbols-outlined text-[16px]">fit_screen</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Document Viewport -->
+<div class="p-space-md sm:p-space-lg bg-surface-container-high/60 overflow-x-auto min-h-[580px] flex justify-center items-start">
+<!-- Physical Paper Emulation Sheet -->
+<div class="w-full max-w-[560px] bg-surface-container-lowest p-8 sm:p-12 shadow-sm transition-transform duration-150 origin-top select-none" id="paper-sheet"><div class="space-y-6 text-[15px] text-on-surface leading-[1.85] tracking-tight"><h2 class="text-[20px] text-on-surface font-semibold tracking-tight pb-3 border-b border-surface-container-high">최종합격을 축하드립니다.</h2><div class="space-y-3 pt-2"><div class="flex items-baseline gap-4"><span class="text-[13px] text-on-surface-variant w-24 shrink-0 font-medium">고용형태</span><span class="text-on-surface font-normal">정규직</span></div><div class="flex items-baseline gap-4"><span class="text-[13px] text-on-surface-variant w-24 shrink-0 font-medium">연봉</span><span class="text-on-surface font-normal">3,600만원</span></div><div class="flex items-baseline gap-4"><span class="text-[13px] text-on-surface-variant w-24 shrink-0 font-medium">근무시간</span><span class="text-on-surface font-normal">주 5일, 09:00~18:00</span></div><div class="flex items-baseline gap-4"><span class="text-[13px] text-on-surface-variant w-24 shrink-0 font-medium">근무장소</span><span class="text-on-surface font-normal">서울 소재 사업장</span></div><div class="flex items-baseline gap-4"><span class="text-[13px] text-on-surface-variant w-24 shrink-0 font-medium">담당업무</span><span class="text-on-surface font-normal">콘텐츠 기획 및 SNS 채널 운영</span></div><div class="flex items-baseline gap-4"><span class="text-[13px] text-on-surface-variant w-24 shrink-0 font-medium">수습기간</span><span class="text-on-surface font-normal">3개월</span></div><div class="flex items-baseline gap-4"><span class="text-[13px] text-on-surface-variant w-24 shrink-0 font-medium">수습 중 급여</span><span class="text-on-surface font-normal">별도 협의</span></div><div class="flex items-baseline gap-4"><span class="text-[13px] text-on-surface-variant w-24 shrink-0 font-medium">연차 유급휴가</span><span class="text-on-surface font-normal">회사 내규에 따름</span></div></div><div class="pt-5 mt-6 bg-surface-container-low p-4 rounded-none"><p class="text-[13px] text-on-surface-variant">상세 근로조건은 입사 시 안내드립니다.</p></div></div></div>
+</div>
+</div>
+<!-- Right Pane: Extracted Editable Text Pane -->
+<div class="hidden md:flex flex-col bg-surface-container-lowest rounded-none shadow-sm w-full" id="pane-extracted">
+<!-- Editor Header & Editorial Actions -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between px-space-md py-space-sm bg-surface-container-low gap-2">
+<div>
+<div class="flex items-center gap-2">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">추출된 텍스트</span>
+<span class="px-1.5 py-0.5 bg-surface-variant font-mono-meta text-mono-meta text-secondary">편집 가능</span>
+</div>
+<p class="font-mono-meta text-mono-meta text-on-surface-variant mt-0.5">내용을 직접 수정할 수 있어요.</p>
+</div>
+<!-- Precision Editor Actions Toolbar -->
+<div class="flex items-center gap-1.5 self-end sm:self-center">
+<button class="px-2.5 py-1 bg-surface-container hover:bg-surface-container-high text-on-surface font-mono-meta text-mono-meta transition-colors flex items-center gap-1" onclick="selectAllText()" title="전체 텍스트 선택">
+<span class="material-symbols-outlined text-[14px]">select_all</span>
+<span class="">전체 선택</span>
+</button>
+<button class="px-2.5 py-1 bg-surface-container hover:bg-surface-container-high text-on-surface font-mono-meta text-mono-meta transition-colors flex items-center gap-1" onclick="clearText()" title="텍스트 비우기">
+<span class="material-symbols-outlined text-[14px]">backspace</span>
+<span class="">비우기</span>
+</button>
+<button class="px-2.5 py-1 bg-surface-variant hover:bg-surface-container-high text-error font-mono-meta text-mono-meta transition-colors flex items-center gap-1" onclick="restoreInitialText()" title="초기 추출본으로 복원">
+<span class="material-symbols-outlined text-[14px]">restart_alt</span>
+<span class="">원래 내용으로</span>
+</button>
+</div>
+</div>
+<!-- Proofreading Text Editor Area -->
+<div class="p-space-md sm:p-space-lg flex flex-col flex-1 bg-surface-container-lowest min-h-[580px]">
+<div class="relative flex-1 flex flex-col">
+<textarea class="w-full flex-1 p-4 sm:p-6 bg-surface-container-lowest text-on-surface font-body-md text-body-md leading-[1.85] resize-y rounded-none outline-none focus:bg-surface-bright transition-colors tracking-tight font-normal" id="editorial-editor" oninput="updateTextMetrics()" placeholder="추출된 텍스트가 여기에 표시됩니다. 원본을 참고하여 수정해 주세요." rows="17" spellcheck="false">최종합격을 축하드립니다.
+고용형태: 정규직
+연봉: 3,600만원
+근무시간: 주 5일, 09:00~18:00
+근무장소: 서울 소재 사업장
+담당업무: 콘텐츠 기획 및 SNS 채널 운영
+수습기간: 3개월
+수습 중 급여: 별도 협의
+연차 유급휴가: 회사 내규에 따름
+상세 근로조건은 입사 시 안내드립니다.</textarea>
+</div>
+<!-- Footer Metrics & Analytical Principle Callout -->
+<div class="mt-space-md pt-space-sm space-y-space-xs bg-surface-container-lowest">
+<div class="flex items-center justify-between font-mono-meta text-mono-meta text-on-surface-variant">
+<div class="flex items-center gap-space-md">
+<span class="">총 글자 수: <strong class="font-mono-index text-on-surface font-semibold" id="char-count">166</strong>자</span>
+<span class="">줄 수: <strong class="font-mono-index text-on-surface font-semibold" id="line-count">10</strong>행</span>
+</div>
+<div class="flex items-center gap-1 text-secondary">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span class="">편집 실시간 반영됨</span>
+</div>
+</div>
+<!-- Clear Editorial Notice -->
+<div class="px-space-sm py-2 bg-surface-container-low flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[16px]">info</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                  사용자가 수정한 텍스트를 기준으로 이후 분석이 진행됩니다.
+                </p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Floating Action Bar (CTA Bar) -->
+<section class="mt-space-lg mb-space-xl p-space-md bg-surface-container-lowest shadow-sm flex flex-col sm:flex-row items-center justify-between gap-space-md"><div><a class="inline-flex items-center gap-2 px-space-md py-2.5 bg-surface-container hover:bg-surface-container-high text-on-surface text-[14px] font-medium transition-colors" data-path="document-upload" href="#"><span class="material-symbols-outlined text-[16px]">arrow_back</span><span class="">이전으로</span></a></div><div class="flex flex-col sm:flex-row items-center gap-space-md w-full sm:w-auto justify-end"><div class="text-right hidden sm:block"><p class="text-[14px] text-on-surface-variant">확인한 텍스트를 기준으로 근로조건을 확인해요.</p></div><button class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-space-xl py-3 bg-primary hover:bg-primary-container text-on-primary text-[15px] font-medium tracking-tight rounded-none transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed" id="proceed-btn" onclick="handleProceedAnalysis()" type="button"><span class="">내용 확인하고 분석하기</span><span class="material-symbols-outlined text-[18px]">arrow_forward</span></button></div></section>
+</div>
+</div>
+</div>
+<script>
+  // Initial Reference Text Constant
+  const INITIAL_EXTRACTED_CONTENT = `최종합격을 축하드립니다.
+고용형태: 정규직
+연봉: 3,600만원
+근무시간: 주 5일, 09:00~18:00
+근무장소: 서울 소재 사업장
+담당업무: 콘텐츠 기획 및 SNS 채널 운영
+수습기간: 3개월
+수습 중 급여: 별도 협의
+연차 유급휴가: 회사 내규에 따름
+상세 근로조건은 입사 시 안내드립니다.`;
+
+  let currentZoom = 100;
+
+  function adjustZoom(delta) {
+    currentZoom = Math.min(150, Math.max(70, currentZoom + delta));
+    applyZoom();
+  }
+
+  function resetZoom() {
+    currentZoom = 100;
+    applyZoom();
+  }
+
+  function applyZoom() {
+    const sheet = document.getElementById('paper-sheet');
+    const indicator = document.getElementById('zoom-indicator');
+    if (sheet && indicator) {
+      sheet.style.transform = `scale(${currentZoom / 100})`;
+      indicator.textContent = `${currentZoom}%`;
+    }
+  }
+
+  function updateTextMetrics() {
+    const editor = document.getElementById('editorial-editor');
+    const charCount = document.getElementById('char-count');
+    const lineCount = document.getElementById('line-count');
+    
+    if (editor && charCount && lineCount) {
+      const val = editor.value;
+      charCount.textContent = val.length.toLocaleString();
+      const lines = val.length === 0 ? 0 : val.split('\n').length;
+      lineCount.textContent = lines.toString();
+    }
+  }
+
+  function selectAllText() {
+    const editor = document.getElementById('editorial-editor');
+    if (editor) {
+      editor.focus();
+      editor.select();
+    }
+  }
+
+  function clearText() {
+    const editor = document.getElementById('editorial-editor');
+    if (editor && confirm('편집 창의 모든 텍스트를 비우시겠습니까?')) {
+      editor.value = '';
+      updateTextMetrics();
+      editor.focus();
+    }
+  }
+
+  function restoreInitialText() {
+    const editor = document.getElementById('editorial-editor');
+    if (editor) {
+      if (confirm('추출 초기 텍스트로 되돌리시겠습니까? 작성 중인 수정사항이 대체됩니다.')) {
+        editor.value = INITIAL_EXTRACTED_CONTENT;
+        updateTextMetrics();
+        editor.focus();
+      }
+    }
+  }
+
+  function switchMobileTab(target) {
+    const paneOriginal = document.getElementById('pane-original');
+    const paneExtracted = document.getElementById('pane-extracted');
+    const btnOriginal = document.getElementById('tab-btn-original');
+    const btnExtracted = document.getElementById('tab-btn-extracted');
+
+    if (target === 'original') {
+      paneOriginal.classList.remove('hidden');
+      paneExtracted.classList.add('hidden');
+      btnOriginal.className = "flex-1 py-2 text-center font-headline-sm text-headline-sm bg-surface-container-lowest text-on-surface shadow-sm transition-colors";
+      btnExtracted.className = "flex-1 py-2 text-center font-headline-sm text-headline-sm text-on-surface-variant hover:text-on-surface transition-colors";
+    } else {
+      paneOriginal.classList.add('hidden');
+      paneExtracted.classList.remove('hidden');
+      btnExtracted.className = "flex-1 py-2 text-center font-headline-sm text-headline-sm bg-surface-container-lowest text-on-surface shadow-sm transition-colors";
+      btnOriginal.className = "flex-1 py-2 text-center font-headline-sm text-headline-sm text-on-surface-variant hover:text-on-surface transition-colors";
+    }
+  }
+
+  function handleProceedAnalysis() {
+    const editor = document.getElementById('editorial-editor');
+    if (!editor || editor.value.trim().length === 0) {
+      alert('분석을 진행할 문서 텍스트가 비어 있습니다. 내용을 확인해 주세요.');
+      return;
+    }
+    // Proceed to Next Editorial Stage
+    window.location.hash = '#document-extraction-review';
+  }
+
+  // Initialize metrics on load
+  document.addEventListener('DOMContentLoaded', () => {
+    updateTextMetrics();
+  });
+</script></main><footer class="w-full bg-surface-container-low py-space-xl"><div class="max-w-7xl mx-auto px-margin-mobile lg:px-margin flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left"><p class="text-[13px] text-on-surface-variant">문서에 적힌 내용을 확인하며 법률 위반 여부는 판단하지 않습니다.</p><p class="text-[13px] text-outline">© 일단확인</p></div></footer>
+
+</body></html>
