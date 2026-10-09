@@ -3,10 +3,15 @@ import assert from 'node:assert/strict';
 import { ApiError } from '@google/genai';
 import { createGeminiAnalyzer } from '../src/ai/gemini.js';
 import { analyzeDocument } from '../src/analyze.js';
-import { ITEM_IDS } from '../src/items.js';
+import { CRITERION_IDS, criteriaOfTopics } from '../src/criteria.js';
 import { segmentText } from '../src/segment.js';
-import { SAMPLES } from './samples.js';
-import { idealResponse, idealItem, scriptedAI } from './helpers.js';
+import { FIXTURES, buildExtraction } from './v22-fixtures.js';
+import { scriptedAI } from './helpers.js';
+
+// 가상 문서 F01과 올바른 추출값 (실제 Gemini 결과 아님)
+const F01 = FIXTURES.find((f) => f.key === 'F01');
+const SAMPLES = [F01];
+const idealResponse = (sample, ids = CRITERION_IDS) => buildExtraction(segmentText(sample.text), sample.extraction, ids);
 
 // 실제 네트워크 대신 응답을 흉내 내는 가짜 Gemini 클라이언트
 function fakeClient(respond) {
@@ -22,18 +27,18 @@ function fakeClient(respond) {
   };
 }
 const ok = (obj, finishReason = 'STOP') => ({ text: JSON.stringify(obj), candidates: [{ finishReason }] });
-const args = (sample) => ({ docType: sample.docType, segments: segmentText(sample.text), itemIds: ITEM_IDS });
+const args = (sample) => ({ docType: sample.docType, segments: segmentText(sample.text), criterionIds: CRITERION_IDS });
 
 test('gemini-3.5-flash-lite에 구조화 JSON 스키마로 요청하고, 유료 fallback 설정이 없다', async () => {
   const sample = SAMPLES[0];
   const client = fakeClient(() => ok(idealResponse(sample)));
   const ai = createGeminiAnalyzer({ client });
   const raw = await ai.analyze(args(sample));
-  assert.equal(raw.items.length, 8);
+  assert.equal(raw.criteria.length, 32);
   const req = client.requests[0];
   assert.equal(req.model, 'gemini-3.5-flash-lite');
   assert.equal(req.config.responseMimeType, 'application/json');
-  assert.deepEqual(req.config.responseJsonSchema.properties.items.items.properties.id.enum, ITEM_IDS);
+  assert.deepEqual(req.config.responseJsonSchema.properties.criteria.items.properties.id.enum, CRITERION_IDS);
   assert.ok(req.config.abortSignal, '타임아웃 신호를 건다');
   assert.ok(!('fallbacks' in req) && !('fallbacks' in req.config));
   assert.ok(req.contents.includes('[1] '), '번호가 붙은 원문을 보낸다');
@@ -78,15 +83,15 @@ test('Gemini 응답도 기존 검증·재분석 규칙을 그대로 거친다', 
     n += 1;
     if (n === 1) {
       const bad = idealResponse(sample);
-      bad.items.find((i) => i.id === 'salary').evidence_ids = [999];
+      bad.criteria.find((c) => c.id === '01-a').quotes[0].line = 999;
       return ok(bad);
     }
-    return ok({ items: [idealItem(sample, 'salary')] });
+    return ok(idealResponse(sample, criteriaOfTopics(['01'])));
   });
   const result = await analyzeDocument({ text: sample.text, docType: sample.docType, ai: createGeminiAnalyzer({ client }) });
   assert.equal(client.requests.length, 2);
-  assert.deepEqual(client.requests[1].config.responseJsonSchema.properties.items.items.properties.id.enum, ['salary']);
-  assert.equal(result.items.find((i) => i.id === 'salary').status, 'stated');
+  assert.deepEqual(client.requests[1].config.responseJsonSchema.properties.criteria.items.properties.id.enum, criteriaOfTopics(['01']));
+  assert.equal(result.topics.find((t) => t.id === '01').status, 'MAIN_FOUND');
 });
 
 test('첫 호출의 치명 오류는 요청 전체 오류, 재분석 중 오류는 해당 항목만 분석 확인 불가', async () => {
@@ -95,10 +100,10 @@ test('첫 호출의 치명 오류는 요청 전체 오류, 재분석 중 오류�
   await assert.rejects(analyzeDocument({ text: sample.text, docType: sample.docType, ai: scriptedAI(fatal) }), (e) => e.code === 'rate_limited');
 
   const bad = idealResponse(sample);
-  bad.items.find((i) => i.id === 'salary').evidence_ids = [999];
+  bad.criteria.find((c) => c.id === '01-a').quotes[0].line = 999;
   const result = await analyzeDocument({ text: sample.text, docType: sample.docType, ai: scriptedAI(bad, fatal) });
-  assert.equal(result.items.find((i) => i.id === 'salary').status, 'unavailable');
-  assert.equal(result.items.find((i) => i.id === 'duties').status, 'stated');
+  assert.equal(result.topics.find((t) => t.id === '01').status, 'MAIN_UNAVAILABLE');
+  assert.equal(result.topics.find((t) => t.id === '04').status, 'MAIN_FOUND');
 });
 
 // Google 오류 본문 형태의 ApiError
@@ -139,9 +144,11 @@ test('요청 설정 오류(400)는 같은 요청을 재시도하지 않는다', 
 test('일시 오류(5xx)는 기존 규칙대로 한 번만 재분석하고, 실패 코드에 HTTP 상태를 남긴다', async () => {
   const sample = SAMPLES[0];
   const client = fakeClient(() => { throw googleError(500, 'INTERNAL', 'internal'); });
-  const result = await analyzeDocument({ text: sample.text, docType: sample.docType, ai: createGeminiAnalyzer({ client }) });
+  const logs = [];
+  const result = await analyzeDocument({ text: sample.text, docType: sample.docType, ai: createGeminiAnalyzer({ client }), log: (e) => logs.push(e) });
   assert.equal(client.requests.length, 2);
-  assert.deepEqual(result.items[0].errorCodes, ['ai_call_failed:api_error:500']);
+  assert.ok(result.topics.filter((t) => t.visible).every((t) => t.status === 'MAIN_UNAVAILABLE'), '분석 실패를 찾지 못함으로 바꾸지 않음');
+  assert.deepEqual(logs.at(-1).finalErrors['01-a'], ['ai_call_failed:api_error:500']);
 });
 
 test('모델 사전 점검: 성공 / 404면 flash 모델 이름만 참고로 수집', async () => {

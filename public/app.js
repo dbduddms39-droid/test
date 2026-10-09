@@ -1,13 +1,11 @@
 import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-rules.js';
 import { buildQuestion, copyText } from './questions.js';
-import { el, statusBadge } from './components.js';
+import { el, statusBadge, V22_STATUS_LABEL } from './components.js';
 import { ROUTES, checkText, editRouteFor, resolveRoute, classifyAnalyzeFailure } from './flow.js';
 
 // 일단확인 클라이언트.
 // 입력 원문·추출 텍스트·분석 결과는 이 창의 메모리에만 둔다(브라우저 저장소·URL에 남기지 않음).
 // 앱 안에서 화면을 옮기거나 뒤로 가기를 해도 유지되지만, 새로고침하거나 창을 닫으면 사라진다.
-const STATUS_ORDER = ['stated', 'unclear', 'not_found', 'unavailable'];
-const STATUS_LABEL = { stated: '명시됨', unclear: '분명하지 않음', not_found: '찾지 못함', unavailable: '분석 확인 불가' };
 const EXTRACTED_NOTE = {
   ocr: '이미지·스캔 문서에서 글자를 인식(OCR)한 뒤 확인·수정한 텍스트 기준의 결과예요. 글자 인식은 원본과 완전히 같다고 보장할 수 없으니, 중요한 내용은 원본 파일에서 다시 확인해 주세요.',
   pdf: 'PDF에서 추출한 뒤 확인·수정한 텍스트 기준의 결과예요. 추출 과정에서 줄 순서나 표 내용이 원본과 다를 수 있으니, 중요한 내용은 원본 파일에서 다시 확인해 주세요.',
@@ -47,7 +45,6 @@ const state = {
 let result = null;
 
 const $ = (sel) => document.querySelector(sel);
-const badge = (status) => statusBadge(status, STATUS_LABEL[status]);
 const docType = () => document.querySelector('input[name=docType]:checked').value;
 const go = (hash, replace = false) => { if (replace) location.replace(hash); else location.hash = hash; };
 const showMsg = (node, text) => { node.textContent = text; node.hidden = !text; };
@@ -465,9 +462,14 @@ async function startAnalysis(payload, { replace = false } = {}) {
   }
   if (controller.signal.aborted) return; // 사용자가 분석 화면을 떠남
 
-  if (res?.ok) {
+  // 점검 기준 v2.2 형식이 아닌 응답(예: 이전 버전 서버)은 결과로 보여 주지 않는다 (8개·10개 형식 혼용 방지)
+  if (res?.ok && isV22(data)) {
     result = { ...data, inputSource: payload.inputSource };
     return go(ROUTES.result, true);
+  }
+  if (res?.ok) {
+    state.error = { message: '분석 결과 형식을 확인하지 못했어요. 페이지를 새로고침한 뒤 다시 시도해 주세요.' };
+    return go(ROUTES.error, true);
   }
   const message = res ? data.error || '분석에 실패했어요. 잠시 후 다시 시도해 주세요.' : '서버에 연결하지 못했어요. 네트워크 연결을 확인한 뒤 다시 시도해 주세요.';
   if (res && classifyAnalyzeFailure(res.status) === 'input') {
@@ -488,73 +490,89 @@ function renderError() {
   $('#retry-btn').disabled = !state.last || Boolean(state.inflight);
 }
 
-// ---------- S-05 결과 ----------
+// ---------- S-05 결과 (점검 기준 v2.2: 10개 주제, 08은 조건부) ----------
+// 최종 디자인은 4단계에서 적용한다. 여기서는 새 결과 형식을 정확히 보여 주는 데 집중한다.
+const MAIN_ORDER = ['MAIN_FOUND', 'MAIN_PARTIAL', 'MAIN_MISSING', 'MAIN_UNAVAILABLE'];
+const isV22 = (r) => r?.version === 'v2.2' && Array.isArray(r.topics);
+
 function renderResult() {
   $('#result-doc-type').textContent = result.docTypeLabel;
   $('#result-back').setAttribute('href', editRouteFor(result.inputSource));
   const source = $('#analysis-source');
   source.textContent = result.mode === 'demo'
     ? '데모 결과예요. AI 분석이 아니라 개발용 키워드 규칙으로 만든 결과라서 실제 판단에 쓰면 안 돼요.'
-    : 'AI(Gemini)가 분석하고 서버가 근거 번호를 검증한 결과예요.';
+    : 'AI 분석을 바탕으로 서버가 원문 근거를 확인하고 점검 기준에 따라 정리한 결과예요.';
   source.classList.toggle('analysis-source-demo', result.mode === 'demo');
   // 파일에서 추출한 텍스트로 분석한 경우: 원본 파일이 아니라 추출·확인한 텍스트 기준임을 밝힌다.
   const sourceNote = $('#input-source-note');
   sourceNote.hidden = result.inputSource === 'paste';
   sourceNote.textContent = EXTRACTED_NOTE[result.inputSource] ?? '';
-  $('#result-notice').textContent = result.notice;
+  $('#result-notice').textContent = `${result.sourceGuide} ${result.notice}`;
+  $('#result-count').textContent = `점검한 항목 ${result.counts.shown}개`;
 
-  $('#summary').replaceChildren(...STATUS_ORDER
-    .filter((s) => s !== 'unavailable' || result.summary.unavailable > 0)
-    .map((s) => el('li', { class: `summary-cell summary-${s}` },
-      el('span', { class: 'summary-count' }, String(result.summary[s])),
-      el('span', { class: 'summary-label' }, STATUS_LABEL[s]))));
+  $('#summary').replaceChildren(...MAIN_ORDER
+    .filter((s) => s !== 'MAIN_UNAVAILABLE' || result.counts.byStatus[s] > 0)
+    .map((s) => el('li', { class: 'summary-cell' },
+      el('span', { class: 'summary-count' }, String(result.counts.byStatus[s])),
+      el('span', { class: 'summary-label' }, V22_STATUS_LABEL[s]))));
 
-  $('#item-list').replaceChildren(...result.items.filter((it) => it.visible).map((it) => el('li', {},
-    el('a', { href: `#/detail/${it.id}`, class: 'item-row' },
-      el('span', { class: 'item-label' }, it.label),
-      badge(it.status),
+  $('#item-list').replaceChildren(...result.topics.filter((t) => t.visible).map((t) => el('li', {},
+    el('a', { href: `#/detail/${t.id}`, class: 'item-row' },
+      el('span', { class: 'mono-index' }, t.id),
+      el('span', { class: 'item-label' }, t.label),
+      statusBadge(t.status, t.statusLabel),
       el('span', { class: 'chevron', 'aria-hidden': 'true' }, '›')))));
 }
 
 // ---------- S-06 상세 ----------
-function renderDetail(id) {
-  const it = result.items.find((x) => x.id === id && x.visible);
+const UNAVAILABLE_REASON = {
+  ocr_low_confidence: '이 부분의 글자 인식(OCR)이 불확실해 확정하지 않았어요. 원본과 비교해 고친 뒤 다시 분석해 주세요.',
+  evidence_verification_failed: 'AI가 제시한 근거를 원문에서 확인하지 못해 확정하지 않았어요.',
+};
 
+function criterionBlock(c) {
+  return el('li', { class: 'criterion', 'data-criterion': c.id },
+    el('div', { class: 'criterion-head' },
+      el('span', { class: 'mono-index' }, c.id),
+      el('span', { class: 'criterion-name' }, c.name, c.conditional ? el('span', { class: 'tag' }, '조건부') : null),
+      statusBadge(c.status, c.statusLabel)),
+    c.sourceValue ? el('p', { class: 'criterion-value' }, el('span', { class: 'value-kind' }, '원문 기재값'), c.sourceValue) : null,
+    ...(c.derived ?? []).map((d) => el('p', { class: 'criterion-value is-calculated' },
+      el('span', { class: 'value-kind' }, '계산값'), `${d.label ? `${d.label}: ` : ''}${d.value}`,
+      el('span', { class: 'derivation' }, ` (${d.derivation}, 원문에 적힌 값이 아니라 원문 숫자로 계산한 값)`))),
+    c.evidence.length ? el('ol', { class: 'evidence' }, c.evidence.map((e) =>
+      el('li', {}, el('span', { class: 'evidence-no' }, `${e.line}번 줄`), el('span', { class: 'evidence-text' }, e.text)))) : null,
+    c.status === 'UNAVAILABLE' ? el('p', { class: 'muted small' }, UNAVAILABLE_REASON[c.unavailableReason] ?? '근거를 확인하지 못해 확정하지 않았어요.') : null,
+    el('p', { class: 'criterion-source' }, `기준 출처: ${c.sources.join('·')}`));
+}
+
+function renderDetail(id) {
+  const t = result.topics.find((x) => x.id === id && x.visible);
+  const core = t.criteria.filter((c) => c.role === 'C');
+  const extra = t.criteria.filter((c) => c.role === 'D');
   const blocks = [
     el('p', { class: 'doc-type-chip' }, result.docTypeLabel),
-    el('h1', {}, it.label),
-    el('div', { class: 'detail-status' }, badge(it.status)),
-    el('h2', {}, '이 결과의 의미'),
-    el('p', {}, it.probationNone ? '문서에 수습기간이 없다고 적혀 있어요.' : it.explanation),
+    el('h1', {}, el('span', { class: 'mono-index' }, `${t.id} `), t.label),
+    el('div', { class: 'detail-status' }, statusBadge(t.status, t.statusLabel)),
   ];
-  // 분명하지 않음: 문서에 적힌 내용과 이 문서만으로 확인하기 어려운 부분을 나눠 보여 준다
-  if (it.reasonFact || it.reasonPending) {
-    blocks.push(el('div', { class: 'reason' },
-      el('p', { class: 'reason-fact' }, it.reasonFact ?? ''),
-      el('p', { class: 'reason-pending' }, it.reasonPending ?? '')));
-  }
-  if (it.notFoundMessage) blocks.push(el('p', { class: 'reason' }, it.notFoundMessage));
+  // 안내는 서로 다른 영역에 둔다 (중립 안내 / 적용 범위 안내 / 수습 중 급여 보류)
+  if (t.notes.neutral) blocks.push(el('p', { class: 'note note-neutral' }, t.notes.neutral));
+  if (t.notes.applicability) blocks.push(el('p', { class: 'note note-applicability' }, t.notes.applicability));
+  if (t.notes.probationHold) blocks.push(el('p', { class: 'note note-hold' }, t.notes.probationHold));
 
   const extracted = result.inputSource !== 'paste';
-  blocks.push(el('h2', {}, extracted ? '추출·확인한 텍스트' : '문서 원문'));
-  if (extracted) blocks.push(el('p', { class: 'muted evidence-source' }, '파일에서 추출해 확인·수정한 텍스트에서 가져온 줄이에요. 원본 파일과 다를 수 있어요.'));
-  if (it.evidence.length) {
-    blocks.push(el('ol', { class: 'evidence' }, it.evidence.map((s) =>
-      el('li', {}, el('span', { class: 'evidence-no' }, `${s.id}번 줄`), el('span', { class: 'evidence-text' }, s.text)))));
-  } else {
-    blocks.push(el('p', { class: 'muted' }, it.status === 'unavailable'
-      ? '근거를 확인하지 못했어요. 입력한 문서를 직접 확인해 주세요.'
-      : '이 항목에 해당하는 원문이 없어요.'));
+  if (extracted) blocks.push(el('p', { class: 'muted evidence-source' }, '근거는 파일에서 추출해 확인·수정한 텍스트의 줄이에요. 원본 파일과 다를 수 있어요.'));
+  blocks.push(el('h2', {}, '핵심 확인 기준'), el('ul', { class: 'criteria' }, core.map(criterionBlock)));
+  if (extra.length) blocks.push(el('h2', {}, '추가 확인 기준'), el('p', { class: 'muted small' }, '추가 기준이 문서에 없어도 핵심 항목의 기재 상태는 바뀌지 않아요.'), el('ul', { class: 'criteria' }, extra.map(criterionBlock)));
+
+  const unconfirmed = t.criteria.filter((c) => t.unconfirmed.includes(c.id));
+  if (unconfirmed.length) {
+    blocks.push(el('h2', {}, '이 문서에서 확인되지 않은 내용'));
+    blocks.push(el('ul', { class: 'unconfirmed' }, unconfirmed.map((c) => el('li', {}, `${c.name} (${c.statusLabel})`))));
   }
 
-  // 문서에 이미 다 적혀 있어 더 확인할 것이 없으면 제목과 목록을 함께 숨긴다
-  if (it.followUps.length) {
-    blocks.push(el('h2', {}, '추가로 확인해 보세요'));
-    blocks.push(el('ul', { class: 'follow-ups' }, it.followUps.map((f) => el('li', {}, f))));
-  }
-
-  // '분명하지 않음'·'찾지 못함'인 표시 항목에만 담당자 질문을 보여 준다 (템플릿 문장, 문서 내용·추측 값은 넣지 않음)
-  const question = buildQuestion(it, result.docType);
+  // '일부 내용만 기재됨'·'관련 내용 찾지 못함'에만 담당자 질문 (템플릿 문장, 문서 내용·추측 값은 넣지 않음)
+  const question = buildQuestion(t, result.docType);
   if (question) {
     const status = el('p', { class: 'ask-status', role: 'status', 'aria-live': 'polite' });
     const text = el('p', { class: 'ask-text', id: 'ask-text' }, question);
@@ -581,7 +599,7 @@ function renderDetail(id) {
       el('p', { class: 'ask-note' }, '보내기 전에 상황에 맞게 고쳐 쓰세요. 이름·연락처 등 개인정보는 필요한 만큼만 적어 주세요.')));
   }
 
-  blocks.push(el('p', { class: 'notice' }, result.notice));
+  blocks.push(el('p', { class: 'notice' }, `${result.sourceGuide} ${result.notice}`));
   $('#detail').replaceChildren(...blocks);
 }
 
@@ -605,7 +623,7 @@ function route() {
     hasReview: Boolean(state.file),
     analyzing: Boolean(state.inflight),
     hasError: Boolean(state.error),
-    detailExists: (id) => Boolean(result?.items.some((x) => x.id === id && x.visible)),
+    detailExists: (id) => Boolean(result?.topics.some((x) => x.id === id && x.visible)),
   });
   // 분석 화면을 떠나면(뒤로 가기 등) 진행 중인 요청을 취소하고 결과를 쓰지 않는다
   if (state.inflight && r.view !== 'analyzing') {

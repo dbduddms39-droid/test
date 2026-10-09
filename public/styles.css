@@ -379,3 +379,21 @@ main { flex: 1; width: 100%; }
 .sheet > .doc-types:first-child { margin-top: 0; }
 .band { box-shadow: 0 0 0 100vmax var(--wash); clip-path: inset(0 -100vmax); border: 0; }
 @media (max-width: 639px) { .method-head .tabs { display: flex; width: 100%; } .method-head .tabs [role=tab] { flex: 1; padding: 6px 8px; } }
+
+/* ---------- S-05·S-06 임시 표시 (점검 기준 v2.2, 최종 디자인은 4단계) ---------- */
+.result-count { margin: 0 0 var(--space-sm); font-size: 14px; color: var(--ink-2); }
+.item-row .mono-index { flex: none; }
+.criteria { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule-soft); }
+.criterion { padding: var(--space-md) 0; border-bottom: 1px solid var(--rule-soft); }
+.criterion-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); }
+.criterion-name { flex: 1; min-width: 0; font-weight: 600; }
+.criterion-value { margin: 6px 0 0; font-size: 14px; }
+.value-kind { display: inline-block; margin-right: 8px; padding: 0 6px; font-size: 11px; line-height: 18px; color: var(--ink-2); border: 1px solid var(--rule); border-radius: var(--radius); }
+.is-calculated .value-kind { color: var(--annot); border-color: var(--annot); }
+.derivation { color: var(--ink-2); font-size: 13px; }
+.criterion .evidence { margin-top: var(--space-sm); }
+.criterion-source { margin: 6px 0 0; font: 400 11px/16px var(--font-mono); letter-spacing: 0.04em; color: var(--ink-3); }
+.note { margin: var(--space-sm) 0; padding: 8px 12px; font-size: 14px; background: var(--wash); border-left: 2px solid var(--annot); }
+.note-applicability { border-left-color: var(--ink-3); }
+.note-hold { border-left-color: var(--ink); }
+.unconfirmed { padding-left: 20px; }

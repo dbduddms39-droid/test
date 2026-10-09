@@ -1,5 +1,6 @@
 # 실제 Gemini API(무료 등급) 연결 테스트 — 수동 실행 전용
-# - 가상 문서 샘플을 분석한다 (기본: 전체, 입력값 samples로 일부만 선택, 샘플 사이 15초 대기). 실제 개인정보 문서는 쓰지 않는다.
+# - 점검 기준 v2.2 가상 문서 F01~F11을 분석한다 (기본: 전체, 입력값 samples로 일부만 선택, 문서 사이 15초 대기). 실제 개인정보 문서는 쓰지 않는다.
+# - 보고서는 기획상 기대 판정과 실제 실행 결과를 나란히 기록한다. 일치율은 측정값이며 모델 정확도 검증 완료가 아니다.
 # - GEMINI_API_KEY는 GitHub Actions Secrets에서만 읽고, 로그에 출력하지 않는다.
 # - 모델은 앱 기본 모델과 같은 무료 등급 gemini-3.5-flash-lite로 고정한다. 유료 모델 자동 전환(fallback)은 없다.
 name: Gemini live test
@@ -8,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       samples:
-        description: '분석할 샘플 키 (쉼표 구분, 비우면 전체). 예: S3_missing'
+        description: '분석할 문서 키 (쉼표 구분, 비우면 F01~F11 전체). 예: F02,F05'
         required: false
         default: ''
 
@@ -62,7 +63,7 @@ jobs:
             npm run eval:live
           fi
 
-      # 보고서에는 상태·근거 번호·AI 응답 JSON만 있고 문서 원문과 키는 없다.
+      # 보고서에는 세부기준 ID·상태·호출 기록만 있고 문서 원문·인용 구절과 키는 없다.
       - name: Print report
         if: always()
         run: cat docs/test-report-live.md || true

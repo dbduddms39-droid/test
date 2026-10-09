@@ -29,19 +29,19 @@ export function createGeminiAnalyzer({
         return out;
       }
     },
-    async analyze({ docType, segments, itemIds, feedback }) {
+    async analyze({ docType, segments, criterionIds, feedback }) {
       if (!client) throw new AIError('missing_key', 'AI 분석 키(GEMINI_API_KEY)가 설정되지 않았어요.');
       let response;
       try {
         response = await client.models.generateContent({
           model,
-          contents: buildUserMessage({ docType, segments, itemIds, feedback }),
+          contents: buildUserMessage({ docType, segments, criterionIds, feedback }),
           config: {
             systemInstruction: SYSTEM_PROMPT,
             temperature: 0,
             maxOutputTokens: 16000,
             responseMimeType: 'application/json',
-            responseJsonSchema: responseSchema(itemIds),
+            responseJsonSchema: responseSchema(criterionIds),
             abortSignal: AbortSignal.timeout(timeoutMs),
           },
         });

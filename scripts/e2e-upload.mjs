@@ -148,20 +148,23 @@ try {
     const res = await resPromise;
     const data = await res.json();
     check(`[${label}] 확인·수정한 텍스트만 분석 요청에 전달`, body.text === edited && body.docType === docType && Object.keys(body).length === 2);
-    check(`[${label}] 분석 결과 8개 항목`, res.status() === 200 && data.items?.length === 8 && (!REQUIRE_AI || data.mode === 'gemini'),
-      `HTTP ${res.status()}${data.code ? ` ${data.code}` : ''}, mode=${data.mode}, 표시 ${data.items?.filter((i) => i.visible).length ?? 0}개, 분석 확인 불가 ${data.items?.filter((i) => i.status === 'unavailable').length ?? '-'}개`);
+    const shownTopics = data.topics?.filter((t) => t.visible) ?? [];
+    check(`[${label}] 분석 결과 (점검 기준 v2.2, 9개 또는 10개 주제)`, res.status() === 200 && data.version === 'v2.2' && data.topics?.length === 10 && [9, 10].includes(shownTopics.length) && (!REQUIRE_AI || data.mode === 'gemini'),
+      `HTTP ${res.status()}${data.code ? ` ${data.code}` : ''}, mode=${data.mode}, 표시 ${shownTopics.length}개, 분석 확인 불가 ${shownTopics.filter((t) => t.status === 'MAIN_UNAVAILABLE').length}개`);
     if (res.status() === 200) {
       await page.waitForSelector('#view-result:not([hidden])');
       const note = await page.isVisible('#input-source-note') ? await page.textContent('#input-source-note') : '';
       check(`[${label}] 결과 화면에 '추출·확인한 텍스트 기준' 안내`, note.includes('확인·수정한 텍스트 기준'));
-      check(`[${label}] 원문 근거가 확인한 텍스트에서 그대로 표시`, data.items.every((it) => it.evidence.every((e) => edited.slice(e.start, e.end) === e.text)));
-      const first = data.items.find((it) => it.visible && it.evidence.length);
+      const lines = edited.split('\n');
+      const allEvidence = shownTopics.flatMap((t) => t.criteria.flatMap((c) => c.evidence));
+      check(`[${label}] 원문 근거가 확인한 텍스트의 해당 줄에 그대로 있음`, allEvidence.every((e) => data.lines[e.line - 1]?.text.includes(e.text) && lines.some((l) => l.includes(e.text))), `${allEvidence.length}개`);
+      const first = shownTopics.find((t) => t.criteria.some((c) => c.evidence.length));
       if (first) {
         await page.click(`.item-row >> text=${first.label}`);
         await page.waitForSelector('#view-detail:not([hidden])');
         const shown = await page.$$eval('.evidence-text', (els) => els.map((e) => e.textContent));
-        const heading = await page.$$eval('#detail h2', (els) => els.map((e) => e.textContent));
-        check(`[${label}] 상세 화면: '추출·확인한 텍스트' 근거 (${first.label})`, heading.includes('추출·확인한 텍스트') && shown.length > 0 && shown.every((t) => edited.includes(t)), `${shown.length}줄`);
+        const srcNote = await page.isVisible('#detail .evidence-source');
+        check(`[${label}] 상세 화면: 추출·확인한 텍스트 기준 근거 (${first.label})`, srcNote && shown.length > 0 && shown.every((t) => edited.includes(t)), `${shown.length}개`);
         await page.screenshot({ path: `${OUT}/${label}-detail.png`, fullPage: true });
         await page.goBack();
         await page.waitForSelector('#view-result:not([hidden])');

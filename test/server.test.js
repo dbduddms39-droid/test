@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from '../server.js';
 import { createDemoAnalyzer } from '../src/ai/demo.js';
 import { responseSchema } from '../src/ai/prompt.js';
-import { ITEM_IDS } from '../src/items.js';
+import { CRITERION_IDS } from '../src/criteria.js';
 import { createGeminiAnalyzer } from '../src/ai/gemini.js';
 import { createRateLimiter } from '../src/rateLimit.js';
 
@@ -22,15 +22,20 @@ after(() => { console.log = origLog; server.close(); });
 
 const post = (body) => fetch(`${base}/api/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-test('분석 API가 8개 항목 결과와 요약을 돌려준다', async () => {
+test('분석 API가 v2.2 10개 주제(08 조건부) 결과를 돌려준다', async () => {
   const secret = '급여: 월 250만원 비밀문구XYZ';
   const res = await post({ docType: 'job_posting', text: `${secret}\n근무지: 서울 마포구` });
   assert.equal(res.status, 200);
   const data = await res.json();
-  assert.equal(data.items.length, 8);
+  assert.equal(data.version, 'v2.2');
+  assert.equal(data.topics.length, 10);
+  assert.equal(data.items, undefined, '기존 8개 형식 필드를 함께 보내지 않는다');
+  assert.equal(data.counts.shown, 9, '수습 적용이 확인되지 않아 08 미표시');
   assert.equal(data.docTypeLabel, '채용공고');
   assert.equal(data.mode, 'demo', '데모 결과임을 응답에 표시한다');
-  assert.equal(data.items.find((i) => i.id === 'salary').evidence[0].text, secret);
+  const wage = data.topics.find((t) => t.id === '01');
+  assert.equal(wage.criteria.find((c) => c.id === '01-a').evidence[0].text, secret);
+  assert.ok(data.sourceGuide.includes('법적 기재 의무를 판단하는 것은 아닙니다'));
   assert.ok(logged.length > 0);
   assert.ok(!logged.some((l) => l.includes('비밀문구XYZ')), '원문을 로그에 남기지 않는다');
 });
@@ -50,11 +55,14 @@ test('정적 파일 제공 및 경로 이탈 차단', async () => {
   assert.equal((await fetch(`${base}/..%2Fserver.js`)).status, 404);
 });
 
-test('응답 스키마가 8개 항목 ID와 수습 없음 구분 값을 포함한다', () => {
+test('AI 응답 스키마: 32개 세부기준 ID, 표현 유형, 06-a 기간 유형, 02-a 계산값 구조 (상태 코드는 AI가 정하지 않음)', () => {
   const s = responseSchema();
-  const props = s.properties.items.items.properties;
-  assert.deepEqual(props.id.enum, ITEM_IDS);
-  assert.ok(props.probation_status.anyOf[0].enum.includes('none'));
+  const props = s.properties.criteria.items.properties;
+  assert.deepEqual(props.id.enum, CRITERION_IDS);
+  assert.equal(CRITERION_IDS.length, 32);
+  assert.deepEqual(props.finding.enum, ['specific', 'coarse', 'undecided', 'conflict', 'negated', 'absent']);
+  assert.deepEqual(props.term_type.anyOf[0].enum, ['fixed', 'indefinite']);
+  assert.ok(!JSON.stringify(s).includes('CONFIRMED') && !JSON.stringify(s).includes('MAIN_'));
 });
 
 // 별도 서버를 띄워 한 번 요청하고 닫는다
@@ -75,7 +83,7 @@ test('GEMINI_API_KEY가 없으면 데모로 바꾸지 않고 오류를 안내한
   assert.equal(r.status, 503);
   assert.equal(r.data.code, 'missing_key');
   assert.ok(r.data.error.includes('GEMINI_API_KEY'));
-  assert.equal(r.data.items, undefined);
+  assert.equal(r.data.topics, undefined);
 });
 
 test('AI 무료 사용량 한도 도달을 안내한다', async () => {

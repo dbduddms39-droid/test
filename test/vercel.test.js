@@ -32,7 +32,9 @@ test('default 핸들러로 메인 화면, /api/config, /api/analyze가 동작한
     assert.deepEqual(await (await fetch(`${base}/api/config`)).json(), { mode: 'demo' });
     const res = await fetch(`${base}/api/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docType: 'job_posting', text: '급여: 월 250만원\n근무지: 서울' }) });
     assert.equal(res.status, 200);
-    assert.equal((await res.json()).items.length, 8);
+    const data = await res.json();
+    assert.equal(data.version, 'v2.2');
+    assert.equal(data.topics.length, 10);
   });
 });
 

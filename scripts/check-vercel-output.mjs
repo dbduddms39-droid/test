@@ -65,7 +65,7 @@ try {
   check('GET /api/config', cfg.status === 200, `HTTP ${cfg.status} ${await cfg.text()}`);
   const an = await fetch(`${base}/api/analyze`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ docType: 'job_posting', text: '급여: 월 250만원\n근무지: 서울 (가상 예시)' }) });
   const aj = await an.json();
-  check('POST /api/analyze', an.status === 200 && aj.items?.length === 8, `HTTP ${an.status} items=${aj.items?.length}`);
+  check('POST /api/analyze', an.status === 200 && aj.version === 'v2.2' && aj.topics?.length === 10, `HTTP ${an.status} version=${aj.version} topics=${aj.topics?.length}`);
 } finally {
   srv.close();
   await rm(tmp, { recursive: true, force: true });

@@ -1,5 +1,5 @@
-// 실제 브라우저로 사용자 흐름을 확인한다: 문서 유형 선택 → 가상 채용공고 붙여넣기 → 분석 시작
-// → 결과(8개 항목) 표시 → 항목별 원문 근거 확인 → '담당자에게 이렇게 물어보세요' 질문 복사.
+// 실제 브라우저로 사용자 흐름을 확인한다: S-01 → 문서 유형 선택 → 가상 채용공고 붙여넣기 → 분석 시작
+// → 결과(점검 기준 v2.2: 9개 또는 10개 주제) 표시 → 세부기준별 원문 근거 확인 → '담당자에게 이렇게 물어보세요' 질문 복사.
 // 키 노출 여부도 함께 검사한다.
 //   DEMO_MODE=true node scripts/e2e-browser.mjs          (키 없이 흐름만 확인, 데모 결과)
 //   GEMINI_API_KEY=... E2E_REQUIRE_AI=true node scripts/e2e-browser.mjs   (실제 AI 분석)
@@ -9,7 +9,7 @@ import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
-import { SAMPLES } from '../test/samples.js';
+import { FIXTURES } from '../test/v22-fixtures.js';
 
 const PORT = Number(process.env.E2E_PORT) || 3210;
 const REMOTE = process.env.E2E_BASE_URL ? new URL(process.env.E2E_BASE_URL).origin : null;
@@ -17,10 +17,10 @@ const BASE = REMOTE ?? `http://127.0.0.1:${PORT}`;
 const OUT = 'e2e-artifacts';
 const REQUIRE_AI = process.env.E2E_REQUIRE_AI === 'true';
 const KEY = process.env.GEMINI_API_KEY || '';
-const sample = SAMPLES.find((s) => s.key === 'X3_intern_word'); // 가상 채용공고
-const UNIQUE_PHRASE = '지표 대시보드'; // 원문이 서버 로그에 남는지 확인용 (가상 문서의 일부)
-const missing = SAMPLES.find((s) => s.key === 'S3_missing'); // 조건 일부가 빠진 가상 오퍼 (찾지 못함 항목 확인용)
-const ASK_STATUSES = ['unclear', 'not_found'];
+const sample = FIXTURES.find((f) => f.key === 'F02'); // 미확정 표현이 많은 가상 채용공고
+const UNIQUE_PHRASE = '라이트랩'; // 원문이 서버 로그에 남는지 확인용 (가상 문서의 일부)
+const missing = FIXTURES.find((f) => f.key === 'F04'); // 부정 표현·미정 항목이 있는 가상 오퍼
+const ASK_STATUSES = ['MAIN_PARTIAL', 'MAIN_MISSING'];
 
 const checks = [];
 const check = (name, ok, detail = '') => {
@@ -84,75 +84,62 @@ try {
   await page.waitForSelector('#view-result:not([hidden])', { timeout: 10_000 });
   await page.screenshot({ path: `${OUT}/02-result.png`, fullPage: true });
 
-  // 4) 8개 근로조건 결과
-  const ids = data.items.map((i) => i.id);
-  check('API 결과 항목 수 8개 (중복 없음)', ids.length === 8 && new Set(ids).size === 8);
-  const unavailable = data.items.filter((i) => i.status === 'unavailable').length;
-  check('분석 확인 불가 없음', unavailable === 0, `${unavailable}개`);
-  const visible = data.items.filter((i) => i.visible);
+  // 4) 점검 기준 v2.2 결과: 10개 주제, 08은 수습 적용이 확인될 때만 표시
+  check('API 결과: v2.2 형식, 주제 10개(중복 없음), 기존 8개 형식 필드 없음', data.version === 'v2.2' && data.topics.length === 10 && new Set(data.topics.map((t) => t.id)).size === 10 && data.items === undefined);
+  const visible = data.topics.filter((t) => t.visible);
+  check('표시 항목 수 9개 또는 10개, 08 미표시면 상태 없음', [9, 10].includes(visible.length) && visible.length === data.counts.shown
+    && data.topics.filter((t) => !t.visible).every((t) => t.id === '08' && t.status === null), `표시 ${visible.length}개`);
   const rows = await page.$$eval('.item-row', (els) => els.map((e) => ({
     label: e.querySelector('.item-label').textContent, status: e.querySelector('.badge').textContent,
   })));
   const rowsMatch = rows.length === visible.length && rows.every((r, k) => r.label === visible[k].label && r.status === visible[k].statusLabel);
-  check('화면 항목 = 표시 대상 항목', rowsMatch, `표시 ${rows.length}개 / 숨김 ${8 - visible.length}개`);
-  for (const it of data.items) console.log(`      ${it.visible ? '표시' : '숨김'}  ${it.label}: ${it.statusLabel}${it.evidence.length ? ` (근거 ${it.evidence.map((e) => e.id).join(',')}번 줄)` : ''}`);
+  check('화면 항목 = 표시 대상 항목', rowsMatch, `표시 ${rows.length}개`);
+  check('화면에 점검한 항목 수 표시', (await page.textContent('#result-count')) === `점검한 항목 ${visible.length}개`);
+  for (const t of data.topics) console.log(`      ${t.visible ? '표시' : '숨김'}  ${t.id} ${t.label}: ${t.statusLabel ?? '-'}`);
   check('붙여넣기 결과에는 추출 텍스트 안내가 없음', !(await page.isVisible('#input-source-note')));
   const sourceText = await page.textContent('#analysis-source');
-  check('결과 화면의 분석 주체 안내', REQUIRE_AI ? sourceText.includes('AI(Gemini)') : true, sourceText.includes('데모') ? '데모 결과 표시' : 'AI 결과 표시');
+  check('결과 화면의 분석 주체 안내', REQUIRE_AI ? !sourceText.includes('데모') : true, sourceText.includes('데모') ? '데모 결과 표시' : 'AI 결과 표시');
 
-  // 상세 화면의 질문 영역: '분명하지 않음'·'찾지 못함'에만 있고, 다른 상태에는 없어야 한다
+  // 상세 화면의 질문 영역: '일부 내용만 기재됨'·'관련 내용 찾지 못함'에만 있고, 다른 상태에는 없어야 한다
   const askMismatch = [];
-  const checkAsk = async (it) => {
+  const checkAsk = async (t) => {
     const hasAsk = await page.isVisible('#ask-copy');
-    if (hasAsk !== ASK_STATUSES.includes(it.status)) askMismatch.push(`${it.label}(${it.statusLabel})`);
+    if (hasAsk !== ASK_STATUSES.includes(t.status)) askMismatch.push(`${t.label}(${t.statusLabel})`);
     return hasAsk;
   };
-
-  // 분명하지 않음 설명: 적힌 사실과 확인이 필요한 부분이 나뉘어 있고, 인용(' ')은 입력 원문에 있는 문구만,
-  // 원문에 없는 사유('내규', '서로 다른')를 말하지 않는다
-  const reasonProblems = [];
-  const checkReason = async (it, docText) => {
-    if (it.status !== 'unclear') return;
-    const fact = (await page.textContent('.reason-fact').catch(() => null)) ?? '';
-    const pending = (await page.textContent('.reason-pending').catch(() => null)) ?? '';
-    const quotes = [...`${fact} ${pending}`.matchAll(/'([^']+)'/g)].map((m) => m[1]);
-    const squeeze = (s) => s.replace(/\s+/g, '');
-    const firstFollowUp = await page.textContent('.follow-ups li');
-    if (!fact || !pending) reasonProblems.push(`${it.label}: 설명 없음`);
-    if (quotes.some((q) => !squeeze(docText).includes(squeeze(q)))) reasonProblems.push(`${it.label}: 원문에 없는 인용`);
-    if (['내규', '서로 다른'].some((w) => `${fact}${pending}`.includes(w) && !docText.includes(w))) reasonProblems.push(`${it.label}: 원문에 없는 사유`);
-    if (!firstFollowUp.startsWith('실제')) reasonProblems.push(`${it.label}: 핵심 확인 사항이 맨 앞이 아님`);
-    console.log(`      ${it.label} 설명 [${it.reasonKind}] 인용 ${quotes.length}개, 우선 확인: ${firstFollowUp}`);
+  // 세부기준: 화면의 세부 상태 라벨이 API와 같고, 근거는 입력 원문 그대로이며, 분석 확인 불가에는 근거를 보이지 않음
+  const detailProblems = [];
+  const checkCriteria = async (t, docText) => {
+    const shown = await page.$$eval('#detail .criterion', (els) => els.map((e) => ({
+      id: e.dataset.criterion,
+      status: e.querySelector('.badge').textContent,
+      evidence: [...e.querySelectorAll('.evidence-text')].map((x) => x.textContent),
+    })));
+    for (const c of t.criteria) {
+      const s = shown.find((x) => x.id === c.id);
+      if (!s || s.status !== c.statusLabel) detailProblems.push(`${c.id} 상태`);
+      else if (JSON.stringify(s.evidence) !== JSON.stringify(c.evidence.map((e) => e.text))) detailProblems.push(`${c.id} 근거`);
+      else if (s.evidence.some((x) => !docText.includes(x))) detailProblems.push(`${c.id} 원문에 없는 근거`);
+      else if (c.status === 'UNAVAILABLE' && s.evidence.length) detailProblems.push(`${c.id} 확인 불가에 근거 표시`);
+    }
+    const notes = await page.$$eval('#detail .note', (els) => els.map((e) => e.className));
+    const expected = ['neutral', 'applicability', 'probationHold'].filter((k) => t.notes[k]).length;
+    if (notes.length !== expected) detailProblems.push(`${t.id} 안내 수`);
   };
 
-  // '추가로 확인해 보세요': 분석 결과의 확인 사항과 화면 목록이 같고, 확인 사항이 없으면 제목·목록을 숨긴다
-  const followUpProblems = [];
-  const checkFollowUps = async (it) => {
-    const shown = await page.$$eval('#detail .follow-ups li', (els) => els.map((e) => e.textContent));
-    const heading = await page.$$eval('#detail h2', (els) => els.some((e) => e.textContent === '추가로 확인해 보세요'));
-    if (JSON.stringify(shown) !== JSON.stringify(it.followUps) || heading !== it.followUps.length > 0) followUpProblems.push(it.label);
-  };
-
-  // 5) 항목별 원문 근거 확인
-  let evidenceOk = true;
-  for (const [k, it] of visible.entries()) {
+  // 5) 주제별 세부기준·원문 근거 확인
+  for (const [k, t] of visible.entries()) {
     await page.click(`.item-row >> nth=${k}`);
     await page.waitForSelector('#view-detail:not([hidden])');
-    const shown = await page.$$eval('.evidence-text', (els) => els.map((e) => e.textContent));
-    const sameAsApi = shown.length === it.evidence.length && shown.every((t, n) => t === it.evidence[n].text);
-    const fromInput = shown.every((t) => sample.text.includes(t));
-    if (!sameAsApi || !fromInput) evidenceOk = false;
-    const hasAsk = await checkAsk(it);
-    await checkReason(it, sample.text);
-    await checkFollowUps(it);
-    console.log(`      ${it.label}: 원문 근거 ${shown.length}줄, 입력 원문과 일치 ${fromInput ? '예' : '아니오'}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
+    await checkCriteria(t, sample.text);
+    const hasAsk = await checkAsk(t);
+    console.log(`      ${t.id} ${t.label}: 세부 ${t.criteria.map((c) => `${c.id}=${c.status}`).join(' ')}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
     if (k === 0) await page.screenshot({ path: `${OUT}/03-detail.png`, fullPage: true });
     await page.goBack();
     await page.waitForSelector('#view-result:not([hidden])');
   }
-  check('원문 근거가 입력 원문 그대로 표시됨', evidenceOk);
 
-  // 6) 조건 일부가 빠진 가상 오퍼로 다시 분석 → '찾지 못함' 항목에서 질문 복사
+  // 6) 부정 표현·미정 항목이 있는 가상 오퍼로 다시 분석 → 질문 복사
   await page.goto(`${BASE}/#/input`);
   await page.waitForSelector('#view-input:not([hidden])');
   await page.check(`input[name=docType][value=${missing.docType}]`);
@@ -161,26 +148,24 @@ try {
   await page.click('#submit-btn');
   const res2 = await res2Promise;
   const data2 = await res2.json();
-  check('두 번째 분석 API 응답 (조건 일부가 빠진 오퍼)', res2.status() === 200, `HTTP ${res2.status()}${data2.code ? `, ${data2.code}` : ''}`);
+  check('두 번째 분석 API 응답 (부정 표현이 있는 오퍼)', res2.status() === 200, `HTTP ${res2.status()}${data2.code ? `, ${data2.code}` : ''}`);
   if (res2.status() !== 200) throw new Error('second analysis failed');
   await page.waitForSelector('#view-result:not([hidden])', { timeout: 10_000 });
-  const visible2 = data2.items.filter((i) => i.visible);
+  const visible2 = data2.topics.filter((t) => t.visible);
   let copied = null;
-  for (const [k, it] of visible2.entries()) {
+  for (const [k, t] of visible2.entries()) {
     await page.click(`.item-row >> nth=${k}`);
     await page.waitForSelector('#view-detail:not([hidden])');
-    const hasAsk = await checkAsk(it);
-    await checkReason(it, missing.text);
-    await checkFollowUps(it);
-    console.log(`      ${it.label}: ${it.statusLabel}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
+    await checkCriteria(t, missing.text);
+    const hasAsk = await checkAsk(t);
+    console.log(`      ${t.id} ${t.label}: ${t.statusLabel}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
     if (hasAsk && !copied) {
       const shownQ = await page.textContent('#ask-text');
       await page.click('#ask-copy');
       await page.waitForSelector('.ask-status-done, .ask-status-error', { timeout: 5_000 });
       const statusMsg = await page.textContent('.ask-status');
       const clip = await page.evaluate(() => navigator.clipboard.readText());
-      copied = { label: it.label, ok: clip === shownQ && statusMsg.includes('질문을 복사했어요'), noDigits: !/\d/.test(shownQ),
-        sections: await page.$$eval('#view-detail h2', (els) => els.map((e) => e.textContent)) };
+      copied = { label: t.label, ok: clip === shownQ && statusMsg.includes('질문을 복사했어요'), noDigits: !/\d/.test(shownQ) };
       const noScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
       check('질문 영역 모바일 화면(375px)에서 가로 스크롤 없음', noScroll);
       await page.screenshot({ path: `${OUT}/04-ask-copied.png`, fullPage: true });
@@ -188,14 +173,10 @@ try {
     await page.goBack();
     await page.waitForSelector('#view-result:not([hidden])');
   }
-  const hidden2 = data2.items.filter((i) => !i.visible).map((i) => i.label);
-  console.log(`      숨김 항목(질문 없음): ${hidden2.join(', ') || '없음'}`);
-  check("'추가로 확인해 보세요' 목록 = 분석 결과 (없으면 제목까지 숨김)", followUpProblems.length === 0, followUpProblems.join(', '));
-  check('분명하지 않음 설명: 적힌 사실/확인 필요 구분, 원문 인용만, 원문에 없는 사유 없음, 핵심 확인 사항 우선', reasonProblems.length === 0, reasonProblems.join(', '));
-  check('질문 영역은 분명하지 않음·찾지 못함 항목에만 표시', askMismatch.length === 0, askMismatch.join(', '));
-  check('찾지 못함 항목에서 질문 복사 → 클립보드에 같은 문장 + 완료 안내', Boolean(copied?.ok), copied ? copied.label : '질문 영역이 있는 항목 없음');
+  check('세부기준 상태·근거·안내가 API 결과와 같고 근거는 입력 원문 그대로', detailProblems.length === 0, detailProblems.slice(0, 5).join(', '));
+  check('질문 영역은 일부 내용만 기재됨·관련 내용 찾지 못함 주제에만 표시', askMismatch.length === 0, askMismatch.join(', '));
+  check('질문 복사 → 클립보드에 같은 문장 + 완료 안내', Boolean(copied?.ok), copied ? copied.label : '질문 영역이 있는 주제 없음');
   check('복사한 질문에 숫자(금액·날짜) 없음', Boolean(copied?.noDigits));
-  check('상세 화면 기존 영역 유지', Boolean(copied) && ['이 결과의 의미', '추가로 확인해 보세요', '담당자에게 이렇게 물어보세요'].every((h) => copied.sections.some((x) => x.includes(h))), copied?.sections.join(' / '));
   check('브라우저 스크립트 오류 없음', pageErrors.length === 0, pageErrors.length ? `${pageErrors.length}건` : '');
 
   // 보안 검사: 키가 브라우저 응답·페이지에 없고, 서버 로그에 키·원문이 없음

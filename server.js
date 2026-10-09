@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzeDocument } from './src/analyze.js';
-import { DOC_TYPES } from './src/items.js';
+import { DOC_TYPES } from './src/criteria.js';
 import { createGeminiAnalyzer } from './src/ai/gemini.js';
 import { createDemoAnalyzer } from './src/ai/demo.js';
 import { createRateLimiter } from './src/rateLimit.js';

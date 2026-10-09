@@ -61,8 +61,9 @@ if (SKIP_ANALYZE) {
     body: JSON.stringify({ docType: 'job_posting', text: '[채용] 사무보조 (가상 예시)\n급여: 월 230만원\n근무지: 서울 마포구\n근무시간: 09:00~18:00' }),
   });
   const data = await res.json().catch(() => ({}));
-  check('POST /api/analyze (가상 문서 1건)', res.status === 200 && data.items?.length === 8 && data.mode === 'gemini',
-    `HTTP ${res.status}${data.code ? ` ${data.code}` : ''} mode=${data.mode} items=${data.items?.length ?? '-'} 분석 확인 불가=${data.items?.filter((i) => i.status === 'unavailable').length ?? '-'}`);
+  const shown = data.topics?.filter((t) => t.visible) ?? [];
+  check('POST /api/analyze (가상 문서 1건, 점검 기준 v2.2)', res.status === 200 && data.version === 'v2.2' && data.topics?.length === 10 && [9, 10].includes(data.counts?.shown) && data.mode === 'gemini',
+    `HTTP ${res.status}${data.code ? ` ${data.code}` : ''} mode=${data.mode} version=${data.version ?? '-'} 표시=${data.counts?.shown ?? '-'} 분석 확인 불가=${shown.filter((t) => t.status === 'MAIN_UNAVAILABLE').length}`);
 }
 
 const failed = checks.filter((c) => !c.ok);

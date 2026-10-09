@@ -9,13 +9,13 @@ import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
-import { SAMPLES } from '../test/samples.js';
+import { FIXTURES } from '../test/v22-fixtures.js';
 
 const PORT = Number(process.env.E2E_PORT) || 3212;
 const BASE = `http://127.0.0.1:${PORT}`;
 const OUT = 'e2e-artifacts/flow';
-const sample = SAMPLES.find((s) => s.key === 'X3_intern_word'); // 가상 채용공고
-const MARK = '지표 대시보드'; // 가상 문서의 일부 — 주소에 들어가지 않는지 확인용
+const sample = FIXTURES.find((f) => f.key === 'F02'); // 가상 채용공고
+const MARK = '라이트랩'; // 가상 문서의 일부 — 주소에 들어가지 않는지 확인용
 
 const checks = [];
 const check = (name, ok, detail = '') => {
