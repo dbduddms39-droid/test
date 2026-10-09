@@ -55,7 +55,13 @@ try {
   const bodies = [];
   page.on('response', async (r) => { try { bodies.push(await r.text()); } catch { /* 본문 없음 */ } });
 
+  // S-01 시작 → '문서 확인하기' → S-02 문서 입력 (두 화면은 별도)
   await page.goto(BASE);
+  await page.waitForSelector('#view-landing:not([hidden])');
+  check('S-01 시작 화면 (입력 화면과 분리)', !(await page.isVisible('#view-input')));
+  await page.click('#landing-start');
+  await page.waitForSelector('#view-input:not([hidden])');
+  check('S-01 → S-02 이동', page.url().endsWith('#/input'));
   await page.screenshot({ path: `${OUT}/01-input.png`, fullPage: true });
 
   // 1) 문서 유형 선택
@@ -147,7 +153,7 @@ try {
   check('원문 근거가 입력 원문 그대로 표시됨', evidenceOk);
 
   // 6) 조건 일부가 빠진 가상 오퍼로 다시 분석 → '찾지 못함' 항목에서 질문 복사
-  await page.goto(`${BASE}/#/`);
+  await page.goto(`${BASE}/#/input`);
   await page.waitForSelector('#view-input:not([hidden])');
   await page.check(`input[name=docType][value=${missing.docType}]`);
   await page.fill('#doc-text', missing.text);

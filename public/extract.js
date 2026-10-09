@@ -398,6 +398,33 @@ async function openPdf(pdfjs, data) {
   }
 }
 
+// S-03 원본 미리보기: PDF 각 쪽을 화면 표시용 이미지(blob URL)로 만든다. 파일은 브라우저 밖으로 보내지 않는다.
+// 다 쓴 URL은 호출한 쪽에서 URL.revokeObjectURL로 해제한다.
+export async function renderPdfPreview(file, maxWidth = 1000) {
+  const pdfjs = await loadPdfjs();
+  const { task, doc } = await openPdf(pdfjs, new Uint8Array(await file.arrayBuffer()));
+  const urls = [];
+  try {
+    for (let n = 1; n <= Math.min(doc.numPages, MAX_PDF_PAGES); n += 1) {
+      const page = await doc.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: Math.min(2, maxWidth / base.width) });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      await page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport, background: '#ffffff' }).promise;
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (blob) urls.push(URL.createObjectURL(blob));
+    }
+    return urls;
+  } catch (err) {
+    urls.forEach((u) => URL.revokeObjectURL(u));
+    throw err;
+  } finally {
+    await task.destroy();
+  }
+}
+
 // 파일 크기와 앞부분 바이트로 형식을 검사한다 (파일 내용을 읽어 서버로 보내지 않음).
 export async function inspectFile(file) {
   const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());

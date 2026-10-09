@@ -16,7 +16,7 @@ export const ITEM_BY_ID = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
 
 export const DOC_TYPES = {
   job_posting: { label: '채용공고' },
-  offer: { label: '오퍼·문자·메일' },
+  offer: { label: '오퍼·합격 안내' },
   contract: { label: '근로계약서' },
 };
 

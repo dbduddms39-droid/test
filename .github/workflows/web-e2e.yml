@@ -75,6 +75,12 @@ jobs:
           E2E_REQUIRE_AI: 'true'
         run: node scripts/e2e-upload.mjs
 
+      - name: Screen flow S-01~S-04, S-07 (local demo server, no API calls)
+        if: always()
+        env:
+          E2E_PORT: '3212'
+        run: node scripts/e2e-flow.mjs
+
       - name: OCR accuracy benchmark (fictional images, browser only, no API calls)
         if: always()
         env:

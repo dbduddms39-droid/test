@@ -43,7 +43,10 @@ test('입력 검증', async () => {
 
 test('정적 파일 제공 및 경로 이탈 차단', async () => {
   const html = await (await fetch(`${base}/`)).text();
-  assert.ok(html.includes('입력한 내용은 분석을 위해 AI 서비스로 전송돼요. 이름·주민등록번호·주소 등 개인정보는 가린 뒤 입력해 주세요.'));
+  // 개인정보 안내: 서버·AI 모델로 전달된다는 사실과 개인정보를 가리라는 안내 (암호화·비저장 같은 보장은 넣지 않음)
+  assert.ok(html.includes('입력한 문서 텍스트는 분석을 위해 서버와 AI 모델에 전달됩니다.'));
+  assert.ok(html.includes('이름, 연락처, 주민등록번호 등 개인정보는 가리고 입력해 주세요.'));
+  assert.ok(!/암호화|저장하지 않|보안 모드/.test(html));
   assert.equal((await fetch(`${base}/..%2Fserver.js`)).status, 404);
 });
 

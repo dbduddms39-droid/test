@@ -9,62 +9,279 @@
 </head>
 <body>
   <header class="topbar">
-    <a href="#/" class="brand">일단확인</a>
-    <span id="mode-badge" class="mode-badge" hidden>데모 모드 · AI 아님</span>
+    <div class="topbar-inner">
+      <a href="#/" class="brand">일단확인</a>
+      <span id="mode-badge" class="mode-badge" hidden>데모 모드 · AI 아님</span>
+      <a href="#/input" id="topbar-cta" class="btn-primary btn-sm topbar-cta" hidden>문서 확인하기 →</a>
+    </div>
   </header>
 
-  <main>
-    <!-- 화면 01: 문서 입력 -->
-    <section id="view-input" class="view">
-      <h1>근로조건, 문서에 어떻게 적혀 있는지 일단 확인해요</h1>
-      <p class="lead">채용공고, 오퍼 안내, 근로계약서를 붙여넣거나 파일로 올리면 주요 근로조건이 적혀 있는지 항목별로 정리해 드려요.</p>
-
-      <form id="input-form" novalidate>
-        <fieldset class="doc-types">
-          <legend>문서 유형</legend>
-          <label><input type="radio" name="docType" value="job_posting" checked> 채용공고</label>
-          <label><input type="radio" name="docType" value="offer"> 오퍼·문자·메일</label>
-          <label><input type="radio" name="docType" value="contract"> 근로계약서</label>
-        </fieldset>
-
-        <div class="upload">
-          <span class="field-label">파일에서 불러오기 <span class="optional">선택</span></span>
-          <label class="upload-drop" id="upload-drop">
-            <input type="file" id="file-input" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
-            <span class="upload-title">이미지나 PDF 파일 선택</span>
-            <span class="upload-hint">캡처 이미지 최대 5장(JPG·PNG·WebP) 또는 PDF 1개 · 파일당 10MB</span>
-          </label>
-          <div id="image-panel" class="image-panel" hidden>
-            <p class="image-panel-help">같은 문서를 이어서 캡처한 이미지로 보고, 아래 순서대로 글자를 읽어 하나의 문서로 합쳐요. 순서를 확인해 주세요.</p>
-            <ol id="image-list" class="image-list"></ol>
-            <div class="image-actions">
-              <button type="button" id="extract-btn" class="secondary">텍스트 추출</button>
-              <button type="button" id="clear-images" class="text-btn">이미지 모두 지우기</button>
-            </div>
+  <main id="main">
+    <!-- S-01 시작 -->
+    <section id="view-landing" class="view view-landing" hidden>
+      <div class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="mono-meta">§ 문서</span><span>채용공고 · 오퍼·합격 안내 · 근로계약서</span></p>
+          <h1 class="hero-title">근로조건<br><mark class="hero-mark">일단 확인</mark>해봐요.</h1>
+          <p class="lead">채용공고부터 근로계약서까지, 문서에 적힌 근로조건을 기준에 따라 확인해요.</p>
+          <div class="hero-actions">
+            <a href="#/input" class="btn-primary btn-auto" id="landing-start">문서 확인하기 →</a>
+            <button type="button" class="btn-text" id="landing-how">어떻게 확인하나요?</button>
           </div>
-          <p class="upload-note">파일은 이 브라우저 안에서만 읽고 서버로 보내지 않아요. 추출한 텍스트는 아래 입력란에 채워지고, 확인·수정한 뒤 '분석 시작'을 눌렀을 때만 AI 서비스로 전송돼요.</p>
-          <p id="upload-status" class="upload-status" role="status" aria-live="polite" hidden></p>
         </div>
+        <figure class="sample-card" aria-label="결과 화면 예시 (가상 문서)">
+          <figcaption class="sample-card-head"><span>오퍼 안내문 · 가상 예시</span><span class="mono-meta">확인 예시</span></figcaption>
+          <dl class="sample-rows">
+            <div><dt>연봉</dt><dd>3,600만원</dd></div>
+            <div><dt>근무시간</dt><dd>주 5일, 09:00~18:00</dd></div>
+            <div><dt>근무장소</dt><dd>서울 소재 사업장</dd></div>
+            <div><dt>수습기간</dt><dd>3개월</dd></div>
+            <div class="is-marked"><dt>수습 중 급여</dt><dd><mark>별도 협의</mark></dd></div>
+          </dl>
+          <div class="margin-note sample-note">
+            <p class="mono-meta">§ 08 수습 중 급여</p>
+            <p>구체적인 금액은 문서에서 확인되지 않았어요.</p>
+            <p class="muted small">기재 여부만 정리하며 법률 판단은 포함하지 않아요.</p>
+          </div>
+        </figure>
+      </div>
 
-        <label for="doc-text" class="field-label">문서 내용</label>
-        <textarea id="doc-text" name="text" rows="14" maxlength="20000"
-          placeholder="문서 내용을 그대로 붙여넣어 주세요."></textarea>
-        <div class="char-count"><span id="char-count">0</span> / 20,000자</div>
-        <label id="confirm-row" class="confirm-row" hidden>
-          <input type="checkbox" id="confirm-extracted">
-          <span>파일에서 추출한 텍스트를 원본과 비교해 확인·수정했어요</span>
-        </label>
+      <section class="band" id="landing-workflow" aria-labelledby="workflow-title" tabindex="-1">
+        <div class="band-head">
+          <div>
+            <p class="mono-meta">§ 확인 순서</p>
+            <h2 id="workflow-title">꼼꼼하게 읽어야 하는 문서, 혼자 다 찾을 필요는 없으니까.</h2>
+          </div>
+          <p class="muted">문서 속에 흩어진 근로조건을 정해진 기준에 맞추어 원문과 함께 정리해요.</p>
+        </div>
+        <ol class="steps">
+          <li><p class="step-index"><span class="mono-index">§ 01</span><span>추출</span></p><h3>찾아요</h3><p>AI가 문서에서 근로조건과 관련된 내용을 찾아요.</p></li>
+          <li><p class="step-index"><span class="mono-index">§ 02</span><span>대조</span></p><h3>점검해요</h3><p>정해진 기준에 따라 무엇이 적혀 있고, 어떤 세부 정보가 확인되지 않는지 정리해요.</p></li>
+          <li><p class="step-index"><span class="mono-index">§ 03</span><span>열람</span></p><h3>확인해요</h3><p>결과와 연결된 실제 원문을 직접 확인해요. 해석을 강요하지 않아요.</p></li>
+        </ol>
+        <p class="principle">원칙: AI가 임의로 판단하거나 점수를 매기지 않아요.</p>
+      </section>
 
-        <p class="privacy" role="note">입력한 내용은 분석을 위해 AI 서비스로 전송돼요. 이름·주민등록번호·주소 등 개인정보는 가린 뒤 입력해 주세요.</p>
+      <section class="landing-section" aria-labelledby="topics-title">
+        <div class="band-head">
+          <div>
+            <p class="mono-meta">§ 점검 주제</p>
+            <h2 id="topics-title">근로조건을 항목별로 살펴봐요.</h2>
+          </div>
+          <p class="muted">임금부터 휴일과 연차까지, 문서에 적힌 내용을 세부 기준으로 확인해요.</p>
+        </div>
+        <ol class="topic-grid">
+          <li><span class="mono-index">01</span><span class="topic-name">임금</span><span class="topic-hint">금액 · 산정 단위 · 지급일</span></li>
+          <li><span class="mono-index">02</span><span class="topic-name">근무시간</span><span class="topic-hint">소정근로시간 · 출퇴근 · 휴게</span></li>
+          <li><span class="mono-index">03</span><span class="topic-name">근무장소</span><span class="topic-hint">취업 장소 · 재택·파견 여부</span></li>
+          <li><span class="mono-index">04</span><span class="topic-name">담당업무</span><span class="topic-hint">수행 업무 내용</span></li>
+          <li><span class="mono-index">05</span><span class="topic-name">고용형태</span><span class="topic-hint">계약 형태</span></li>
+          <li><span class="mono-index">06</span><span class="topic-name">계약기간</span><span class="topic-hint">기간의 정함 · 시작·종료일</span></li>
+          <li><span class="mono-index">07</span><span class="topic-name">수습기간</span><span class="topic-hint">적용 여부 · 기간</span></li>
+          <li><span class="mono-index">08</span><span class="topic-name">수습 중 급여 <span class="tag">수습 적용 시</span></span><span class="topic-hint">지급 기준</span></li>
+          <li><span class="mono-index">09</span><span class="topic-name">휴일</span><span class="topic-hint">휴일 요일·주기</span></li>
+          <li><span class="mono-index">10</span><span class="topic-name">연차 유급휴가</span><span class="topic-hint">부여 내용 · 일수</span></li>
+        </ol>
+        <p class="muted small">10개 근로조건 점검 주제예요. 수습 중 급여는 수습이 적용된다고 적힌 경우에만 표시돼, 문서마다 9개 또는 10개가 보여요.</p>
+        <p class="muted small">점검 기준은 근로기준법 등 관련 법령의 서면 명시 사항, 고용노동부 표준근로계약서, 일단확인 자체 확인 기준을 구분해 만들었어요. 법률 자문이나 유권해석이 아니에요.</p>
+      </section>
 
-        <p id="input-error" class="error" role="alert" hidden></p>
-        <button type="submit" id="submit-btn" class="primary">분석 시작</button>
-      </form>
+      <section class="band" aria-labelledby="compare-title">
+        <p class="mono-meta">§ 원문 대조</p>
+        <h2 id="compare-title">확인한 내용은, 원문에서 다시 한번.</h2>
+        <p class="muted">분석 결과만 보여주지 않아요. 어떤 문장을 근거로 확인했는지도 함께 보여드려요.</p>
+        <figure class="compare" aria-label="원문 대조 예시 (가상 문서)">
+          <div class="compare-source">
+            <p class="compare-head"><span>문서 원문</span><span class="mono-meta">발췌 예시</span></p>
+            <p class="compare-quote"><mark>수습 중 급여: 별도 협의</mark></p>
+          </div>
+          <div class="compare-link" aria-hidden="true"><span class="mono-meta">원문 대조</span></div>
+          <div class="compare-result">
+            <p class="compare-head"><span>확인 결과</span><span class="mono-meta">정리된 내용</span></p>
+            <p class="compare-title">○ 수습 중 급여</p>
+            <p>수습 중 급여에 대한 구체적인 금액은 문서에서 확인되지 않아요.</p>
+          </div>
+        </figure>
+      </section>
+
+      <section class="landing-cta" aria-labelledby="cta-title">
+        <h2 id="cta-title">지금 받은 문서, 일단 확인해볼까요?</h2>
+        <p class="muted">읽기 어려운 근로조건을 원문과 기준에 맞춰 차분하게 정리해 드려요.</p>
+        <a href="#/input" class="btn-primary btn-auto">문서 확인하기 →</a>
+        <p class="disclaimer">§ 이 서비스는 문서에 기재된 근로조건을 정리하며, 법률 위반 여부나 계약의 효력을 판단하지 않아요.</p>
+      </section>
     </section>
 
-    <!-- 화면 02: 분석 결과 -->
-    <section id="view-result" class="view" hidden>
-      <a href="#/" class="back">← 다시 입력</a>
+    <!-- S-02 문서 입력 -->
+    <section id="view-input" class="view view-narrow" hidden>
+      <p class="crumb"><span class="mono-meta">문서 확인 준비</span> · 원문 입력</p>
+      <h1>어떤 문서를 확인할까요?</h1>
+      <p class="lead">확인하고 싶은 문서를 선택하고 내용을 입력해 주세요.</p>
+      <p id="route-notice" class="route-notice" role="status" hidden></p>
+
+      <div class="sheet">
+        <fieldset class="doc-types">
+          <legend><span class="mono-meta">§ 01</span> 문서 유형</legend>
+          <label><input type="radio" name="docType" value="job_posting" checked>
+            <span class="doc-type-body"><span class="mono-index">01</span><strong>채용공고</strong><span class="doc-type-desc">채용 사이트나 기업에서 확인한 모집공고</span></span></label>
+          <label><input type="radio" name="docType" value="offer">
+            <span class="doc-type-body"><span class="mono-index">02</span><strong>오퍼·합격 안내</strong><span class="doc-type-desc">합격 안내 메일, 문자, 근로조건 안내문</span></span></label>
+          <label><input type="radio" name="docType" value="contract">
+            <span class="doc-type-body"><span class="mono-index">03</span><strong>근로계약서</strong><span class="doc-type-desc">회사에서 전달받은 근로계약서 전문</span></span></label>
+        </fieldset>
+
+        <div class="method-head">
+          <p class="field-label" id="method-label"><span class="mono-meta">§ 02</span> 내용 전달 방식</p>
+          <div class="tabs" role="tablist" aria-labelledby="method-label">
+            <button type="button" role="tab" id="tab-paste" aria-controls="panel-paste" aria-selected="true">텍스트 직접 붙여넣기</button>
+            <button type="button" role="tab" id="tab-upload" aria-controls="panel-upload" aria-selected="false" tabindex="-1">사진·PDF 업로드</button>
+          </div>
+        </div>
+
+        <!-- 직접 입력: S-02 → S-04 -->
+        <form id="input-form" novalidate>
+          <div id="panel-paste" role="tabpanel" aria-labelledby="tab-paste">
+            <div class="editor">
+              <div class="editor-bar">
+                <label for="doc-text" class="editor-label">문서 본문 입력</label>
+                <span class="editor-tools">
+                  <button type="button" class="btn-text" id="example-btn">가상 예시 넣어보기</button>
+                  <button type="button" class="btn-text" id="clear-text">비우기</button>
+                </span>
+              </div>
+              <textarea id="doc-text" name="text" rows="14" maxlength="20000" placeholder="확인할 문서의 내용을 여기에 붙여넣어 주세요."></textarea>
+              <div class="editor-foot"><span class="muted small">입력한 내용은 이 창에서만 유지돼요. 새로고침하거나 창을 닫으면 사라져요.</span><span class="char-count"><span id="char-count">0</span> / 20,000자</span></div>
+            </div>
+          </div>
+
+          <!-- 파일 업로드: S-02 → S-03 → S-04 -->
+          <div id="panel-upload" role="tabpanel" aria-labelledby="tab-upload" hidden>
+            <div class="upload">
+              <label class="upload-drop" id="upload-drop">
+                <input type="file" id="file-input" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
+                <span class="upload-title">이미지나 PDF 파일 선택</span>
+                <span class="upload-hint">캡처 이미지 최대 5장(JPG·PNG·WebP) 또는 PDF 1개 · 파일당 10MB</span>
+              </label>
+              <div id="image-panel" class="image-panel" hidden>
+                <p class="image-panel-help">같은 문서를 이어서 캡처한 이미지로 보고, 아래 순서대로 글자를 읽어 하나의 문서로 합쳐요. 순서를 확인해 주세요.</p>
+                <ol id="image-list" class="image-list"></ol>
+                <div class="image-actions">
+                  <button type="button" id="extract-btn" class="secondary">텍스트 추출</button>
+                  <button type="button" id="clear-images" class="text-btn">이미지 모두 지우기</button>
+                </div>
+              </div>
+              <p class="upload-note">파일은 이 브라우저 안에서만 읽고 서버로 보내지 않아요. 추출한 텍스트는 다음 화면에서 원본과 비교해 확인·수정한 뒤, '내용 확인하고 분석하기'를 눌렀을 때만 분석을 위해 전송돼요.</p>
+              <p id="upload-status" class="upload-status" role="status" aria-live="polite" hidden></p>
+              <p id="review-resume" class="review-resume" hidden>추출한 텍스트가 있어요. <a href="#/review">추출 텍스트 확인 화면으로 돌아가기</a></p>
+            </div>
+          </div>
+
+          <div class="privacy" role="note">
+            <p class="privacy-title">개인정보 보호 및 취급 주의사항</p>
+            <p>이름, 연락처, 주민등록번호 등 개인정보는 가리고 입력해 주세요.</p>
+            <p>입력한 문서 텍스트는 분석을 위해 서버와 AI 모델에 전달됩니다.</p>
+          </div>
+
+          <p id="input-error" class="error" role="alert" hidden></p>
+          <div class="submit-row" id="paste-submit-row">
+            <p class="muted small" id="submit-hint">20자 이상 입력해 주세요.</p>
+            <button type="submit" id="submit-btn" class="primary" disabled>문서 확인 시작하기 →</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- S-03 추출본 확인 -->
+    <section id="view-review" class="view view-wide" hidden>
+      <a href="#/input" class="back" id="review-back-top">← 이전으로</a>
+      <div class="review-head">
+        <div>
+          <h1>문서 내용을 확인해 주세요.</h1>
+          <p class="lead">파일에서 추출한 텍스트예요. 원본과 비교해 잘못 읽힌 부분이 있다면 수정해 주세요.</p>
+        </div>
+        <p class="review-tip">특히 <strong>금액 · 날짜 · 근무시간 · 숫자</strong>를 꼼꼼히 확인해 주세요.</p>
+      </div>
+      <p id="review-status" class="upload-status" role="status" aria-live="polite" hidden></p>
+      <p id="review-notice" class="route-notice" role="status" hidden></p>
+      <p id="review-stale" class="route-notice" hidden>텍스트를 추출한 뒤 이미지 목록이 바뀌었어요. 바뀐 이미지로 다시 추출하려면 이전 화면에서 '텍스트 추출'을 눌러 주세요.</p>
+
+      <div class="tabs review-tabs" role="tablist" aria-label="원본과 추출 텍스트">
+        <button type="button" role="tab" id="rtab-source" aria-controls="review-source" aria-selected="false" tabindex="-1">원본</button>
+        <button type="button" role="tab" id="rtab-text" aria-controls="review-editor" aria-selected="true">추출 텍스트</button>
+      </div>
+      <div class="review-grid">
+        <section id="review-source" class="review-pane review-source" role="tabpanel" aria-labelledby="rtab-source">
+          <div class="pane-bar">
+            <p class="pane-title"><span id="preview-name" class="preview-name"></span><span class="tag">원본 대조본</span></p>
+            <div class="pane-tools">
+              <button type="button" class="icon-btn" id="preview-prev" aria-label="이전 쪽">‹</button>
+              <span class="mono-index" id="preview-page" aria-live="polite">1 / 1</span>
+              <button type="button" class="icon-btn" id="preview-next" aria-label="다음 쪽">›</button>
+              <button type="button" class="icon-btn" id="zoom-out" aria-label="축소">−</button>
+              <span class="mono-index" id="zoom-level">100%</span>
+              <button type="button" class="icon-btn" id="zoom-in" aria-label="확대">+</button>
+            </div>
+          </div>
+          <div class="preview-stage" id="preview-stage" tabindex="0" aria-label="원본 미리보기">
+            <img id="preview-img" alt="">
+            <p id="preview-empty" class="muted" hidden>원본 미리보기를 표시하지 못했어요. 원본 파일을 직접 열어 비교해 주세요.</p>
+          </div>
+        </section>
+        <section id="review-editor" class="review-pane" role="tabpanel" aria-labelledby="rtab-text">
+          <div class="pane-bar">
+            <p class="pane-title"><label for="review-text">추출된 텍스트</label><span class="tag">편집 가능</span></p>
+            <div class="pane-tools">
+              <button type="button" class="icon-btn" id="review-select">전체 선택</button>
+              <button type="button" class="icon-btn" id="review-clear">비우기</button>
+              <button type="button" class="icon-btn" id="review-restore">원래 내용으로</button>
+            </div>
+          </div>
+          <textarea id="review-text" rows="18" maxlength="20000"></textarea>
+          <div class="editor-foot"><span class="mono-meta muted-mono">글자 <span id="review-chars">0</span>자 · 줄 <span id="review-lines">0</span>행</span></div>
+          <p class="margin-note">수정한 텍스트를 기준으로 분석해요. 이 내용은 이 창에서만 유지되고, 새로고침하거나 창을 닫으면 사라져요.</p>
+        </section>
+      </div>
+      <p id="review-error" class="error" role="alert" hidden></p>
+      <div class="action-bar">
+        <a href="#/input" class="btn-editorial btn-auto" id="review-back">← 이전으로</a>
+        <p class="muted small">확인한 텍스트를 기준으로 근로조건을 확인해요.</p>
+        <button type="button" id="review-submit" class="btn-primary btn-auto" disabled>내용 확인하고 분석하기 →</button>
+      </div>
+    </section>
+
+    <!-- S-04 분석 중 -->
+    <section id="view-analyzing" class="view view-center" hidden aria-busy="true">
+      <p class="status-pill"><span class="mono-meta">§ 04 · 확인 진행 중</span></p>
+      <h1 tabindex="-1" id="analyzing-title">문서의 근로조건을 확인하고 있어요.</h1>
+      <p class="lead">문서에 적힌 내용을 점검 기준에 따라 정리하고 있어요. 잠시만 기다려 주세요.</p>
+      <div class="skeleton-sheet" aria-hidden="true">
+        <span class="sk sk-w40"></span><span class="sk sk-w20"></span>
+        <span class="sk sk-w70 sk-gap"></span><span class="sk sk-w60"></span><span class="sk sk-w50"></span>
+        <span class="sk sk-w70 sk-mark sk-gap"></span><span class="sk sk-w55"></span><span class="sk sk-w35"></span>
+      </div>
+      <p class="analyzing-note"><strong>분석이 끝나면 점검 결과가 표시돼요.</strong><br><span class="muted small">문서의 길이와 형식에 따라 시간이 걸릴 수 있어요.</span></p>
+    </section>
+
+    <!-- S-07 오류·재시도 -->
+    <section id="view-error" class="view view-center" hidden>
+      <div class="sheet error-sheet">
+        <h1 tabindex="-1" id="error-title">문서 확인을 완료하지 못했어요.</h1>
+        <p class="lead" id="error-message"></p>
+        <div class="keep-note">
+          <p class="keep-title">입력한 문서 내용은 유지돼요.</p>
+          <p>마지막으로 확인한 문서 내용이 이 창에 그대로 남아 있어, 다시 분석하거나 내용을 확인한 뒤 수정할 수 있어요. 새로고침하거나 창을 닫으면 사라져요.</p>
+        </div>
+        <div class="error-actions">
+          <button type="button" class="btn-primary btn-auto" id="retry-btn">다시 분석하기 →</button>
+          <a href="#/input" class="btn-editorial btn-auto" id="error-edit">문서 내용 확인하기</a>
+        </div>
+        <p class="muted small">잠시 후 다시 시도해 주세요. 문제가 계속되면 문서 내용을 확인한 뒤 다시 진행해 보세요.</p>
+      </div>
+    </section>
+
+    <!-- S-05 분석 결과 (현재 8개 항목 구조 유지, 3단계에서 10개 기준으로 전환) -->
+    <section id="view-result" class="view view-narrow" hidden>
+      <a href="#/input" class="back" id="result-back">← 다시 입력</a>
       <p class="doc-type-chip" id="result-doc-type"></p>
       <h1>분석 결과</h1>
       <p id="analysis-source" class="analysis-source"></p>
@@ -74,12 +291,16 @@
       <p class="notice" id="result-notice"></p>
     </section>
 
-    <!-- 화면 03: 원문 상세 -->
-    <section id="view-detail" class="view" hidden>
+    <!-- S-06 항목 상세 (현재 구조 유지) -->
+    <section id="view-detail" class="view view-narrow" hidden>
       <a href="#/result" class="back">← 결과로 돌아가기</a>
       <div id="detail"></div>
     </section>
   </main>
+
+  <footer class="site-footer">
+    <p>문서에 적힌 내용을 확인하며 법률 위반 여부는 판단하지 않아요.</p>
+  </footer>
 
   <script type="module" src="/app.js"></script>
 </body>
