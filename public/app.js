@@ -18,8 +18,8 @@ const ROUTE_NOTICE = {
   aborted: '분석을 중단했어요. 입력한 내용은 그대로 있어요.',
 };
 const SUBMIT_HINT = {
-  empty: '20자 이상 입력해 주세요.',
-  too_short: '20자 이상 입력해 주세요.',
+  empty: '문서 내용을 입력해 주세요.',
+  short: '짧은 내용도 확인할 수 있어요. 문서에 적히지 않은 조건은 결과에서 \'관련 내용 찾지 못함\'으로 표시돼요.',
   too_long: '20,000자 이하로 줄여 주세요.',
   ok: '입력한 문서의 근로조건을 항목별 확인 결과로 정리해 드려요.',
 };
@@ -91,7 +91,7 @@ function updatePasteState() {
   $('#char-count').textContent = textarea.value.length.toLocaleString();
   const c = checkText(textarea.value);
   submitBtn.disabled = !c.ok || Boolean(state.inflight);
-  $('#submit-hint').textContent = SUBMIT_HINT[c.ok ? 'ok' : c.code];
+  $('#submit-hint').textContent = SUBMIT_HINT[c.code ?? 'ok'];
 }
 textarea.addEventListener('input', () => { inputError.hidden = true; updatePasteState(); });
 
@@ -122,7 +122,7 @@ $('#input-form').addEventListener('submit', (e) => {
   if (state.tab !== 'paste') return;
   const text = textarea.value;
   const c = checkText(text);
-  if (!c.ok) return showMsg(inputError, c.code === 'too_long' ? '문서는 20,000자 이하로 입력해 주세요.' : '문서 내용을 20자 이상 입력해 주세요.');
+  if (!c.ok) return showMsg(inputError, c.code === 'too_long' ? '문서는 20,000자 이하로 입력해 주세요.' : '문서 내용을 입력해 주세요.');
   startAnalysis({ docType: docType(), text, inputSource: 'paste' });
 });
 
@@ -375,7 +375,10 @@ reviewText.addEventListener('input', () => { reviewError.hidden = true; updateRe
 
 $('#review-select').addEventListener('click', () => { reviewText.focus(); reviewText.select(); });
 $('#review-clear').addEventListener('click', () => {
-  reviewText.value = ''; // 처음 추출한 내용은 '원래 내용으로'로 되돌릴 수 있다
+  // 사용자가 고친 내용이 있으면 지우기 전에 묻는다 (처음 추출한 내용은 '원래 내용으로'로 되돌릴 수 있음)
+  const edited = state.file && reviewText.value.trim() && reviewText.value !== state.file.original;
+  if (edited && !confirm('수정한 내용을 모두 지울까요? 처음 추출한 내용은 \'원래 내용으로\'로 되돌릴 수 있어요.')) return;
+  reviewText.value = '';
   updateReviewState();
   reviewText.focus();
 });
@@ -422,7 +425,7 @@ $('#zoom-in').addEventListener('click', () => { preview.zoom = Math.min(200, pre
 reviewSubmit.addEventListener('click', () => {
   const text = reviewText.value;
   const c = checkText(text);
-  if (!c.ok) return showMsg(reviewError, c.code === 'too_long' ? '문서는 20,000자 이하로 줄여 주세요.' : '문서 내용을 20자 이상 남겨 주세요.');
+  if (!c.ok) return showMsg(reviewError, c.code === 'too_long' ? '문서는 20,000자 이하로 줄여 주세요.' : '분석할 문서 내용을 입력해 주세요.');
   startAnalysis({ docType: docType(), text, inputSource: state.file.source });
 });
 

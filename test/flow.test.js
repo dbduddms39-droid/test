@@ -4,13 +4,14 @@ import { checkText, editRouteFor, resolveRoute, classifyAnalyzeFailure, ROUTES }
 
 const base = { hasResult: false, hasReview: false, analyzing: false, hasError: false, detailExists: () => false };
 
-test('입력 확인: 빈 입력·20자 미만·2만 자 초과는 분석 불가', () => {
+test('입력 확인: 빈 입력·공백만 있는 입력·2만 자 초과만 분석 불가 (최소 글자 수 없음)', () => {
   assert.equal(checkText('').code, 'empty');
   assert.equal(checkText('   \n ').code, 'empty');
-  assert.equal(checkText('연봉 3,600만원').code, 'too_short');
-  assert.equal(checkText(`${' '.repeat(30)}가나다`).code, 'too_short'); // 공백은 세지 않음
-  assert.equal(checkText('가'.repeat(20)).ok, true);
   assert.equal(checkText('가'.repeat(20001)).code, 'too_long');
+  // 짧은 입력도 분석할 수 있다 (안내만 표시)
+  assert.deepEqual(checkText('급여 300만원'), { ok: true, code: 'short' });
+  assert.deepEqual(checkText('연'), { ok: true, code: 'short' });
+  assert.deepEqual(checkText('가'.repeat(30)), { ok: true, code: null });
 });
 
 test('입력 출처별 수정 화면: 직접 입력은 S-02, 파일 추출은 S-03', () => {

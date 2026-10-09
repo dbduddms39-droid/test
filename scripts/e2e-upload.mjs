@@ -136,10 +136,10 @@ try {
   // 사용자가 S-03에서 추출 결과를 확인·수정한 뒤 분석을 시작하는 흐름 (S-03 → S-04 → 결과)
   async function analyzeEdited(label, docType, extracted) {
     const edited = `${extracted}\n문의: 인사팀 (가상 예시)`;
-    // 내용을 비우면 분석 버튼이 비활성 → 요청이 나가지 않아야 한다
+    // 내용을 비우면 분석 버튼이 비활성 → 요청이 나가지 않아야 한다 (고친 내용이 없으면 확인 없이 비움)
     const before = analyzeCount();
     await page.click('#review-clear');
-    check(`[${label}] S-03: 내용이 20자 미만이면 분석 버튼 비활성`, (await page.isDisabled('#review-submit')) && analyzeCount() === before);
+    check(`[${label}] S-03: 내용을 비우면 분석 버튼 비활성`, (await page.isDisabled('#review-submit')) && analyzeCount() === before);
     await page.fill('#review-text', edited);
     const reqPromise = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
     const resPromise = page.waitForResponse((r) => r.url().endsWith('/api/analyze'), { timeout: 150_000 });

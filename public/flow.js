@@ -1,8 +1,8 @@
 // 화면 이동·입력 확인 규칙. DOM에 의존하지 않아 node 테스트에서 그대로 검사한다.
 // 라우트(해시)에는 화면 이름과 항목 ID만 들어간다. 문서 내용·파일 이름은 넣지 않는다.
 
-export const MIN_CHARS = 20;      // 분석 시작에 필요한 최소 글자 수 (앞뒤 공백 제외)
 export const MAX_CHARS = 20_000;  // 서버 제한과 같음
+export const SHORT_CHARS = 30;    // 이보다 짧으면 안내만 한다 (분석은 막지 않음)
 
 export const ROUTES = {
   landing: '#/',
@@ -14,13 +14,14 @@ export const ROUTES = {
   detail: (id) => `#/detail/${id}`,
 };
 
-// 입력 텍스트 상태: 분석 버튼 활성 여부와 안내 문구
+// 입력 텍스트 상태: 분석 버튼 활성 여부와 안내 문구.
+// 서버와 같은 정책: 빈 입력·공백만 있는 입력과 2만 자 초과만 막는다. 최소 글자 수로 분석을 막지 않는다.
+// 짧은 입력은 'short'로 알려 안내만 하고, 정보가 부족한지는 분석 결과의 기재 상태로 보여 준다.
 export function checkText(text) {
   const len = (text ?? '').trim().length;
   if (len === 0) return { ok: false, code: 'empty' };
   if ((text ?? '').length > MAX_CHARS) return { ok: false, code: 'too_long' };
-  if (len < MIN_CHARS) return { ok: false, code: 'too_short' };
-  return { ok: true, code: null };
+  return { ok: true, code: len < SHORT_CHARS ? 'short' : null };
 }
 
 // 입력 출처 → 내용을 확인·수정하는 화면. 직접 입력은 S-02, 파일 추출(PDF·OCR)은 S-03.

@@ -42,7 +42,9 @@ try {
   const page = await context.newPage();
   const pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push(e.message));
-  page.on('dialog', (d) => d.accept());
+  let dialogAnswer = 'accept';
+  const dialogs = [];
+  page.on('dialog', (d) => { dialogs.push(d.message()); return dialogAnswer === 'accept' ? d.accept() : d.dismiss(); });
   const urls = [];
   page.on('framenavigated', (f) => { if (f === page.mainFrame()) urls.push(f.url()); });
   const requests = [];
@@ -66,7 +68,7 @@ try {
   }
   check('직접 접근으로 분석 요청이 나가지 않음', requests.length === 0);
 
-  // 2) 키보드: 입력 방식 탭(→ 키), 20자 미만이면 분석 버튼 비활성
+  // 2) 키보드: 입력 방식 탭(→ 키), 빈 입력만 분석 버튼 비활성 (최소 글자 수 없음)
   await page.goto(`${BASE}/#/input`);
   await page.reload();
   await waitView('input');
@@ -76,11 +78,11 @@ try {
   await page.keyboard.press('ArrowLeft');
   const pasteTab = (await page.getAttribute('#tab-paste', 'aria-selected')) === 'true' && (await page.isVisible('#panel-paste'));
   check('입력 방식 탭: 방향키로 전환, 선택한 패널만 표시', uploadTab && pasteTab);
-  await page.fill('#doc-text', '연봉 3,600만원');
-  check('20자 미만이면 분석 버튼 비활성 + 안내', (await page.isDisabled('#submit-btn')) && (await page.textContent('#submit-hint')).includes('20자'));
-  await page.keyboard.press('Tab');
+  await page.fill('#doc-text', '   \n  ');
+  check('공백만 있으면 분석 버튼 비활성', await page.isDisabled('#submit-btn'));
+  await page.fill('#doc-text', '급여 300만원');
+  check('짧은 입력도 분석 버튼 활성 + 한계 안내', !(await page.isDisabled('#submit-btn')) && (await page.textContent('#submit-hint')).includes('관련 내용 찾지 못함'));
   await page.fill('#doc-text', sample.text);
-  check('20자 이상이면 분석 버튼 활성', !(await page.isDisabled('#submit-btn')));
   // 탭을 오가도 입력한 텍스트 유지
   await page.click('#tab-upload');
   await page.click('#tab-paste');
@@ -179,6 +181,18 @@ try {
   const extracted = await page.inputValue('#review-text');
   check('파일 경로: S-02 → S-03 (자동 분석 없음), 직접 입력란은 그대로', extracted.length > 20 && (await page.inputValue('#doc-text')) === EDITED && requests.length === reqBeforeFile);
   const FILE_EDITED = `${extracted}\n수정한 줄 (가상 예시)`;
+  await page.fill('#review-text', FILE_EDITED);
+  // 고친 내용이 있으면 '비우기' 전에 확인: 취소하면 그대로, 확인하면 비우고 '원래 내용으로' 복구 가능
+  dialogAnswer = 'dismiss';
+  const d0 = dialogs.length;
+  await page.click('#review-clear');
+  const keptOnCancel = dialogs.length === d0 + 1 && (await page.inputValue('#review-text')) === FILE_EDITED;
+  dialogAnswer = 'accept';
+  await page.click('#review-clear');
+  const cleared = (await page.inputValue('#review-text')) === '' && (await page.isDisabled('#review-submit'));
+  await page.click('#review-restore');
+  const restored = (await page.inputValue('#review-text')) === extracted;
+  check("S-03 수정 후 '비우기'는 확인을 받음 (취소 시 유지, 확인 시 비움, 원래 내용으로 복구)", keptOnCancel && cleared && restored);
   await page.fill('#review-text', FILE_EDITED);
   await page.click('#review-back');
   await waitView('input');
