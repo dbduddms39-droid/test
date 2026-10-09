@@ -85,3 +85,61 @@ test('수습 없음이 명시되면 수습기간 확인 사항은 없음, 정규
   assert.deepEqual(followUpsFor('employment_type', { status: 'stated', texts: ['채용형태: 계약직'], employmentCategory: 'fixed_term' }), ['정규직 전환 조건이 있다면 그 기준']);
   assert.deepEqual(followUpsFor('employment_type', { status: 'stated', texts: ['정규직'], employmentCategory: 'permanent' }), []);
 });
+
+// ---------- '언급됨'과 '구체적으로 확인됨' 구분 (미확정 표현은 그 조건의 구절 안에서만 본다) ----------
+const ALL_HOURS = DEFAULT_FOLLOW_UPS.work_hours;
+
+test('회귀 1: 휴게시간 추후 협의 → 출퇴근 시각은 확인, 휴게시간 질문 유지', () => {
+  assert.deepEqual(stated('work_hours', '근무시간 09:00~18:00, 휴게시간은 추후 협의'), ['휴게시간', '주당 근무일수', ALL_HOURS[2]]);
+  assert.deepEqual(stated('work_hours', '근무시간 09:00~18:00 (휴게시간 미정)'), ['휴게시간', '주당 근무일수', ALL_HOURS[2]]);
+});
+
+test('회귀 2: 휴게시간 13:00~14:00 명시 → 휴게시간 질문 제거', () => {
+  assert.deepEqual(stated('work_hours', '근무시간 09:00~18:00, 휴게시간 13:00~14:00'), ['주당 근무일수', ALL_HOURS[2]]);
+});
+
+test('회귀 3: 재택근무 여부 추후 결정 → 재택 관련 질문 유지', () => {
+  assert.ok(stated('workplace', '근무지: 서울 강남구 테헤란로 123', '재택근무 여부는 추후 결정').includes('재택·파견·출장 근무 여부'));
+  assert.ok(stated('workplace', '근무지: 서울 강남구 (재택 가능 여부 별도 안내)').includes('재택·파견·출장 근무 여부'));
+});
+
+test('회귀 4: 재택근무 주 2회 확정 → 재택 여부를 다시 묻지 않음', () => {
+  assert.deepEqual(stated('workplace', '근무지: 서울 강남구 테헤란로 123', '재택근무 주 2회'), ['근무지가 바뀔 수 있는지']);
+});
+
+test('회귀 5: 근무시간은 명시되고 다른 조건만 추후 협의 → 근무시간 질문을 복원하지 않음', async () => {
+  // 같은 줄의 다른 구절에 있는 미확정 표현은 근무시간에 영향을 주지 않는다
+  assert.deepEqual(stated('work_hours', '근무시간 09:00~18:00, 휴게시간 12:00~13:00, 주 5일, 근무지는 추후 결정'), [ALL_HOURS[2]]);
+  // 다른 항목(급여)이 추후 협의여도 근무시간 항목에는 영향 없음
+  const text = '[채용] 사무보조 (가상 예시)\n근무시간: 09:00~18:00 (휴게시간 12:00~13:00), 주 5일\n급여: 추후 협의\n근무지: 서울 마포구 양화로 00';
+  const response = { items: [
+    { id: 'work_hours', presence: 'found', specificity: 'specific', reason_code: null, evidence_ids: [2] },
+    { id: 'salary', presence: 'found', specificity: 'vague', reason_code: 'vague_expression', evidence_ids: [3], unclear_texts: ['추후 협의'] },
+    { id: 'workplace', presence: 'found', specificity: 'specific', reason_code: null, evidence_ids: [4] },
+    ...['duties', 'employment_type', 'contract_period', 'probation_period', 'probation_pay'].map((id) => ({ id, presence: 'not_found', specificity: null, reason_code: null, evidence_ids: [] })),
+  ] };
+  const r = await analyzeDocument({ text, docType: 'job_posting', ai: scriptedAI(response) });
+  assert.deepEqual(fu(r, 'work_hours'), [ALL_HOURS[2]]);
+  assert.deepEqual(fu(r, 'salary'), ['실제 적용될 급여 금액', ...DEFAULT_FOLLOW_UPS.salary]);
+});
+
+test('회귀 6: 그린테크놀로지 오퍼 안내문 결과 유지 (인센티브 "별도"는 미확정 표현이 아님)', async () => {
+  const r = await run(byKey('X9_real_offer'));
+  assert.deepEqual(fu(r, 'salary'), ['세전 금액인지 세후 금액인지', '기본급·고정수당 각각의 금액', '지급일과 지급 방법']);
+  assert.deepEqual(fu(r, 'work_hours'), ['연장·야간·휴일 근무가 있는지와 그 처리 방식']);
+  assert.deepEqual(fu(r, 'workplace'), ['재택·파견·출장 근무 여부', '근무지가 바뀔 수 있는지']);
+  assert.deepEqual(fu(r, 'contract_period'), []);
+  assert.deepEqual(fu(r, 'probation_pay'), ['수습 종료 후 적용될 급여 기준']);
+});
+
+test('그 밖의 미확정 표현: 세전 여부·지급일·갱신·수습 급여도 구절 안에서만 판단', () => {
+  assert.ok(stated('salary', '연봉 4,000만원 (세전·세후 기준은 추후 안내)').includes('세전 금액인지 세후 금액인지'));
+  assert.ok(stated('salary', '연봉 4,000만원 (세전)').every((q) => q !== '세전 금액인지 세후 금액인지'));
+  // '지급일'이라는 낱말만 있고 날짜가 없으면 확인된 것으로 보지 않음
+  assert.equal(stated('salary', '월 250만원, 지급일은 별도 안내')[2], '지급일과 지급 방법');
+  assert.equal(stated('salary', '월 250만원, 매월 25일 지급')[2], '지급 방법');
+  assert.deepEqual(stated('contract_period', '2026.11.1 ~ 2027.10.31, 갱신 여부는 추후 결정'), ['계약 갱신 여부와 기준']);
+  assert.deepEqual(stated('probation_pay', '수습 기간 급여는 추후 협의'), DEFAULT_FOLLOW_UPS.probation_pay);
+  // 숫자 사이 쉼표는 구절을 나누지 않는다
+  assert.deepEqual(stated('probation_pay', '수습기간 중 급여 월 3,000,000원 (세전)'), ['수습 종료 후 적용될 급여 기준']);
+});
