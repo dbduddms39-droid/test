@@ -29,7 +29,7 @@ for (const p of ['/', '/?refresh=1', '/index.html']) {
 
 // 2) 정적 파일: 저장소 파일과 내용이 같은지 (vendor 포함)
 const STATIC = [
-  ['app.js', /javascript/], ['styles.css', /css/], ['upload-rules.js', /javascript/], ['extract.js', /javascript/], ['ocr-prep.js', /javascript/],
+  ['app.js', /javascript/], ['styles.css', /css/], ['upload-rules.js', /javascript/], ['extract.js', /javascript/], ['ocr-prep.js', /javascript/], ['ocr-layout.js', /javascript/],
   ['vendor/pdfjs/pdf.min.mjs', /javascript/], ['vendor/pdfjs/pdf.worker.min.mjs', /javascript/],
   ['vendor/pdfjs/cmaps/UniKS-UTF16-H.bcmap', /./],
   ['vendor/tesseract/tesseract.esm.min.js', /javascript/], ['vendor/tesseract/worker.min.js', /javascript/],

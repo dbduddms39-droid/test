@@ -122,13 +122,17 @@ export function moveItem(list, index, delta) {
 
 // 이미지 1장의 OCR 결과를 평가한다. 인식한 글자는 고치지 않고, 사용자가 원본과 비교해 확인할 곳만 알려 준다.
 //   words: [{ text, confidence }], confidence: 평균 신뢰도, lines: 인식한 줄 수, inkLines: 이미지에서 찾은 글자 줄 수
-// 반환: { quality: 'good' | 'check'(확인할 숫자 있음) | 'low'(신뢰도 낮음·일부만 인식), uncertain: [단어], partial }
+// 반환: { quality: 'good' | 'check'(확인할 숫자·글자 있음) | 'low'(신뢰도 낮음·일부만 인식), uncertain: [단어], partial }
+// uncertain: 신뢰도가 낮거나 형태가 이상한 숫자, 한글 문서에서 신뢰도 낮게 영문으로 읽힌 단어 (인식한 그대로)
 const MIXED_NUMBER = /\d[OoIlS|]|[OoIlS|]\d/; // 숫자 사이에 섞인 비슷한 모양의 글자 (예: 2O27, 1l:00)
 // 날짜·시간에 없는 형태 (예: 2027.12.31에서 점이 빠진 202712.31, 18:300)
 const ODD_NUMBER = /\d{5,}[.:/]\d|\d[.:/]\d{5,}|\d:\d{3}/;
+const UNSURE_WORD_BELOW = 50; // 한글 문서에서 영문처럼 읽힌 단어의 신뢰도가 이보다 낮으면 알린다 (예: '스낵바' → 'Addl')
 export function reviewOcr({ words = [], confidence = 0, lines = 0, inkLines = 0 }) {
+  const hangulDoc = words.filter((w) => /[가-힣]/.test(w.text)).length > words.length / 2;
   const uncertain = [...new Set(words
-    .filter((w) => /\d/.test(w.text) && (w.confidence < UNCERTAIN_NUMBER_BELOW || MIXED_NUMBER.test(w.text) || ODD_NUMBER.test(w.text)))
+    .filter((w) => (/\d/.test(w.text) && (w.confidence < UNCERTAIN_NUMBER_BELOW || MIXED_NUMBER.test(w.text) || ODD_NUMBER.test(w.text)))
+      || (hangulDoc && /^[A-Za-z]{2,}$/.test(w.text.replace(/[^\w]/g, '')) && w.confidence < UNSURE_WORD_BELOW))
     .map((w) => w.text.trim()))].slice(0, 6);
   const partial = inkLines >= 3 && lines < inkLines * 0.6;
   const quality = confidence < LOW_CONFIDENCE || partial ? 'low' : uncertain.length ? 'check' : 'good';

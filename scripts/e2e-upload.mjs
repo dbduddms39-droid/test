@@ -237,9 +237,29 @@ try {
     check(`[${label}] 흐린 2번째 이미지에 확인 필요 표시`, reviewItems[1].includes('일부만 읽혔거나') && !reviewItems[0].includes('일부만'), reviewItems.join(' / '));
     check(`[${label}] 안내에 확인할 이미지 번호`, status.kind === 'warn' && status.text.includes('2번째 이미지는 일부만 읽혔거나'), status.text.slice(0, 120));
     check(`[${label}] 읽힌 텍스트는 순서대로 입력란에 (사용자가 확인·수정)`, extracted.indexOf('급여') >= 0 && extracted.indexOf('담당업무') > extracted.indexOf('급여') && (await page.isVisible('#confirm-row')));
-    const nums = status.text.match(/인식이 불확실한 숫자: (.+?)\. 원본 이미지와/)?.[1] ?? '';
+    const nums = status.text.match(/인식이 불확실한 부분: (.+?)\. 원본 이미지와/)?.[1] ?? '';
     await page.screenshot({ path: `${OUT}/partial-read.png`, fullPage: true });
     check(`[${label}] 확인할 숫자는 인식한 그대로 안내 (고친 값을 만들지 않음)`, [...nums.matchAll(/'([^']+)'/g)].every((m) => extracted.includes(m[1])), nums || '없음');
+  }
+
+  // 3-2) 실제 서비스에서 오류가 났던 오퍼 안내문 캡처 2장 (아이콘이 있는 표, 좌우 2열 복리후생)
+  {
+    const label = 'real-offer';
+    await fresh('offer');
+    const status = await uploadAndExtract(['../ocr-real/offer-1.webp', '../ocr-real/offer-2.webp']);
+    const lines = (await page.inputValue('#doc-text')).split('\n').map((l) => l.trim());
+    const need = ['연봉 4,000만원', '수습기간 중 급여 월 300만원 (세전)', '근무시간 주 5일 (월~금) 10:00 ~ 19:00', '계약기간 기간의 정함이 없는 근로계약', '직무 서비스 기획자', '입사 예정일 2026년 11월 1일 (예정)'];
+    const missingPairs = need.filter((n) => !lines.includes(n));
+    check(`[${label}] 항목명과 값이 같은 줄에 연결됨`, missingPairs.length === 0, missingPairs.join(' / ') || `${need.length}개`);
+    const benefits = ['4대 보험 가입', '건강검진 지원', '연차 및 반차 자유 사용', '명절 선물 및 경조사비 지원', '점심 식대 지원', '자율 복장 근무', '최신 업무 장비 제공', '사내 스낵바 및 커피 무제한'];
+    const own = benefits.filter((b) => lines.includes(b));
+    check(`[${label}] 복리후생이 한 줄에 하나씩 (8개 중)`, own.length >= 7, `${own.length}/8`);
+    // 수정 전에 아이콘이 글자로 읽혀 줄 앞에 붙었던 조각들 ('•' 글머리표를 'o'로 읽는 것은 제외)
+    const iconJunk = lines.filter((l) => /^(g|ad|=<|\(\)|=e|®|=r|B|a|©|@|Q@|<\?|범0|OO|Cp|67) ?[(가-힣0-9]/.test(l));
+    check(`[${label}] 아이콘을 글자로 읽은 조각 없음`, iconJunk.length === 0, iconJunk.join(' / '));
+    const unsure = status.text.match(/인식이 불확실한 부분: (.+?)\. 원본 이미지와/)?.[1] ?? '';
+    check(`[${label}] 불확실한 부분은 인식한 그대로 확인 요청`, unsure && [...unsure.matchAll(/'([^']+)'/g)].every((m) => lines.join('\n').includes(m[1])), unsure || '없음');
+    await page.screenshot({ path: `${OUT}/real-offer.png`, fullPage: true });
   }
 
   // 4) 실패해도 이미 입력한 내용은 그대로: 전부 인식 실패 / 형식 오류 / PDF와 이미지 섞음 / 바꾸기 취소

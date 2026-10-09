@@ -48,9 +48,9 @@ const ITEM_FAIL_TEXT = {
 // 인식은 됐지만 원본과 비교해 확인이 필요한 이미지 (글자를 고치지 않고 확인할 곳만 알림)
 const ITEM_REVIEW_TEXT = {
   low: '일부만 읽혔거나 인식이 불확실해요. 원본과 꼭 비교해 주세요',
-  check: '확인할 숫자가 있어요',
+  check: '확인할 숫자·글자가 있어요',
 };
-const uncertainNote = (list) => (list.length ? `인식이 불확실한 숫자: ${list.map((t) => `'${t}'`).join(', ')}. 원본 이미지와 비교해 고쳐 주세요.` : '');
+const uncertainNote = (list) => (list.length ? `인식이 불확실한 부분: ${list.map((t) => `'${t}'`).join(', ')}. 원본 이미지와 비교해 고쳐 주세요.` : '');
 const PROGRESS_TEXT = {
   image: '이미지를 여는 중…',
   'pdf-load': 'PDF를 여는 중…',

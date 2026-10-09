@@ -7,6 +7,7 @@ import {
   checkFile, pageTextFromItems, needsOcr, joinPages, hasText, tidyText, stripOcrJunk, fitSize, combineImageResults, reviewOcr,
 } from './upload-rules.js';
 import { toGray, writeGray, normalizeForOcr, estimateTextHeight, textLineStats, ocrScale, removeLongLines } from './ocr-prep.js';
+import { analyzeLayout, placeWords, assembleLines } from './ocr-layout.js';
 
 const VENDOR = `${location.origin}/vendor`;
 
@@ -66,14 +67,23 @@ const lineScore = (words) => {
   return real.length ? (meanConf(real) + Math.min(...real.map((w) => w.confidence))) / 2 : 0;
 };
 
-// Tesseract 결과를 줄 단위로 정리한다 (줄 위치, 단어별 신뢰도, 문단 경계)
+// Tesseract 결과를 줄 단위로 정리한다 (줄 위치, 단어별 신뢰도·위치·앞 띄어쓰기, 문단 경계)
+let lineSeq = 0;
 function linesOf(data) {
   const lines = [];
   for (const b of data.blocks ?? []) {
     for (const p of b.paragraphs ?? []) {
       (p.lines ?? []).forEach((l, i) => {
-        const words = (l.words ?? []).filter((w) => w.text?.trim()).map((w) => ({ text: w.text, confidence: w.confidence ?? 0 }));
-        lines.push({ text: (l.text ?? '').replace(/\s+$/, ''), bbox: l.bbox, words, paraStart: i === 0 });
+        const text = (l.text ?? '').replace(/\s+$/, '');
+        const lineId = (lineSeq += 1);
+        let cursor = 0;
+        const words = (l.words ?? []).filter((w) => w.text?.trim()).map((w) => {
+          const at = text.indexOf(w.text, cursor);
+          const space = at > 0 && /\s/.test(text[at - 1]);
+          if (at >= 0) cursor = at + w.text.length;
+          return { text: w.text, confidence: w.confidence ?? 0, bbox: w.bbox, lineId, space };
+        });
+        lines.push({ text, bbox: l.bbox, words, paraStart: i === 0 });
       });
     }
   }
@@ -99,7 +109,18 @@ function dropNoise(line) {
 const linesToText = (lines) => tidyText(stripOcrJunk(lines.map(dropNoise).filter((l) => l && l.text)
   .map((l, i) => `${i && l.paraStart ? '\n' : ''}${l.text}`).join('\n')));
 
-function cropCanvas(canvas, { x0, y0, x1, y1 }, zoom = 1, pad = 12) {
+// 단어 상자들이 칸의 가로 폭을 덮는 비율
+function coverage(words, seg) {
+  const spans = words.map((w) => [Math.max(seg.x0, w.bbox.x0), Math.min(seg.x1, w.bbox.x1)]).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
+  let covered = 0;
+  let end = seg.x0;
+  for (const [a, b] of spans) { if (b > end) { covered += b - Math.max(a, end); end = b; } }
+  return covered / Math.max(1, seg.x1 - seg.x0);
+}
+const squeezedLength = (ls) => ls.reduce((n, l) => n + l.text.replace(/\s/g, '').length, 0);
+
+const CROP_PAD = 12;
+function cropCanvas(canvas, { x0, y0, x1, y1 }, zoom = 1, pad = CROP_PAD) {
   const w = Math.round((x1 - x0) * zoom);
   const h = Math.round((y1 - y0) * zoom);
   const out = canvasOf(w + pad * 2, h + pad * 2);
@@ -140,14 +161,29 @@ function retryGroups(lines, width, height) {
   return groups.slice(0, MAX_RETRY_LINES).map((g) => {
     const h = g.box.y1 - g.box.y0;
     const m = Math.max(h, medianH);
-    return {
-      ...g,
-      rect: {
-        x0: Math.max(0, Math.round(g.box.x0 - m)), x1: Math.min(width, Math.round(g.box.x1 + m)),
-        y0: Math.max(0, Math.round(g.box.y0 - m * 0.3)), y1: Math.min(height, Math.round(g.box.y1 + m * 0.3)),
-      },
+    const rect = {
+      x0: Math.max(0, Math.round(g.box.x0 - m * 0.5)), x1: Math.min(width, Math.round(g.box.x1 + m * 0.5)),
+      y0: Math.max(0, Math.round(g.box.y0 - m * 0.3)), y1: Math.min(height, Math.round(g.box.y1 + m * 0.3)),
     };
-  });
+    // 이웃 줄(표의 옆 칸 항목명·위아래 줄)이 잘라 낸 영역에 들어오지 않게 한다. 들어오면 그 줄을 함께 읽어
+    // 같은 내용이 두 번 나온다 (예: 표 가운데의 '수습기간 중 급여'가 아래 줄에 다시 붙음)
+    lines.forEach((o, k) => {
+      if (k >= g.start && k <= g.end || o.bbox.x1 <= rect.x0 || o.bbox.x0 >= rect.x1) return;
+      if (o.bbox.y1 <= g.box.y0 + h * 0.3) rect.y0 = Math.max(rect.y0, Math.min(o.bbox.y1, g.box.y0));
+      else if (o.bbox.y0 >= g.box.y1 - h * 0.3) rect.y1 = Math.min(rect.y1, Math.max(o.bbox.y0, g.box.y1));
+    });
+    return { ...g, rect };
+  }).reduce((out, g) => {
+    // 다시 읽을 영역이 겹치면 한 번만 읽는다 (큰 제목이 여러 조각 줄로 나뉜 경우 같은 제목을 두 번 읽지 않게)
+    const prev = out.at(-1);
+    const overlap = prev && Math.min(prev.rect.y1, g.rect.y1) - Math.max(prev.rect.y0, g.rect.y0) > 0
+      && Math.min(prev.rect.x1, g.rect.x1) - Math.max(prev.rect.x0, g.rect.x0) > 0;
+    if (overlap && g.start === prev.end + 1) {
+      prev.end = g.end;
+      prev.rect = { x0: Math.min(prev.rect.x0, g.rect.x0), x1: Math.max(prev.rect.x1, g.rect.x1), y0: Math.min(prev.rect.y0, g.rect.y0), y1: Math.max(prev.rect.y1, g.rect.y1) };
+    } else out.push(g);
+    return out;
+  }, []);
 }
 
 // 이미지 1장 인식: 전처리 이미지 전체를 인식한 뒤, 신뢰도가 낮은 줄만 전처리·원본·확대 이미지에서
@@ -171,23 +207,87 @@ async function recognize(worker, prepared, opts = {}) {
         const { data: d } = await worker.recognize(cropCanvas(source, g.rect, zoom), { tessedit_pageseg_mode: '7' }, { text: true, blocks: true });
         const cand = linesOf(d).filter((l) => l.words.length);
         const conf = lineScore(cand.flatMap((l) => l.words));
-        if (cand.length && conf > best.conf + RETRY_GAIN) best = { conf, lines: cand };
+        // 원래 줄보다 훨씬 길게 읽혔다면 옆 내용까지 읽은 것이므로 쓰지 않는다
+        const longer = squeezedLength(cand) > squeezedLength(lines.slice(g.start, g.end + 1)) * 1.5 + 2;
+        if (cand.length && !longer && conf > best.conf + RETRY_GAIN) best = { conf, lines: cand, zoom };
       }
       if (best.lines) {
         replaced += 1;
         const text = best.lines.map((l) => l.text).join(' ');
-        next.splice(g.start, g.end - g.start + 1, { ...lines[g.start], text, words: best.lines.flatMap((l) => l.words), replaced: true },
+        // 잘라 낸 이미지 안의 단어 위치를 전체 이미지 좌표로 되돌린다 (배치 분석에 사용)
+        const back = (v, o) => o + (v - CROP_PAD) / best.zoom;
+        const words = best.lines.flatMap((l) => l.words).map((w) => ({ ...w, bbox: w.bbox && {
+          x0: back(w.bbox.x0, g.rect.x0), x1: back(w.bbox.x1, g.rect.x0), y0: back(w.bbox.y0, g.rect.y0), y1: back(w.bbox.y1, g.rect.y0),
+        } }));
+        next.splice(g.start, g.end - g.start + 1, { ...lines[g.start], text, words, replaced: true },
           ...Array(g.end - g.start).fill(null));
       }
     }
     lines = next.filter(Boolean);
+  }
+  // 이미지의 행·칸 배치에 맞춰 줄을 다시 엮는다 (표의 항목명-값 연결, 아이콘 제외, 좌우 2열 목록 분리)
+  let icons = 0;
+  if (opts.layout !== false && prepared.layout) {
+    const { gray, width, height, pad, th } = prepared.layout;
+    const ink = new Uint8Array(gray.length);
+    for (let i = 0; i < gray.length; i += 1) ink[i] = gray[i] < 160 ? 1 : 0;
+    const shift = (w) => ({ ...w, bbox: { x0: w.bbox.x0 - pad, x1: w.bbox.x1 - pad, y0: w.bbox.y0 - pad, y1: w.bbox.y1 - pad } });
+    const words = lines.flatMap((l) => l.words).filter((w) => w.bbox).map(shift);
+    const blocks = analyzeLayout(ink, width, height, th);
+    opts.onLayout?.({ blocks, th, words }); // 비교 도구에서 배치 분석 결과를 확인할 때만 사용
+    const cells = placeWords(words, blocks);
+    // 영역별 인식: 칸이 여러 개인 행(표·2열 목록)은 칸마다 따로 읽어, 전체 인식보다 확실하면 그 칸의 결과로 바꾼다.
+    // (전체 인식은 두 줄짜리 값 가운데의 항목명을 위아래로 잘라 읽는 일이 있다. 예: '근무시간' → '근' + '=e')
+    if (cells && opts.cells !== false) {
+      for (const [bi, b] of blocks.entries()) {
+        if (b.segs.length < 2) continue;
+        for (const [si, seg] of b.segs.entries()) {
+          const m = Math.round(th * 0.25);
+          const rect = {
+            x0: Math.max(0, seg.x0 + pad - m), x1: Math.min(prepared.canvas.width, seg.x1 + pad + m),
+            y0: Math.max(0, seg.y0 + pad - m), y1: Math.min(prepared.canvas.height, seg.y1 + pad + m),
+          };
+          const psm = seg.y1 - seg.y0 > th * 1.5 ? '6' : '7';
+          const readCell = async (source, zoom) => {
+            retried += 1;
+            const { data: d } = await worker.recognize(cropCanvas(source, rect, zoom), { tessedit_pageseg_mode: psm }, { text: true, blocks: true });
+            const back = (v, o) => o + (v - CROP_PAD) / zoom - pad;
+            return linesOf(d).flatMap((l) => l.words).map((w) => ({ ...w, bbox: {
+              x0: back(w.bbox.x0, rect.x0), x1: back(w.bbox.x1, rect.x0), y0: back(w.bbox.y0, rect.y0), y1: back(w.bbox.y1, rect.y0),
+            } }));
+          };
+          // 전체 인식에서 칸 일부가 비어 있으면(아이콘과 한 단어로 붙어 다른 칸에 들어간 경우 등) 칸을 더 많이 덮은 쪽을 쓴다
+          const better = (cand, cur) => cand.length && (!cur.length
+            || (coverage(cand, seg) - coverage(cur, seg) > 0.1 && lineScore(cand) >= LINE_OK)
+            || lineScore(cand) > lineScore(cur) + 3);
+          let best = cells[bi][si];
+          const region = await readCell(prepared.canvas, 1);
+          if (better(region, best)) best = region;
+          // 그래도 확신이 낮은 단어가 남으면 원본·확대 이미지에서도 읽어 본다 (줄 다시 읽기와 같은 방식)
+          const weak = (ws) => ws.some((w) => !JUNK.test(w.text) && w.confidence < RETRY_BELOW);
+          if (weak(best)) {
+            for (const [source, zoom] of [[prepared.original, 1], [prepared.canvas, 1.5]]) {
+              const cand = await readCell(source, zoom);
+              if (better(cand, best)) best = cand;
+            }
+          }
+          opts.onCell?.({ bi, si, whole: cells[bi][si].map((w) => `${w.text}(${Math.round(w.confidence)})`).join(' '), chosen: best.map((w) => `${w.text}(${Math.round(w.confidence)})`).join(' ') });
+          if (best !== cells[bi][si]) { cells[bi][si] = best; replaced += 1; }
+        }
+      }
+    }
+    const assembled = cells && assembleLines(blocks, cells, th);
+    if (assembled) {
+      icons = assembled.icons;
+      lines = assembled.lines.map((l) => ({ ...l, paraStart: false }));
+    }
   }
   const words = lines.flatMap((l) => l.words);
   const text = linesToText(lines);
   const confidence = lines.length ? meanConf(words) : (data.confidence ?? 0);
   // 확실하게 읽힌 줄 수 (흐린 부분에서 나온 신뢰도 낮은 조각 줄은 세지 않는다)
   const readLines = lines.map(dropNoise).filter((l) => l && l.text && meanConf(l.words) >= LINE_OK).length;
-  return { text, confidence, words, lines: readLines, inkLines: prepared.inkLines ?? 0, retried, replaced, ...reviewOcr({ words, confidence, lines: readLines, inkLines: prepared.inkLines ?? 0 }) };
+  return { text, confidence, words, lines: readLines, inkLines: prepared.inkLines ?? 0, retried, replaced, icons, ...reviewOcr({ words, confidence, lines: readLines, inkLines: prepared.inkLines ?? 0 }) };
 }
 
 function canvasOf(width, height) {
@@ -237,11 +337,15 @@ function prepareForOcr(src, opts = {}) {
   }
   if (opts.lines !== false) removeLongLines(n.gray, canvas.width, canvas.height, estimateTextHeight(n.gray, canvas.width, canvas.height));
   const inkLines = textLineStats(n.gray, canvas.width, canvas.height, n.rowInk).count; // 일부만 인식했는지 비교할 기준
+  const th = estimateTextHeight(n.gray, canvas.width, canvas.height);
   writeGray(n.gray, n.img.data);
   n.ctx.putImageData(n.img, 0, 0);
   // 가장자리에 붙은 글자도 읽도록 흰 여백을 둔다 (원본도 같은 여백으로 위치를 맞춘다)
   const pad = opts.pad === false ? 0 : Math.max(16, Math.round(Math.max(canvas.width, canvas.height) * 0.02));
-  return { canvas: padCanvas(canvas, pad), original: padCanvas(original, pad), scale, textHeight, inkLines };
+  return {
+    canvas: padCanvas(canvas, pad), original: padCanvas(original, pad), scale, textHeight, inkLines,
+    layout: { gray: n.gray, width: canvas.width, height: canvas.height, pad, th },
+  };
 }
 
 async function prepareImage(file, opts) {

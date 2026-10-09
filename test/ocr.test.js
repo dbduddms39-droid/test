@@ -125,3 +125,70 @@ test('여러 장 합치기: 순서 유지, 확인이 필요한 이미지를 따�
   assert.equal(out.lowConfidence, true);
   assert.deepEqual(out.failed, [{ index: 3, code: 'no_text_found' }]);
 });
+
+// ---------- 배치(행·칸)에 맞춰 줄 엮기 ----------
+import { analyzeLayout, placeWords, assembleLines, isIcon } from '../public/ocr-layout.js';
+
+// 잉크 지도에 사각형을 칠한다 (글자·아이콘 흉내)
+function inkMap(width, height, boxes) {
+  const ink = new Uint8Array(width * height);
+  for (const [x0, y0, x1, y1] of boxes) for (let y = y0; y < y1; y += 1) for (let x = x0; x < x1; x += 1) ink[y * width + x] = 1;
+  return ink;
+}
+const word = (text, x0, y0, x1, y1, confidence = 95, lineId = null, space = true) => ({ text, confidence, bbox: { x0, y0, x1, y1 }, lineId, space });
+
+test('아이콘·항목명·두 줄 값이 있는 표 행: 아이콘을 빼고 항목명은 값의 첫 줄에 붙인다', () => {
+  // 행: 아이콘(40px 정사각) | 항목명 '수습기간 중 급여'(두 줄 값의 가운데) | 값 1줄 '월 300만원 (세전)' + 값 2줄 '(수습기간 3개월)'
+  const W = 900; const H = 140; const th = 40;
+  const ink = inkMap(W, H, [[20, 40, 60, 82], [100, 50, 260, 72], [400, 20, 640, 50], [400, 70, 600, 95]]);
+  const blocks = analyzeLayout(ink, W, H, th);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].segs.length, 3);
+  const words = [
+    word('B', 20, 40, 60, 82, 75), // 아이콘을 글자로 읽음
+    word('수습기간', 100, 50, 170, 72, 93, 1), word('중', 180, 50, 200, 72, 93, 1), word('급여', 210, 50, 260, 72, 93, 1),
+    word('월', 400, 20, 420, 50, 93, 2), word('300만원', 430, 20, 540, 50, 93, 2), word('(세전)', 550, 20, 640, 50, 93, 2),
+    word('(수습기간', 400, 70, 520, 95, 93, 3), word('3개월)', 530, 70, 600, 95, 93, 3),
+  ];
+  const out = assembleLines(blocks, placeWords(words, blocks), th);
+  assert.deepEqual(out.lines.map((l) => l.text), ['수습기간 중 급여 월 300만원 (세전)', '(수습기간 3개월)']);
+  assert.equal(out.icons, 1);
+});
+
+test('좌우 2열 목록: 가운데 아이콘에서 항목을 나눠 한 줄에 하나씩', () => {
+  const W = 1000; const H = 60; const th = 40;
+  const ink = inkMap(W, H, [[20, 10, 60, 50], [100, 15, 300, 45], [520, 10, 560, 50], [600, 15, 760, 45]]);
+  const blocks = analyzeLayout(ink, W, H, th);
+  const words = [word('©', 20, 10, 60, 50, 69), word('4대', 100, 15, 150, 45, 93, 1), word('보험', 160, 15, 220, 45, 93, 1), word('가입', 230, 15, 300, 45, 93, 1),
+    word('@', 520, 10, 560, 50, 65), word('건강검진', 600, 15, 700, 45, 93, 1), word('지원', 710, 15, 760, 45, 93, 1)];
+  const out = assembleLines(blocks, placeWords(words, blocks), th);
+  assert.deepEqual(out.lines.map((l) => l.text), ['4대 보험 가입', '건강검진 지원']);
+});
+
+test('아이콘 판단: 두 글자 항목명·글자 높이의 숫자 칸은 남기고, 한글 없는 기호·큰 그림·확신 낮은 한 칸은 뺀다', () => {
+  const seg = (x0, x1, y0, y1) => ({ x0, x1, y0, y1 });
+  const th = 40; const glyph = 30;
+  assert.equal(isIcon(seg(160, 220, 129, 160), [word('연봉', 160, 129, 220, 160, 55)], th, 3, glyph), false, '두 글자 항목명');
+  assert.equal(isIcon(seg(20, 40, 130, 152), [word('1', 20, 130, 40, 152, 92)], th, 3, glyph), false, '번호 칸 숫자');
+  assert.equal(isIcon(seg(80, 124, 122, 165), [word('8', 80, 122, 124, 165, 87)], th, 3, glyph), true, '아이콘을 숫자로 읽음(글자보다 큼)');
+  assert.equal(isIcon(seg(80, 124, 122, 160), [word('<?', 80, 122, 124, 160, 65)], th, 3, glyph), true, '기호');
+  assert.equal(isIcon(seg(100, 140, 980, 1022), [word('범', 100, 980, 130, 1022, 55), word('0', 130, 976, 150, 1035, 37)], th, 4, glyph), true, '확신 낮은 한 칸');
+  assert.equal(isIcon(seg(80, 124, 122, 160), [word('g', 80, 122, 124, 160, 72)], th, 1, glyph), false, '칸이 하나뿐인 행은 아이콘으로 보지 않음');
+});
+
+test('칸 맨 앞 로고: 한글이 없고 글자보다 크고 떨어져 있을 때만 뺀다 (번호 "1."은 남김)', () => {
+  const W = 900; const H = 60; const th = 30;
+  const ink = inkMap(W, H, [[10, 5, 380, 55]]);
+  const blocks = analyzeLayout(ink, W, H, th);
+  const logo = [word('67', 10, 5, 50, 55, 83), word('(주)그린테크놀로지', 70, 15, 250, 45, 93, 1), word('기술로', 260, 15, 320, 45, 93, 1), word('더', 330, 15, 380, 45, 93, 1)];
+  assert.deepEqual(assembleLines(blocks, placeWords(logo, blocks), th).lines.map((l) => l.text), ['(주)그린테크놀로지 기술로 더']);
+  const numbered = [word('1.', 10, 20, 30, 45, 95, 2), word('채용', 40, 15, 100, 45, 95, 2), word('직무', 110, 15, 170, 45, 95, 2)];
+  assert.deepEqual(assembleLines(blocks, placeWords(numbered, blocks), th).lines.map((l) => l.text), ['1. 채용 직무']);
+});
+
+test('결과 평가: 한글 문서에서 신뢰도 낮게 영문으로 읽힌 단어도 확인할 부분으로 (고치지 않음)', () => {
+  const w = (text, confidence = 95) => ({ text, confidence });
+  const r = reviewOcr({ words: [w('사내'), w('Addl', 20), w('및'), w('커피'), w('API', 90), w('HLF', 47), w('무제한')], confidence: 90, lines: 3, inkLines: 3 });
+  assert.deepEqual(r.uncertain, ['Addl', 'HLF']);
+  assert.equal(r.quality, 'check');
+});
