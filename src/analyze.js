@@ -15,7 +15,7 @@ async function callAndVerify(ai, { docType, segments, criterionIds, feedback }, 
   } catch (err) {
     if (throwFatal && err.fatal) throw err;
     const code = `ai_call_failed:${err.code || 'unknown'}${err.httpStatus ? `:${err.httpStatus}` : ''}`;
-    return Object.fromEntries(criterionIds.map((id) => [id, { errors: [code], errorLines: [null] }]));
+    return Object.fromEntries(criterionIds.map((id) => [id, { errors: [code], errorQuotes: [] }]));
   }
 }
 
@@ -23,9 +23,35 @@ const failed = (e) => Boolean(e?.errors?.length);
 
 // 7-1: 상위 항목을 보류할지 결정한다.
 // - 핵심(C)·조건부 핵심 근거가 하나라도 실패하면 보류 (일부 인용이 맞아도 그 항목 응답 전체를 다시 받음)
-// - 추가(D)만 실패한 경우, 실패 인용이 실제 줄을 가리키고 그 줄이 핵심(C) 근거와 겹치지 않을 때만 독립 오류로 본다.
-//   독립성이 입증되지 않으면(응답 누락, 없는 줄, 핵심과 같은 줄) 보류해 항목 전체를 다시 분석한다.
-export function planHolds(entries) {
+// - 추가(D)만 실패한 경우, 그 오류가 핵심 판정·상충 근거·조건부 분기에 영향을 줄 수 없다고 입증될 때만 D 단위로 처리한다.
+//   줄 번호가 다르다는 것만으로는 독립으로 보지 않는다. 다음을 모두 만족해야 한다:
+//   (1) 오류가 '인용 구절이 그 줄에 없음/빈 인용'뿐이다 (응답 누락·형식 오류·없는 줄·허용되지 않은 부정 표현은 독립 아님)
+//   (2) 실패 인용이 가리킨 줄이 같은 주제의 핵심(C) 근거 줄이 아니다
+//   (3) 그 줄의 실제 내용과 AI가 주장한 구절 모두에 그 주제의 핵심 판단에 쓰이는 표현(금액·시간·장소·수습 등)이 없다
+//       → 다른 금액·시간 같은 상충 근거나 조건부 분기 근거가 숨어 있을 가능성을 배제
+//   하나라도 입증되지 않으면 그 주제 전체를 보류하고 1회 재분석한다.
+const QUOTE_ERRORS = new Set(['quote_not_in_line', 'empty_quote']);
+export const CORE_PATTERN = {
+  '01': /(\d[\d,.]*\s*(만\s*|천\s*)?원|연봉|월급|시급|시간급|일급|주급|월\s*보수)/,
+  '02': /(\d+(\.\d+)?\s*시간|\d{1,2}\s*:\s*\d{2}|주\s*\d+(\.\d+)?\s*일)/,
+  '03': /(근무\s*(장소|지)|근무지|취업\s*장소|배치\s*장소|사업장|본사|지점|사무실|오피스|사옥|매장|[가-힣]+(특별시|광역시|시|도|구|군)\s|[가-힣\d]+(로|길)\s*\d)/,
+  '04': /(업무|직무|담당)/,
+  '05': /(정규직|계약직|기간제|단시간|인턴|파견|고용\s*(형태|방식)|계약\s*(형태|유형))/,
+  '06': /(계약\s*기간|기간의\s*정함|기간제|기간을\s*정|\d{4}\s*년|\d+\s*(개월|년)|종료)/,
+  '07': /(수습|시용)/,
+  '08': /(수습|시용|\d+\s*%)/,
+  '09': /(휴일|휴무|주휴|공휴)/,
+  '10': /(연차|유급\s*휴가)/,
+};
+export function isIndependentD(topic, entry, cLines, segments) {
+  if (!entry.errors.every((code) => QUOTE_ERRORS.has(code)) || !entry.errorQuotes.length) return false;
+  return entry.errorQuotes.every((q) => {
+    const seg = Number.isInteger(q.line) ? segments[q.line - 1] : null;
+    return seg && !cLines.has(q.line) && !CORE_PATTERN[topic].test(seg.text) && !CORE_PATTERN[topic].test(q.text);
+  });
+}
+
+export function planHolds(entries, segments) {
   const held = [];
   const independentD = [];
   for (const topic of TOPIC_IDS) {
@@ -35,8 +61,7 @@ export function planHolds(entries) {
     const dFailed = ids.filter((id) => criterionById[id].role === 'D' && failed(entries[id]));
     if (!dFailed.length) continue;
     const cLines = new Set(ids.filter((id) => criterionById[id].role === 'C').flatMap((id) => (entries[id].quotes ?? []).map((q) => q.line)));
-    const independent = dFailed.every((id) => entries[id].errorLines.length > 0
-      && entries[id].errorLines.every((line) => Number.isInteger(line) && !cLines.has(line)));
+    const independent = dFailed.every((id) => isIndependentD(topic, entries[id], cLines, segments));
     if (independent) independentD.push(...dFailed);
     else held.push(topic);
   }
@@ -45,7 +70,7 @@ export function planHolds(entries) {
 
 const errorsOf = (entries, ids) => Object.fromEntries(ids.filter((id) => failed(entries[id])).map((id) => [id, entries[id].errors]));
 
-// lowConfidence: OCR 저신뢰 구절 (선택). 화면에서는 아직 보내지 않으며, 보낼 때의 정책은 미결정(보고서 참고).
+// lowConfidence: 입력 텍스트 기준 OCR 저신뢰 문자 구간 [{ start, end }] (S-03에서 사용자가 수정하거나 원본과 대조해 확인하지 않은 구간)
 export async function analyzeDocument({ text, docType, ai, log = () => {}, lowConfidence = [] }) {
   const segments = segmentText(text);
   let first;
@@ -58,7 +83,7 @@ export async function analyzeDocument({ text, docType, ai, log = () => {}, lowCo
   }
 
   const final = { ...first };
-  const { held, independentD } = planHolds(first);
+  const { held, independentD } = planHolds(first, segments);
   for (const id of independentD) final[id] = { unavailable: true, reason: 'evidence_verification_failed' };
 
   // 보류한 상위 항목만 1회 재분석. 다른 항목의 검증된 결과는 그대로 둔다.
@@ -84,6 +109,7 @@ export async function analyzeDocument({ text, docType, ai, log = () => {}, lowCo
     segments: segments.length,
     firstPassErrors: errorsOf(first, CRITERION_IDS),
     heldTopics: held,
+    lowConfidenceRanges: lowConfidence.length,
     independentD,
     finalErrors: retryErrors,
     shown: result.counts.shown,

@@ -101,3 +101,16 @@ test('요청 제한을 넘으면 AI를 호출하지 않고 429', async () => {
   assert.equal(r.retryAfter, '30');
   assert.equal(calls, 0);
 });
+
+test('OCR 저신뢰 구간: 올바른 범위만 받고, 잘못된 형식은 400 (내용이 아니라 위치만 받음)', async () => {
+  const text = '급여: 월 25O만원\n근무지: 서울 마포구';
+  const ok = await post({ docType: 'offer', text, lowConfidence: [{ start: 7, end: 10 }] });
+  assert.equal(ok.status, 200);
+  const data = await ok.json();
+  const wage = data.topics.find((t) => t.id === '01');
+  assert.equal(wage.criteria.find((c) => c.id === '01-a').status, 'UNAVAILABLE', '확인되지 않은 저신뢰 구간이 겹친 핵심값은 확정하지 않음');
+  assert.equal(wage.status, 'MAIN_UNAVAILABLE');
+  for (const bad of [[{ start: 5, end: 3 }], [{ start: 0, end: 999 }], [{ start: 0, end: 2, text: 'x' }], 'x', [{ start: 1.5, end: 3 }]]) {
+    assert.equal((await post({ docType: 'offer', text, lowConfidence: bad })).status, 400, JSON.stringify(bad));
+  }
+});

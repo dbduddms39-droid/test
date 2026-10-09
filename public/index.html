@@ -239,6 +239,13 @@
           <textarea id="review-text" rows="18" maxlength="20000"></textarea>
           <div class="editor-foot"><span class="mono-meta muted-mono">글자 <span id="review-chars">0</span>자 · 줄 <span id="review-lines">0</span>행</span></div>
           <p class="margin-note">수정한 텍스트를 기준으로 분석해요. 이 내용은 이 창에서만 유지되고, 새로고침하거나 창을 닫으면 사라져요.</p>
+          <section id="ocr-check" class="ocr-check" aria-labelledby="ocr-check-title" hidden>
+            <h2 id="ocr-check-title">확인이 필요한 글자 <span id="ocr-check-count" class="ocr-check-count"></span></h2>
+            <p class="small">글자 인식(OCR)이 불확실한 곳이에요. 원본과 대조해 고치거나, 맞다면 '원본과 대조해 확인했어요'를 눌러 주세요.
+              확인하지 않은 곳은 분석에서 확정하지 않아요. 그 글자가 근거인 기준은 '분석 확인 불가'로 표시될 수 있어요.
+              '내용 확인하고 분석하기' 버튼만으로는 이 표시가 해제되지 않아요.</p>
+            <ol id="ocr-check-list" class="ocr-list"></ol>
+          </section>
         </section>
       </div>
       <p id="review-error" class="error" role="alert" hidden></p>
@@ -279,22 +286,50 @@
       </div>
     </section>
 
-    <!-- S-05 분석 결과 (점검 기준 v2.2 형식, 최종 디자인은 4단계) -->
-    <section id="view-result" class="view view-narrow" hidden>
-      <a href="#/input" class="back" id="result-back">← 다시 입력</a>
-      <p class="doc-type-chip" id="result-doc-type"></p>
-      <h1>분석 결과</h1>
-      <p class="result-count" id="result-count"></p>
+    <!-- S-05 점검 결과 목록 + 원문 대조 패널 -->
+    <section id="view-result" class="view view-wide" hidden>
+      <a href="#/input" class="back" id="result-back">← 문서 내용 확인하기</a>
+      <div class="result-head">
+        <div>
+          <p class="crumb"><span id="result-doc-type"></span> · 근로조건 점검 리포트</p>
+          <h1 id="result-title">점검 결과</h1>
+        </div>
+        <div class="result-head-side">
+          <ul class="status-legend" aria-label="상태 표시 기호">
+            <li><span class="badge badge-found">주요 내용 기재됨</span></li>
+            <li><span class="badge badge-review">일부 내용만 기재됨</span></li>
+            <li><span class="badge badge-missing">관련 내용 찾지 못함</span></li>
+            <li><span class="badge badge-unavailable">분석 확인 불가</span></li>
+          </ul>
+          <p class="muted small">문서에 적힌 근로조건을 항목별로 정리했어요.</p>
+        </div>
+      </div>
       <p id="analysis-source" class="analysis-source"></p>
       <p id="input-source-note" class="input-source-note" hidden></p>
-      <ul id="summary" class="summary"></ul>
-      <ul id="item-list" class="item-list"></ul>
-      <p class="notice" id="result-notice"></p>
+      <div class="result-grid">
+        <div class="result-list">
+          <p class="list-head"><span id="result-count"></span><span id="result-tally" class="muted"></span></p>
+          <ol id="item-list" class="topic-cards"></ol>
+        </div>
+        <aside class="source-panel" id="source-panel" aria-labelledby="source-panel-title">
+          <div class="source-panel-head">
+            <h2 id="source-panel-title">원문 대조 패널</h2>
+            <span class="muted small" id="source-panel-doc"></span>
+          </div>
+          <p class="source-panel-focus" id="source-panel-focus" aria-live="polite"></p>
+          <div class="source-panel-body" id="source-panel-body"></div>
+          <p class="source-panel-foot" id="source-panel-foot"></p>
+        </aside>
+      </div>
+      <div class="result-foot">
+        <p class="small" id="result-notice"></p>
+        <a href="#/input" class="btn-primary btn-auto" id="result-new">다른 문서 확인하기</a>
+      </div>
     </section>
 
-    <!-- S-06 항목 상세 (점검 기준 v2.2 형식, 최종 디자인은 4단계) -->
-    <section id="view-detail" class="view view-narrow" hidden>
-      <a href="#/result" class="back">← 결과로 돌아가기</a>
+    <!-- S-06 항목 상세 -->
+    <section id="view-detail" class="view view-wide" hidden>
+      <a href="#/result" class="back">← 점검 결과로 돌아가기</a>
       <div id="detail"></div>
     </section>
   </main>

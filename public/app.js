@@ -1,7 +1,8 @@
 import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-rules.js';
 import { buildQuestion, copyText } from './questions.js';
-import { el, statusBadge, V22_STATUS_LABEL } from './components.js';
+import { el, statusBadge, V22_STATUS_LABEL, sourcePanelLines } from './components.js';
 import { ROUTES, checkText, editRouteFor, resolveRoute, classifyAnalyzeFailure } from './flow.js';
+import { createTracker, applyEdit, confirmSpan, pendingRanges, summary as ocrSummary } from './ocr-spans.js';
 
 // 일단확인 클라이언트.
 // 입력 원문·추출 텍스트·분석 결과는 이 창의 메모리에만 둔다(브라우저 저장소·URL에 남기지 않음).
@@ -37,7 +38,7 @@ const EXAMPLE_TEXT = [
 
 const state = {
   tab: 'paste',     // S-02에서 고른 입력 방식
-  file: null,       // 파일 추출 결과 { source: 'ocr'|'pdf', original, previews: [{ url, name }], imagesVersion, ownUrls }
+  file: null,       // 파일 추출 결과 { source: 'ocr'|'pdf', original, previews: [{ url, name }], imagesVersion, ownUrls, words, tracker, lastText }
   last: null,       // 마지막으로 분석을 요청한 { docType, text, inputSource } — S-07 재시도·수정에 사용
   inflight: null,   // 진행 중인 분석 { controller }
   error: null,      // S-07에 보여 줄 { message }
@@ -236,7 +237,7 @@ $('#clear-images').addEventListener('click', () => {
 
 // 추출 결과를 S-03 확인 텍스트로 둔다. 확인·수정하던 텍스트가 있으면 바꿀지 먼저 묻는다(취소하면 그대로 둠).
 // 직접 입력란(S-02)의 내용은 건드리지 않는다.
-function applyExtracted(text, source, previews, ownUrls = []) {
+function applyExtracted(text, source, previews, ownUrls = [], words = []) {
   const reviewText = $('#review-text');
   if (state.file && reviewText.value.trim() && reviewText.value !== state.file.original
     && !confirm('확인·수정하던 추출 텍스트를 새로 추출한 내용으로 바꿀까요?')) {
@@ -244,7 +245,8 @@ function applyExtracted(text, source, previews, ownUrls = []) {
     return false;
   }
   const old = state.file;
-  state.file = { source, original: text, previews, imagesVersion, ownUrls };
+  // OCR이 알려 준 불확실한 글자의 위치를 추적한다 (사용자가 고치거나 원본과 대조해 확인한 곳만 해제)
+  state.file = { source, original: text, previews, imagesVersion, ownUrls, words, tracker: createTracker(text, words), lastText: text };
   if (old) {
     old.ownUrls.forEach((u) => URL.revokeObjectURL(u));
     // 목록에서 이미 지운 이미지의 URL은 이제 해제한다
@@ -293,7 +295,7 @@ async function extractPdf(file, notes = []) {
     const out = await extractTextFromFile(file, onProgress);
     const urls = await renderPdfPreview(file).catch(() => []); // 미리보기 실패는 추출 결과에 영향 없음
     const previews = urls.map((url) => ({ url, name: file.name }));
-    if (!applyExtracted(out.text, out.method === 'pdf-text' ? 'pdf' : 'ocr', previews, urls)) {
+    if (!applyExtracted(out.text, out.method === 'pdf-text' ? 'pdf' : 'ocr', previews, urls, out.uncertainAll ?? [])) {
       return showUploadStatus('확인·수정하던 추출 텍스트를 그대로 두었어요. 새로 추출한 텍스트로 바꾸려면 다시 추출해 주세요.', 'warn');
     }
     const what = out.method === 'pdf-text' ? `PDF ${out.pages}쪽에서 텍스트를 추출했어요.`
@@ -326,7 +328,7 @@ extractBtn.addEventListener('click', async () => {
       return showUploadStatus('이미지에서 글자를 찾지 못했어요. 더 선명한 이미지로 바꾸거나 텍스트 직접 붙여넣기로 입력해 주세요.', 'error');
     }
     const previews = images.map((img) => ({ url: img.url, name: img.file.name }));
-    if (!applyExtracted(out.text, 'ocr', previews)) return showUploadStatus('확인·수정하던 추출 텍스트를 그대로 두었어요. 새로 추출한 텍스트로 바꾸려면 다시 추출해 주세요.', 'warn');
+    if (!applyExtracted(out.text, 'ocr', previews, [], out.uncertainAll ?? [])) return showUploadStatus('확인·수정하던 추출 텍스트를 그대로 두었어요. 새로 추출한 텍스트로 바꾸려면 다시 추출해 주세요.', 'warn');
     const msg = [`이미지 ${images.length}장 중 ${out.okCount}장에서 글자를 인식해 순서대로 합쳤어요.`];
     if (out.failed.length) {
       msg.push(`${out.failed.map((f) => `${f.index + 1}번째`).join(', ')} 이미지는 ${out.failed.length === 1 ? ITEM_FAIL_TEXT[out.failed[0].code] ?? '읽지 못했어요' : '읽지 못했어요'}. 그 부분은 직접 입력하거나 다른 이미지로 바꿔 주세요.`);
@@ -368,7 +370,56 @@ function updateReviewState() {
   reviewSubmit.disabled = !state.file || !checkText(v).ok || Boolean(state.inflight);
   $('#review-restore').disabled = !state.file || v === state.file.original;
 }
-reviewText.addEventListener('input', () => { reviewError.hidden = true; updateReviewState(); });
+// 텍스트가 바뀔 때마다 저신뢰 구간의 위치·상태를 갱신한다
+function trackReviewText() {
+  if (!state.file) return;
+  state.file.tracker = applyEdit(state.file.tracker, state.file.lastText, reviewText.value);
+  state.file.lastText = reviewText.value;
+  renderOcrCheck();
+}
+reviewText.addEventListener('input', () => { reviewError.hidden = true; trackReviewText(); updateReviewState(); });
+
+// ---------- S-03 확인이 필요한 글자 (OCR 저신뢰 구간) ----------
+const OCR_KIND_TEXT = {
+  ocr: '인식이 불확실한 글자',
+  untracked: '크게 바뀌어 원래 위치와 대응할 수 없는 구간',
+  lost: '수정 중 위치를 추적할 수 없게 된 불확실한 글자',
+  unlocated: '추출 텍스트에서 위치를 찾지 못한 불확실한 글자',
+};
+const OCR_STATE_TEXT = { pending: '확인 필요', edited: '수정함', confirmed: '원본과 대조함' };
+const clip = (t, n = 40) => (t.length > n ? `${t.slice(0, n)}…` : t);
+
+function renderOcrCheck() {
+  const box = $('#ocr-check');
+  const tracker = state.file?.tracker;
+  const items = tracker ? [...tracker.spans, ...tracker.lost] : [];
+  box.hidden = !items.length;
+  if (!items.length) return;
+  const sum = ocrSummary(tracker);
+  $('#ocr-check-count').textContent = sum.pending ? `${sum.total}곳 중 ${sum.pending}곳 확인 필요` : `${sum.total}곳 모두 확인함`;
+  $('#ocr-check-list').replaceChildren(...items.map((x) => el('li', { class: `ocr-item is-${x.state}`, 'data-ocr-id': String(x.id) },
+    el('div', { class: 'ocr-item-main' },
+      el('q', { class: 'ocr-text' }, clip(x.state === 'edited' ? x.editedTo || '(삭제함)' : x.text)),
+      el('span', { class: 'ocr-kind' }, OCR_KIND_TEXT[x.kind]),
+      el('span', { class: 'ocr-state' }, OCR_STATE_TEXT[x.state])),
+    x.state === 'pending' ? el('div', { class: 'ocr-item-actions' },
+      x.start != null ? el('button', { type: 'button', class: 'btn-text', 'data-ocr-action': 'locate' }, '위치 보기') : null,
+      el('button', { type: 'button', class: 'icon-btn', 'data-ocr-action': 'confirm' }, '원본과 대조해 확인했어요')) : null)));
+}
+$('#ocr-check-list').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-ocr-action]');
+  if (!b || !state.file) return;
+  const id = Number(b.closest('[data-ocr-id]').dataset.ocrId);
+  const span = state.file.tracker.spans.find((s) => s.id === id);
+  if (b.dataset.ocrAction === 'confirm') {
+    state.file.tracker = confirmSpan(state.file.tracker, id); // 이 구간 하나만 해제
+    renderOcrCheck();
+  } else if (span?.start != null) {
+    $('#rtab-text').click();
+    reviewText.focus();
+    reviewText.setSelectionRange(span.start, span.end);
+  }
+});
 
 $('#review-select').addEventListener('click', () => { reviewText.focus(); reviewText.select(); });
 $('#review-clear').addEventListener('click', () => {
@@ -376,6 +427,7 @@ $('#review-clear').addEventListener('click', () => {
   const edited = state.file && reviewText.value.trim() && reviewText.value !== state.file.original;
   if (edited && !confirm('수정한 내용을 모두 지울까요? 처음 추출한 내용은 \'원래 내용으로\'로 되돌릴 수 있어요.')) return;
   reviewText.value = '';
+  trackReviewText();
   updateReviewState();
   reviewText.focus();
 });
@@ -383,6 +435,10 @@ $('#review-restore').addEventListener('click', () => {
   if (!state.file) return;
   if (reviewText.value.trim() && !confirm('수정한 내용을 지우고 처음 추출한 내용으로 되돌릴까요?')) return;
   reviewText.value = state.file.original;
+  // 처음 추출한 상태로 되돌리면 불확실한 글자 표시도 처음 상태(모두 확인 필요)로 돌아간다
+  state.file.tracker = createTracker(state.file.original, state.file.words);
+  state.file.lastText = state.file.original;
+  renderOcrCheck();
   updateReviewState();
 });
 
@@ -418,12 +474,15 @@ $('#preview-next').addEventListener('click', () => { preview.page += 1; renderPr
 $('#zoom-out').addEventListener('click', () => { preview.zoom = Math.max(50, preview.zoom - 25); renderPreview(); });
 $('#zoom-in').addEventListener('click', () => { preview.zoom = Math.min(200, preview.zoom + 25); renderPreview(); });
 
-// 파일 추출: S-03 → S-04 (이 버튼을 누르는 것이 '원본과 비교해 확인했다'는 사용자 확인)
+// 파일 추출: S-03 → S-04. 이 버튼은 불확실한 글자 표시를 해제하지 않는다.
+// 사용자가 고치거나 원본과 대조해 확인하지 않은 구간은 위치만 함께 보내고, 서버는 그 구간이 든 기준을 확정하지 않는다.
 reviewSubmit.addEventListener('click', () => {
   const text = reviewText.value;
   const c = checkText(text);
   if (!c.ok) return showMsg(reviewError, c.code === 'too_long' ? '문서는 20,000자 이하로 줄여 주세요.' : '분석할 문서 내용을 입력해 주세요.');
-  startAnalysis({ docType: docType(), text, inputSource: state.file.source });
+  trackReviewText();
+  const lowConfidence = pendingRanges(state.file.tracker, text);
+  startAnalysis({ docType: docType(), text, inputSource: state.file.source, lowConfidence });
 });
 
 // ---------- S-04 분석 중 · S-07 오류 ----------
@@ -450,7 +509,7 @@ async function startAnalysis(payload, { replace = false } = {}) {
     res = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ docType: payload.docType, text: payload.text }),
+      body: JSON.stringify({ docType: payload.docType, text: payload.text, ...(payload.lowConfidence?.length ? { lowConfidence: payload.lowConfidence } : {}) }),
       signal: controller.signal,
     });
     data = await res.json().catch(() => ({}));
@@ -490,13 +549,115 @@ function renderError() {
   $('#retry-btn').disabled = !state.last || Boolean(state.inflight);
 }
 
-// ---------- S-05 결과 (점검 기준 v2.2: 10개 주제, 08은 조건부) ----------
-// 최종 디자인은 4단계에서 적용한다. 여기서는 새 결과 형식을 정확히 보여 주는 데 집중한다.
+// ---------- S-05 점검 결과 (점검 기준 v2.2: 10개 주제, 08은 조건부) ----------
+// 세부기준 ID·핵심/추가 구분 코드·출처 코드는 화면에 그대로 보여 주지 않는다 (사용자용 이름만).
 const MAIN_ORDER = ['MAIN_FOUND', 'MAIN_PARTIAL', 'MAIN_MISSING', 'MAIN_UNAVAILABLE'];
 const isV22 = (r) => r?.version === 'v2.2' && Array.isArray(r.topics);
+const SOURCE_LABEL = { 'L-M': '법령상 근로조건 명시 사항', 'L-W': '법령상 서면 명시 사항', F: '공식 서식 참고', S: '일단확인 확인 기준' };
+const CONDITION_TEXT = {
+  fixed_term: '기간을 정한 계약일 때 확인하는 기준이에요.',
+  probation_applies: '수습이 적용될 때 확인하는 기준이에요.',
+  leave_granted: '연차를 부여한다고 적혀 있을 때 확인하는 기준이에요.',
+};
+const NA_TEXT = {
+  indefinite_term: '기간의 정함이 없는 계약으로 적혀 있어 이 기준은 해당하지 않아요.',
+  no_probation: '수습을 적용하지 않는다고 적혀 있어 이 기준은 해당하지 않아요.',
+  no_leave: '연차를 부여하지 않는다고 적혀 있어 이 기준은 해당하지 않아요. 법적 적용 여부를 판단한 것은 아니에요.',
+};
+const UNAVAILABLE_TEXT = {
+  ocr_low_confidence: '근거에 글자 인식(OCR)이 불확실한 곳이 있어 확정하지 않았어요. 원본과 대조해 고치거나 확인한 뒤 다시 분석해 주세요. 문서에 적혀 있지 않다는 뜻이 아니에요.',
+  evidence_verification_failed: 'AI가 제시한 근거를 원문에서 확인하지 못해 확정하지 않았어요. 문서에 적혀 있지 않다는 뜻이 아니에요.',
+};
+const PROVISIONAL_TEXT = '이 상태는 점검 기준표에 정해진 규칙이 없어 잠정적으로 표시했어요.';
+const labelsOf = (list) => list.map((c) => c.label).join(', ');
+
+function criterionText(c) {
+  if (c.status === 'UNAVAILABLE') return UNAVAILABLE_TEXT[c.basis] ?? UNAVAILABLE_TEXT.evidence_verification_failed;
+  if (c.status === 'NOT_APPLICABLE') return NA_TEXT[c.basis] ?? '문서에 적힌 내용 때문에 이 기준은 해당하지 않아요.';
+  if (c.basis === 'negated') return c.status === 'CONFIRMED'
+    ? '적용·부여하지 않는다고 적혀 있어요. 적힌 내용만 확인했고 법적 효력은 판단하지 않아요.'
+    : '지급·부여·적용하지 않는다는 내용이 적혀 있어요. 적힌 내용만 확인했고 법적 효력은 판단하지 않아요.';
+  if (c.status === 'CONFIRMED') return c.valueKind === 'calculated' ? '원문에 적힌 숫자로 계산해 확인했어요.' : '문서에 적혀 있어요.';
+  if (c.status === 'PARTIAL') return '관련 내용은 있지만 일부만 적혀 있어요.';
+  if (c.status === 'UNCLEAR') return c.basis === 'conflict' ? '서로 다른 값이 함께 적혀 있어요. 어느 값인지 정하지 않았어요.' : '정해지지 않았거나 나중에 정한다고 적혀 있어요.';
+  return '문서에서 확인되지 않아요.';
+}
+
+function topicSummary(t) {
+  const core = t.criteria.filter((c) => c.required);
+  const extraMissing = t.criteria.filter((c) => c.role === 'D' && (c.status === 'MISSING' || c.status === 'UNCLEAR')).length;
+  const extra = extraMissing ? ` 추가 기준 ${extraMissing}개는 문서에서 확인되지 않거나 정해지지 않았어요.` : '';
+  if (t.status === 'MAIN_FOUND') {
+    const ok = core.filter((c) => c.status === 'CONFIRMED');
+    return `핵심 기준(${labelsOf(ok)})이 문서에서 확인돼요.${extra}`;
+  }
+  if (t.status === 'MAIN_PARTIAL') {
+    const lacking = core.filter((c) => c.status !== 'CONFIRMED' && c.status !== 'NOT_APPLICABLE');
+    const conflict = lacking.filter((c) => c.basis === 'conflict');
+    const rest = lacking.filter((c) => c.basis !== 'conflict');
+    return [
+      conflict.length ? `핵심 기준(${labelsOf(conflict)})에 서로 다른 값이 함께 적혀 있어요.` : '',
+      rest.length ? `관련 내용은 있지만 핵심 기준(${labelsOf(rest)})이 정해지지 않았거나 일부만 적혀 있어요.` : '',
+    ].filter(Boolean).join(' ');
+  }
+  if (t.status === 'MAIN_UNAVAILABLE') {
+    return `핵심 기준(${labelsOf(core.filter((c) => c.status === 'UNAVAILABLE'))})의 근거를 확인하지 못해 확정하지 않았어요. 문서에 적혀 있지 않다는 뜻이 아니에요.`;
+  }
+  return '이 항목과 관련된 내용을 문서에서 찾지 못했어요.';
+}
+
+// 주제의 원문 근거: 줄 번호 → 인용 구절 목록 (확인 불가 기준의 인용은 서버가 이미 비워 보냄)
+function topicMarks(t) {
+  const marks = new Map();
+  for (const c of t.criteria) for (const e of c.evidence) marks.set(e.line, [...(marks.get(e.line) ?? []), e.text]);
+  return marks;
+}
+const firstEvidence = (t) => (t.criteria.find((c) => c.required && c.evidence.length) ?? t.criteria.find((c) => c.evidence.length))?.evidence[0] ?? null;
+const wideScreen = () => matchMedia('(min-width: 1024px)').matches;
+let selectedTopic = null;
+
+function renderSourcePanel() {
+  const t = result.topics.find((x) => x.id === selectedTopic);
+  $('#source-panel-focus').textContent = t ? `§ ${t.id} ${t.label} 대조 중` : '항목을 고르면 원문 근거를 표시해요';
+  const marks = t ? topicMarks(t) : new Map();
+  $('#source-panel-body').replaceChildren(sourcePanelLines(result.lines, marks));
+  $('#source-panel-foot').textContent = t && !marks.size
+    ? '이 항목은 표시할 원문 근거가 없어요.'
+    : `입력한 문서 ${result.lines.length}줄 중 표시한 줄이 이 항목의 원문 근거예요.`;
+  document.querySelectorAll('.topic-card').forEach((card) => card.classList.toggle('is-selected', card.dataset.topic === selectedTopic));
+  $('#source-panel-body').querySelector('.is-marked')?.scrollIntoView({ block: 'nearest' });
+}
+
+function topicCard(t) {
+  const ev = firstEvidence(t);
+  const marks = topicMarks(t);
+  const toggle = el('button', { type: 'button', class: 'btn-text compare-btn', 'aria-expanded': 'false' },
+    marks.size ? '원문 근거 보기' : '원문 대조');
+  const inline = el('div', { class: 'card-source', hidden: true },
+    marks.size ? sourcePanelLines(result.lines, marks, { onlyMarked: true }) : el('p', { class: 'muted small' }, t.status === 'MAIN_UNAVAILABLE' ? '근거를 확인하지 못해 원문을 표시하지 않아요.' : '이 항목과 관련된 원문을 찾지 못했어요.'));
+  toggle.addEventListener('click', () => {
+    if (wideScreen()) { selectedTopic = t.id; renderSourcePanel(); return; } // 데스크톱: 오른쪽 원문 대조 패널
+    const open = inline.hidden;
+    inline.hidden = !open; // 모바일: 카드 안에서 원문 근거 줄을 펼침
+    toggle.setAttribute('aria-expanded', String(open));
+  });
+  const excerpt = t.status === 'MAIN_UNAVAILABLE' && !ev ? '원문 대조: 근거 확인 불가'
+    : ev ? `발췌: ${ev.text}` : '원문 대조: 기재 구절 없음';
+  return el('li', { class: `topic-card status-${t.status.toLowerCase()}`, 'data-topic': t.id },
+    el('a', { href: `#/detail/${t.id}`, class: 'item-row' },
+      el('span', { class: 'topic-index' }, `§ ${t.id}`),
+      el('span', { class: 'item-label' }, t.label),
+      statusBadge(t.status, t.statusLabel)),
+    el('p', { class: 'topic-summary' }, topicSummary(t)),
+    el('div', { class: 'topic-foot' },
+      el('span', { class: 'excerpt' }, excerpt),
+      el('span', { class: 'topic-actions' }, toggle, el('a', { href: `#/detail/${t.id}`, class: 'btn-text' }, '자세히 보기 →'))),
+    inline);
+}
 
 function renderResult() {
   $('#result-doc-type').textContent = result.docTypeLabel;
+  $('#result-title').textContent = `${result.docTypeLabel} 점검 결과`;
   $('#result-back').setAttribute('href', editRouteFor(result.inputSource));
   const source = $('#analysis-source');
   source.textContent = result.mode === 'demo'
@@ -509,70 +670,81 @@ function renderResult() {
   sourceNote.textContent = EXTRACTED_NOTE[result.inputSource] ?? '';
   $('#result-notice').textContent = `${result.sourceGuide} ${result.notice}`;
   $('#result-count').textContent = `점검한 항목 ${result.counts.shown}개`;
-
-  $('#summary').replaceChildren(...MAIN_ORDER
-    .filter((s) => s !== 'MAIN_UNAVAILABLE' || result.counts.byStatus[s] > 0)
-    .map((s) => el('li', { class: 'summary-cell' },
-      el('span', { class: 'summary-count' }, String(result.counts.byStatus[s])),
-      el('span', { class: 'summary-label' }, V22_STATUS_LABEL[s]))));
-
-  $('#item-list').replaceChildren(...result.topics.filter((t) => t.visible).map((t) => el('li', {},
-    el('a', { href: `#/detail/${t.id}`, class: 'item-row' },
-      el('span', { class: 'mono-index' }, t.id),
-      el('span', { class: 'item-label' }, t.label),
-      statusBadge(t.status, t.statusLabel),
-      el('span', { class: 'chevron', 'aria-hidden': 'true' }, '›')))));
+  $('#result-tally').textContent = MAIN_ORDER.filter((s) => result.counts.byStatus[s] > 0)
+    .map((s) => `${V22_STATUS_LABEL[s]} ${result.counts.byStatus[s]}`).join(' · ');
+  $('#source-panel-doc').textContent = result.docTypeLabel;
+  const visible = result.topics.filter((t) => t.visible);
+  $('#item-list').replaceChildren(...visible.map(topicCard));
+  if (!visible.some((t) => t.id === selectedTopic)) selectedTopic = (visible.find((t) => topicMarks(t).size) ?? visible[0])?.id ?? null;
+  renderSourcePanel();
 }
 
-// ---------- S-06 상세 ----------
-const UNAVAILABLE_REASON = {
-  ocr_low_confidence: '이 부분의 글자 인식(OCR)이 불확실해 확정하지 않았어요. 원본과 비교해 고친 뒤 다시 분석해 주세요.',
-  evidence_verification_failed: 'AI가 제시한 근거를 원문에서 확인하지 못해 확정하지 않았어요.',
-};
+// ---------- S-06 항목 상세 ----------
+function evidenceChips(c) {
+  return c.evidence.map((e) => el('button', { type: 'button', class: 'evidence-chip', 'data-line': String(e.line) },
+    el('span', { class: 'chip-label' }, '원문 근거'), el('q', { class: 'evidence-text' }, e.text)));
+}
 
-function criterionBlock(c) {
-  return el('li', { class: 'criterion', 'data-criterion': c.id },
-    el('div', { class: 'criterion-head' },
-      el('span', { class: 'mono-index' }, c.id),
-      el('span', { class: 'criterion-name' }, c.name, c.conditional ? el('span', { class: 'tag' }, '조건부') : null),
-      statusBadge(c.status, c.statusLabel)),
-    c.sourceValue ? el('p', { class: 'criterion-value' }, el('span', { class: 'value-kind' }, '원문 기재값'), c.sourceValue) : null,
-    ...(c.derived ?? []).map((d) => el('p', { class: 'criterion-value is-calculated' },
-      el('span', { class: 'value-kind' }, '계산값'), `${d.label ? `${d.label}: ` : ''}${d.value}`,
-      el('span', { class: 'derivation' }, ` (${d.derivation}, 원문에 적힌 값이 아니라 원문 숫자로 계산한 값)`))),
-    c.evidence.length ? el('ol', { class: 'evidence' }, c.evidence.map((e) =>
-      el('li', {}, el('span', { class: 'evidence-no' }, `${e.line}번 줄`), el('span', { class: 'evidence-text' }, e.text)))) : null,
-    c.status === 'UNAVAILABLE' ? el('p', { class: 'muted small' }, UNAVAILABLE_REASON[c.unavailableReason] ?? '근거를 확인하지 못해 확정하지 않았어요.') : null,
-    el('p', { class: 'criterion-source' }, `기준 출처: ${c.sources.join('·')}`));
+function criterionCard(c) {
+  const values = [];
+  if (c.sourceValue) values.push(el('div', { class: 'value-row' }, el('span', { class: 'value-label' }, '확인한 값'), el('span', { class: 'value' }, c.sourceValue)));
+  for (const d of c.derived ?? []) {
+    values.push(el('div', { class: 'value-row is-calculated' },
+      el('span', { class: 'value-label' }, '계산한 값'),
+      el('span', { class: 'value' }, d.label ? `${d.label}: ${d.value}` : d.value),
+      el('span', { class: 'derivation' }, `${d.derivation} · 원문에 적힌 값이 아니라 원문의 숫자로 계산한 값이에요.`)));
+  }
+  if ((c.derived ?? []).length > 1) values.push(el('p', { class: 'muted small' }, '주마다 다른 값을 그대로 보여 줘요(평균하지 않음).'));
+  const chips = evidenceChips(c);
+  return el('article', { class: `criterion criterion-card${c.role === 'C' ? ' is-core' : ''}`, 'data-criterion': c.id },
+    el('div', { class: 'card-head' }, el('span', { class: 'criterion-name' }, c.label), statusBadge(c.status, c.statusLabel)),
+    values.length || chips.length ? el('div', { class: 'card-detail' }, ...values, chips.length ? el('div', { class: 'chips' }, chips) : null) : null,
+    el('p', { class: 'item-desc' }, criterionText(c)),
+    c.provisional ? el('p', { class: 'provisional muted small' }, PROVISIONAL_TEXT) : null,
+    c.condition && !c.required && c.status !== 'NOT_APPLICABLE' ? el('p', { class: 'muted small' }, CONDITION_TEXT[c.condition]) : null);
+}
+
+function linkList(links) {
+  return el('ul', { class: 'link-list' }, links.map((l) => el('li', {}, el('a', { href: l.url, target: '_blank', rel: 'noopener noreferrer', class: 'link-external' }, `${l.label} ↗`))));
 }
 
 function renderDetail(id) {
   const t = result.topics.find((x) => x.id === id && x.visible);
   const core = t.criteria.filter((c) => c.role === 'C');
   const extra = t.criteria.filter((c) => c.role === 'D');
-  const blocks = [
-    el('p', { class: 'doc-type-chip' }, result.docTypeLabel),
-    el('h1', {}, el('span', { class: 'mono-index' }, `${t.id} `), t.label),
-    el('div', { class: 'detail-status' }, statusBadge(t.status, t.statusLabel)),
-  ];
-  // 안내는 서로 다른 영역에 둔다 (중립 안내 / 적용 범위 안내 / 수습 중 급여 보류)
-  if (t.notes.neutral) blocks.push(el('p', { class: 'note note-neutral' }, t.notes.neutral));
-  if (t.notes.applicability) blocks.push(el('p', { class: 'note note-applicability' }, t.notes.applicability));
-  if (t.notes.probationHold) blocks.push(el('p', { class: 'note note-hold' }, t.notes.probationHold));
-
+  const marks = topicMarks(t);
   const extracted = result.inputSource !== 'paste';
-  if (extracted) blocks.push(el('p', { class: 'muted evidence-source' }, '근거는 파일에서 추출해 확인·수정한 텍스트의 줄이에요. 원본 파일과 다를 수 있어요.'));
-  blocks.push(el('h2', {}, '핵심 확인 기준'), el('ul', { class: 'criteria' }, core.map(criterionBlock)));
-  if (extra.length) blocks.push(el('h2', {}, '추가 확인 기준'), el('p', { class: 'muted small' }, '추가 기준이 문서에 없어도 핵심 항목의 기재 상태는 바뀌지 않아요.'), el('ul', { class: 'criteria' }, extra.map(criterionBlock)));
+
+  const head = el('header', { class: 'detail-head' },
+    el('span', { class: 'index-chip' }, t.id), el('h1', {}, t.label), statusBadge(t.status, t.statusLabel));
+  const summary = el('div', { class: 'summary-box' },
+    el('p', { class: 'summary-text' }, topicSummary(t)),
+    el('p', { class: 'muted small' }, 'ⓘ 이 상태는 핵심 정보의 기재 여부를 나타내며, 모든 세부 내용의 확인이나 법적 적합성을 뜻하지 않아요.'));
+  // 안내는 서로 다른 영역에 둔다 (중립 안내 / 적용 범위 안내 / 수습 중 급여 보류)
+  const notes = [];
+  if (t.notes.neutral) notes.push(el('div', { class: 'note note-neutral' }, el('p', { class: 'note-title' }, '적힌 내용에 대한 안내'), el('p', {}, t.notes.neutral)));
+  if (t.notes.applicability) notes.push(el('div', { class: 'note note-applicability' }, el('p', { class: 'note-title' }, '법령 적용 범위 안내'), el('p', {}, t.notes.applicability), linkList(t.applicabilityLinks)));
+  if (t.notes.probationHold) notes.push(el('div', { class: 'note note-hold' }, el('p', { class: 'note-title' }, '수습 중 급여 항목을 판정하지 않은 이유'), el('p', {}, t.notes.probationHold)));
+
+  const coreSec = el('section', { class: 'criteria-group group-core' },
+    el('h2', {}, '핵심 확인 기준'), el('p', { class: 'group-desc' }, '이 항목의 주요 기재 상태를 결정하는 기준이에요.'),
+    el('div', { class: 'card-list' }, core.map(criterionCard)));
+  const docSec = el('aside', { class: 'doc-panel' },
+    el('h2', {}, extracted ? '추출·확인한 텍스트' : '문서 원문'),
+    el('p', { class: 'group-desc' }, '이 항목과 관련된 문장을 확인할 수 있어요.'),
+    el('div', { class: 'paper-sheet' },
+      sourcePanelLines(result.lines, marks),
+      el('div', { class: 'doc-memo' }, el('p', { class: 'memo-title' }, '원문 대조 메모'),
+        el('p', {}, marks.size ? '형광펜으로 표시한 구절이 이 항목의 원문 근거예요. 표시되지 않은 세부 기준은 원문에서 찾지 못했거나 확인하지 못했어요.' : '이 항목의 원문 근거로 표시할 구절이 없어요.'),
+        extracted ? el('p', {}, '파일에서 추출해 확인·수정한 텍스트예요. 원본 파일과 다를 수 있어요.') : null)));
+  const extraSec = extra.length ? el('section', { class: 'criteria-group group-extra' },
+    el('h2', {}, '추가 확인 기준'),
+    el('p', { class: 'group-desc' }, '핵심 내용 외에 함께 살펴볼 수 있는 세부 정보예요. 이 정보가 문서에 없더라도 핵심 항목의 기재 상태는 바뀌지 않아요.'),
+    el('div', { class: 'card-list is-compact' }, extra.map(criterionCard))) : null;
 
   const unconfirmed = t.criteria.filter((c) => t.unconfirmed.includes(c.id));
-  if (unconfirmed.length) {
-    blocks.push(el('h2', {}, '이 문서에서 확인되지 않은 내용'));
-    blocks.push(el('ul', { class: 'unconfirmed' }, unconfirmed.map((c) => el('li', {}, `${c.name} (${c.statusLabel})`))));
-  }
-
-  // '일부 내용만 기재됨'·'관련 내용 찾지 못함'에만 담당자 질문 (템플릿 문장, 문서 내용·추측 값은 넣지 않음)
   const question = buildQuestion(t, result.docType);
+  let askSec = null;
   if (question) {
     const status = el('p', { class: 'ask-status', role: 'status', 'aria-live': 'polite' });
     const text = el('p', { class: 'ask-text', id: 'ask-text' }, question);
@@ -591,16 +763,42 @@ function renderDetail(id) {
         status.className = 'ask-status ask-status-error';
       }
     });
-    blocks.push(el('section', { class: 'ask', 'aria-labelledby': 'ask-title' },
-      el('h2', { id: 'ask-title' }, '담당자에게 이렇게 물어보세요'),
-      text,
-      btn,
-      status,
-      el('p', { class: 'ask-note' }, '보내기 전에 상황에 맞게 고쳐 쓰세요. 이름·연락처 등 개인정보는 필요한 만큼만 적어 주세요.')));
+    askSec = el('section', { class: 'ask', 'aria-labelledby': 'ask-title' },
+      el('h3', { id: 'ask-title' }, '담당자에게 이렇게 물어보세요'), text, btn, status,
+      el('p', { class: 'ask-note' }, '보내기 전에 상황에 맞게 고쳐 쓰세요. 이름·연락처 등 개인정보는 필요한 만큼만 적어 주세요.'));
   }
+  const unconfSec = unconfirmed.length || askSec ? el('section', { class: 'criteria-group group-unconfirmed' },
+    el('h2', {}, '이 문서에서 확인되지 않은 내용'),
+    unconfirmed.length ? el('ul', { class: 'unconfirmed' }, unconfirmed.map((c) => el('li', {}, `${c.label} — ${c.statusLabel}`))) : null,
+    askSec) : null;
 
-  blocks.push(el('p', { class: 'notice' }, `${result.sourceGuide} ${result.notice}`));
-  $('#detail').replaceChildren(...blocks);
+  // 기준 출처: 세부기준별 출처 유형(사용자용 이름)과 공식 링크
+  const sourceSec = el('details', { class: 'source-accordion' },
+    el('summary', {}, el('span', { class: 'source-title' }, '이 기준은 어디에서 왔나요?'), el('span', { class: 'toggle-text' }, '자세히 보기')),
+    el('div', { class: 'source-body' },
+      el('p', {}, '일단확인의 점검 기준은 관련 법령과 공식 서식을 참고해 설계한 자체 확인 기준이며, 법률 자문이나 유권해석이 아니에요.'),
+      el('p', { class: 'muted small' }, result.sourceGuide),
+      el('table', { class: 'source-table' },
+        el('thead', {}, el('tr', {}, el('th', { scope: 'col' }, '세부 기준'), el('th', { scope: 'col' }, '기준 출처 유형'))),
+        el('tbody', {}, t.criteria.map((c) => el('tr', { 'data-criterion': c.id }, el('td', {}, c.label), el('td', {}, c.sources.map((k) => el('span', { class: 'source-badge' }, SOURCE_LABEL[k]))))))),
+      t.links.length ? el('div', { class: 'source-links' }, el('p', { class: 'small' }, '공식 참고 서식 및 법령 원문'), linkList(t.links))
+        : el('p', { class: 'muted small' }, '이 항목의 세부 기준은 일단확인이 정한 확인 기준이에요.')));
+
+  const actions = el('div', { class: 'detail-actions' },
+    el('a', { href: '#/result', class: 'btn-editorial btn-auto' }, '← 점검 결과로 돌아가기'),
+    el('a', { href: editRouteFor(result.inputSource), class: 'btn-primary btn-auto', id: 'detail-edit' }, '원문 수정하고 다시 분석하기 ↻'));
+
+  $('#detail').replaceChildren(head, summary, ...notes,
+    el('div', { class: 'detail-grid' }, coreSec, docSec, extraSec, unconfSec, sourceSec), actions);
+
+  // 원문 근거 칩 → 문서 원문의 해당 줄로 이동해 강조
+  $('#detail').querySelectorAll('.evidence-chip').forEach((chip) => chip.addEventListener('click', () => {
+    const line = $('#detail').querySelector(`.doc-panel [data-line="${chip.dataset.line}"]`);
+    if (!line) return;
+    $('#detail').querySelectorAll('.doc-line.is-focused').forEach((x) => x.classList.remove('is-focused'));
+    line.classList.add('is-focused');
+    line.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }));
 }
 
 // ---------- 라우팅 ----------
@@ -609,6 +807,7 @@ const RENDER = {
   input: () => { $('#review-resume').hidden = !state.file; updatePasteState(); },
   review: () => {
     $('#review-stale').hidden = state.file.source !== 'ocr' || state.file.imagesVersion === imagesVersion;
+    renderOcrCheck();
     updateReviewState();
     renderPreview();
   },

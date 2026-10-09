@@ -59,3 +59,42 @@ export const indexedHeading = (tag, index, title, attrs = {}) =>
   el(tag, { ...attrs, class: `indexed-heading${attrs.class ? ` ${attrs.class}` : ''}` },
     el('span', { class: 'mono-index' }, String(index).padStart(2, '0')),
     el('span', {}, title));
+
+// 원문 한 줄에서 인용 구절만 형광펜으로 표시한다. 구절을 줄에서 글자 그대로 찾지 못하면(공백 차이 등) 줄 전체를 표시한다.
+// 텍스트는 textContent로만 넣는다.
+export function highlightText(text, phrases = []) {
+  const ranges = [];
+  for (const p of phrases) {
+    if (!p) continue;
+    const i = text.indexOf(p);
+    ranges.push(i >= 0 ? [i, i + p.length] : [0, text.length]);
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const r of ranges) {
+    const last = merged.at(-1);
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else merged.push([...r]);
+  }
+  const out = [];
+  let cursor = 0;
+  for (const [a, b] of merged) {
+    if (a > cursor) out.push(text.slice(cursor, a));
+    out.push(el('mark', {}, text.slice(a, b)));
+    cursor = b;
+  }
+  if (cursor < text.length) out.push(text.slice(cursor));
+  return out;
+}
+
+// 원문 줄 목록 (원문 대조 패널). marks: Map(줄 번호 → [인용 구절]). onlyMarked면 근거 줄만 보여 준다.
+export function sourcePanelLines(lines, marks, { onlyMarked = false } = {}) {
+  return el('ol', { class: 'doc-lines' }, lines
+    .filter((s) => !onlyMarked || marks.has(s.id))
+    .map((s) => {
+      const on = marks.has(s.id);
+      return el('li', { class: on ? 'doc-line is-marked' : 'doc-line', 'data-line': String(s.id) },
+        el('span', { class: 'doc-line-text' }, on ? highlightText(s.text, marks.get(s.id)) : s.text),
+        on ? el('span', { class: 'pin' }, '원문 근거') : null);
+    }));
+}

@@ -81,6 +81,10 @@ jobs:
           E2E_PORT: '3212'
         run: node scripts/e2e-flow.mjs
 
+      - name: Result screens S-05/S-06 (in-process fixture analyzer, no API calls)
+        if: always()
+        run: node scripts/e2e-result.mjs
+
       - name: OCR accuracy benchmark (fictional images, browser only, no API calls)
         if: always()
         env:

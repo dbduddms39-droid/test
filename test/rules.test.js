@@ -6,7 +6,7 @@ import { analyzeDocument, planHolds } from '../src/analyze.js';
 import { CRITERION_IDS, CRITERIA, TOPICS, NOTES, criteriaOfTopics } from '../src/criteria.js';
 import { segmentText } from '../src/segment.js';
 import { verifyResponse } from '../src/verify.js';
-import { FIXTURES, TOP_CODE, buildExtraction } from './v22-fixtures.js';
+import { FIXTURES, TOP_CODE, buildExtraction, rangesOf } from './v22-fixtures.js';
 import { scriptedAI } from './helpers.js';
 
 const fx = (key) => FIXTURES.find((f) => f.key === key);
@@ -20,7 +20,7 @@ async function run({ text, docType = 'job_posting', specs, retrySpecs, lowConfid
   const responses = [first];
   if (retrySpecs) responses.push((args) => buildExtraction(segments, retrySpecs, args.criterionIds));
   const ai = scriptedAI(...responses);
-  const result = await analyzeDocument({ text, docType, ai, lowConfidence });
+  const result = await analyzeDocument({ text, docType, ai, lowConfidence: rangesOf(text, lowConfidence) });
   return { result, ai };
 }
 
@@ -169,7 +169,7 @@ test('허위 인용(F05-X1 월급 500만원): 항목 보류 → 1회 재분석 �
     return r;
   };
   const ai = scriptedAI(fake, fakeRetry);
-  const result = await analyzeDocument({ text: f.text, docType: f.docType, ai, lowConfidence: f.lowConfidence });
+  const result = await analyzeDocument({ text: f.text, docType: f.docType, ai, lowConfidence: rangesOf(f.text, f.lowConfidence) });
   assert.equal(ai.calls.length, 2);
   assert.deepEqual(ai.calls[1].criterionIds, criteriaOfTopics(['01']), '실패한 상위 항목(01)만 재분석');
   assert.ok(ai.calls[1].feedback['01-a'].includes('quote_not_in_line'));
@@ -186,7 +186,7 @@ test('허위 인용 후 재분석에서 근거가 모두 검증되면 정상 상
   const fake = buildExtraction(segments, f.extraction, CRITERION_IDS);
   fake.criteria.find((c) => c.id === '01-a').quotes[1].text = '연봉 9,900만원';
   const ai = scriptedAI(fake, (args) => buildExtraction(segments, f.extraction, args.criterionIds));
-  const result = await analyzeDocument({ text: f.text, docType: f.docType, ai, lowConfidence: f.lowConfidence });
+  const result = await analyzeDocument({ text: f.text, docType: f.docType, ai, lowConfidence: rangesOf(f.text, f.lowConfidence) });
   assert.equal(ai.calls.length, 2);
   assert.equal(sub(result, '01-a').status, 'UNCLEAR');
   assert.equal(topic(result, '01').status, 'MAIN_PARTIAL');
@@ -212,7 +212,7 @@ test('추가(D) 오류가 핵심(C) 근거와 같은 줄이면 독립성이 입�
   const raw = buildExtraction(segments, specs, CRITERION_IDS);
   raw.criteria.find((c) => c.id === '01-f').quotes[0].text = '매월 15일 지급';
   const entries = verifyResponse(raw, CRITERION_IDS, segments);
-  assert.deepEqual(planHolds(entries), { held: ['01'], independentD: [] });
+  assert.deepEqual(planHolds(entries, segments), { held: ['01'], independentD: [] });
   const ai = scriptedAI(raw, (args) => buildExtraction(segments, specs, args.criterionIds));
   const result = await analyzeDocument({ text, docType: 'offer', ai });
   assert.equal(ai.calls.length, 2);
@@ -393,4 +393,103 @@ test('R28 핵심 인용이 원문에 없음 / R29 핵심 OCR 저신뢰: 해당 �
   const r29 = (await run({ text: '연봉 4,0O0만원', specs: { '01-a': { f: 'specific', q: ['연봉 4,0O0만원'] }, '01-b': { f: 'specific', q: ['연봉 4,0O0만원'] } }, lowConfidence: ['4,0O0'] })).result;
   assert.equal(sub(r29, '01-a').status, 'UNAVAILABLE');
   assert.equal(topic(r29, '01').status, 'MAIN_UNAVAILABLE');
+});
+
+
+// --- 추가(D) 오류의 독립성: 줄 번호가 다르다는 것만으로 독립으로 보지 않는다 (기준표 7-1-6) ---
+const D_TEXT = '연봉 4,000만원\n성과급 별도, 연봉 4,500만원 가능\n급여는 매월 25일 지급';
+const D_SPECS = { '01-a': { f: 'specific', q: ['연봉 4,000만원'], sv: '4,000만원' }, '01-b': { f: 'specific', q: ['연봉 4,000만원'], sv: '연봉' }, '01-c': { f: 'specific', q: ['성과급 별도'] }, '01-f': { f: 'specific', q: ['매월 25일 지급'] } };
+function dCase(mutate) {
+  const segments = segmentText(D_TEXT);
+  const raw = buildExtraction(segments, D_SPECS, CRITERION_IDS);
+  mutate(raw.criteria);
+  return { segments, entries: verifyResponse(raw, CRITERION_IDS, segments) };
+}
+
+test('D 독립성: 다른 줄이어도 그 줄에 핵심 판단 표현(다른 금액)이 있으면 상충 근거가 숨어 있을 수 있어 주제 전체 재분석', () => {
+  const { segments, entries } = dCase((cs) => { cs.find((c) => c.id === '01-c').quotes[0].text = '성과급 포함'; });
+  assert.deepEqual(planHolds(entries, segments).held, ['01']);
+});
+
+test('D 독립성: AI가 주장한 허위 구절에 핵심 판단 표현(금액)이 있으면 독립 아님', () => {
+  const { segments, entries } = dCase((cs) => { cs.find((c) => c.id === '01-f').quotes[0].text = '연봉 5,000만원 매월 지급'; });
+  assert.deepEqual(planHolds(entries, segments).held, ['01']);
+});
+
+test('D 독립성: 없는 줄 번호·응답 누락·허용되지 않은 부정 표현은 독립 아님 (주제 전체 재분석)', () => {
+  const unknown = dCase((cs) => { cs.find((c) => c.id === '01-f').quotes[0].line = 99; });
+  assert.deepEqual(planHolds(unknown.entries, unknown.segments).held, ['01']);
+  const missing = dCase((cs) => { cs.splice(cs.findIndex((c) => c.id === '01-g'), 1); });
+  assert.deepEqual(planHolds(missing.entries, missing.segments).held, ['01']);
+  const negated = dCase((cs) => { Object.assign(cs.find((c) => c.id === '01-c'), { finding: 'negated' }); });
+  assert.ok(negated.entries['01-c'].errors.includes('negated_not_allowed'));
+  assert.deepEqual(planHolds(negated.entries, negated.segments).held, ['01']);
+});
+
+test('D 독립성: 핵심 근거와 다른 줄이고, 그 줄·주장 구절 모두 핵심 판단 표현이 없을 때만 그 D만 분석 확인 불가', () => {
+  const { segments, entries } = dCase((cs) => { cs.find((c) => c.id === '01-f').quotes[0].text = '매월 15일 지급'; });
+  assert.deepEqual(planHolds(entries, segments), { held: [], independentD: ['01-f'] });
+});
+
+test('D 독립성: 조건부 분기 주제(07)에서 수습 관련 줄의 D 오류는 분기에 영향을 줄 수 있어 주제 전체 재분석', () => {
+  const text = '수습 3개월\n수습 종료 후 평가를 거쳐 정규직 전환';
+  const segments = segmentText(text);
+  const raw = buildExtraction(segments, { '07-a': { f: 'specific', q: ['수습 3개월'], sv: '수습' }, '07-b': { f: 'specific', q: ['수습 3개월'] }, '07-c': { f: 'specific', q: ['평가를 거쳐 정규직 전환'] } }, CRITERION_IDS);
+  raw.criteria.find((c) => c.id === '07-c').quotes[0].text = '평가 후 자동 전환';
+  assert.deepEqual(planHolds(verifyResponse(raw, CRITERION_IDS, segments), segments).held, ['07']);
+});
+
+test('핵심(C) 세부기준에 허용되지 않은 부정 표현을 내면 오류로 보고 재분석 (부정 표현을 공통 규칙으로 일반화하지 않음)', async () => {
+  const text = '근무 장소: 없음';
+  const { result, ai } = await run({ text, specs: { '03-a': { f: 'negated', q: ['근무 장소: 없음'] } }, retrySpecs: { '03-a': { f: 'negated', q: ['근무 장소: 없음'] } } });
+  assert.equal(ai.calls.length, 2);
+  assert.equal(sub(result, '03-a').status, 'UNAVAILABLE');
+});
+
+test("'휴게 없음'(02-c)·'수습 중 급여 미지급'(08-a)의 일부 확인은 잠정 처리로 표시, 08은 주요 내용 기재됨이 되지 않음", async () => {
+  const f = fx('F10');
+  const r10 = (await run({ text: f.text, docType: f.docType, specs: f.extraction })).result;
+  assert.equal(sub(r10, '02-c').status, 'PARTIAL');
+  assert.equal(sub(r10, '02-c').provisional, 'D04');
+  const r8 = (await run({ text: '수습 3개월\n수습 중 급여 미지급', specs: { '07-a': { f: 'specific', q: ['수습 3개월'], sv: '수습' }, '07-b': { f: 'specific', q: ['수습 3개월'] }, '08-a': { f: 'negated', q: ['수습 중 급여 미지급'] } } })).result;
+  assert.notEqual(topic(r8, '08').status, 'MAIN_FOUND');
+  assert.equal(sub(r8, '08-a').provisional, 'probation_pay_negation');
+  assert.deepEqual(sub(r8, '08-a').evidence.map((e) => e.text), ['수습 중 급여 미지급'], '원문 그대로 표시');
+  assert.equal(sub(r8, '08-a').basis, 'negated');
+});
+
+test('OCR 저신뢰는 문자 구간으로 판단: 같은 줄이어도 구간이 겹치지 않는 핵심값은 영향 없음, 겹치면 확정하지 않음', async () => {
+  const f = fx('F08');
+  const text = f.text;
+  const at = text.indexOf('2O');
+  const { result } = await run({ text, docType: f.docType, specs: f.extraction });
+  // 위 run()은 저신뢰 없음. 구간을 직접 넣어 확인한다.
+  const segments = segmentText(text);
+  const ai = scriptedAI(buildExtraction(segments, f.extraction, CRITERION_IDS));
+  const r = await analyzeDocument({ text, docType: f.docType, ai, lowConfidence: [{ start: at, end: at + 2 }] });
+  assert.equal(sub(r, '01-a').status, 'CONFIRMED', '같은 줄의 월 280만원은 겹치지 않음');
+  assert.equal(sub(r, '01-f').status, 'UNAVAILABLE');
+  assert.equal(sub(r, '01-f').basis, 'ocr_low_confidence');
+  assert.equal(topic(r, '01').status, 'MAIN_FOUND');
+  assert.equal(sub(result, '01-f').status, 'CONFIRMED', '저신뢰 구간이 없으면(사용자가 수정·확인) 확정');
+});
+
+test('출처 링크: 공식 출처 주소를 그대로 연결하고, 자체 기준만 쓰는 주제(05·07·08)에는 법령 링크를 붙이지 않음', async () => {
+  const f = fx('F01');
+  const { result } = await run({ text: f.text, docType: f.docType, specs: f.extraction });
+  assert.deepEqual(topic(result, '01').links.map((l) => l.url), ['https://www.law.go.kr/법령/근로기준법/제17조', 'https://www.moel.go.kr/info/etc/dataroom/view.do?bbs_seq=20250300356']);
+  for (const id of ['05', '07', '08']) assert.deepEqual(topic(result, id).links, [], id);
+  const f4 = (await run({ text: fx('F04').text, specs: fx('F04').extraction })).result;
+  assert.deepEqual(topic(f4, '10').applicabilityLinks.map((l) => l.label), ['근로기준법 제18조', '근로기준법 제11조', '근로기준법 시행령 제7조', '근로기준법 시행령 별표 1']);
+  assert.deepEqual(topic(f4, '04').applicabilityLinks, []);
+});
+
+test("'이 문서에서 확인되지 않은 내용': 확인되지 않음·불분명함인 세부기준만 (분석 확인 불가·해당 없음·일부 확인은 제외)", async () => {
+  const f = fx('F05');
+  const { result } = await run({ text: f.text, docType: f.docType, specs: f.extraction, lowConfidence: f.lowConfidence });
+  assert.deepEqual(topic(result, '01').unconfirmed, ['01-a', '01-c', '01-d', '01-e', '01-f', '01-g']);
+  assert.ok(!topic(result, '03').unconfirmed.includes('03-a'), '분석 확인 불가는 미기재 목록에 넣지 않음');
+  assert.ok(!topic(result, '06').unconfirmed.includes('06-b'), '일부 확인은 제외');
+  const f3 = (await run({ text: fx('F03').text, specs: fx('F03').extraction })).result;
+  assert.ok(!topic(f3, '07').unconfirmed.includes('07-b'), '해당 없음은 제외');
 });

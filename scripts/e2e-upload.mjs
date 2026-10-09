@@ -60,7 +60,9 @@ const ERROR_CASES = [
 
 await mkdir(OUT, { recursive: true });
 // 배포 사이트를 검사할 때는 로컬 서버를 띄우지 않는다 (서버 로그 검사는 생략).
-const server = REMOTE ? null : spawn(process.execPath, ['server.js'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] });
+// 데모 실행(실제 AI 아님)에서는 여러 번 분석하므로 로컬 서버의 요청 제한만 넉넉히 둔다. 실제 AI 실행은 기본 제한 그대로.
+const limits = REQUIRE_AI ? {} : { RATE_LIMIT_PER_IP: '50', RATE_LIMIT_GLOBAL_PER_MINUTE: '50' };
+const server = REMOTE ? null : spawn(process.execPath, ['server.js'], { env: { ...process.env, PORT: String(PORT), ...limits }, stdio: ['ignore', 'pipe', 'pipe'] });
 let serverLog = '';
 server?.stdout.on('data', (d) => { serverLog += d; });
 server?.stderr.on('data', (d) => { serverLog += d; });
@@ -147,7 +149,10 @@ try {
     const body = JSON.parse((await reqPromise).postData());
     const res = await resPromise;
     const data = await res.json();
-    check(`[${label}] 확인·수정한 텍스트만 분석 요청에 전달`, body.text === edited && body.docType === docType && Object.keys(body).length === 2);
+    // 요청에는 문서 유형·확인한 텍스트, 그리고 (있다면) 확인되지 않은 OCR 저신뢰 구간의 위치만 들어간다
+    const keysOk = Object.keys(body).every((k) => ['docType', 'text', 'lowConfidence'].includes(k));
+    const rangesOk = !body.lowConfidence || body.lowConfidence.every((r) => Object.keys(r).length === 2 && r.start >= 0 && r.end > r.start && r.end <= edited.length);
+    check(`[${label}] 확인·수정한 텍스트만 분석 요청에 전달 (저신뢰 구간은 위치만)`, body.text === edited && body.docType === docType && keysOk && rangesOk, `저신뢰 구간 ${body.lowConfidence?.length ?? 0}개`);
     const shownTopics = data.topics?.filter((t) => t.visible) ?? [];
     check(`[${label}] 분석 결과 (점검 기준 v2.2, 9개 또는 10개 주제)`, res.status() === 200 && data.version === 'v2.2' && data.topics?.length === 10 && [9, 10].includes(shownTopics.length) && (!REQUIRE_AI || data.mode === 'gemini'),
       `HTTP ${res.status()}${data.code ? ` ${data.code}` : ''}, mode=${data.mode}, 표시 ${shownTopics.length}개, 분석 확인 불가 ${shownTopics.filter((t) => t.status === 'MAIN_UNAVAILABLE').length}개`);
@@ -163,8 +168,10 @@ try {
         await page.click(`.item-row >> text=${first.label}`);
         await page.waitForSelector('#view-detail:not([hidden])');
         const shown = await page.$$eval('.evidence-text', (els) => els.map((e) => e.textContent));
-        const srcNote = await page.isVisible('#detail .evidence-source');
-        check(`[${label}] 상세 화면: 추출·확인한 텍스트 기준 근거 (${first.label})`, srcNote && shown.length > 0 && shown.every((t) => edited.includes(t)), `${shown.length}개`);
+        const panelTitle = await page.textContent('#detail .doc-panel h2');
+        const memo = await page.textContent('#detail .doc-memo');
+        check(`[${label}] 상세 화면: 추출·확인한 텍스트 기준 근거 (${first.label})`, panelTitle === '추출·확인한 텍스트' && memo.includes('원본 파일과 다를 수 있어요') && shown.length > 0 && shown.every((t) => edited.includes(t)), `${shown.length}개`);
+        check(`[${label}] 상세의 '원문 수정하고 다시 분석하기'는 파일 경로라 S-03으로`, (await page.getAttribute('#detail-edit', 'href')) === '#/review');
         await page.screenshot({ path: `${OUT}/${label}-detail.png`, fullPage: true });
         await page.goBack();
         await page.waitForSelector('#view-result:not([hidden])');
@@ -259,6 +266,30 @@ try {
     const extracted = await reviewValue();
     const onReview = await page.isVisible('#view-review');
     const reviewStatus = await page.textContent('#review-status');
+    // S-03 '확인이 필요한 글자': 불확실한 글자를 위치와 함께 보여 주고, 하나씩만 해제된다
+    const items = await page.$$eval('#ocr-check-list .ocr-item', (els) => els.map((e) => ({ text: e.querySelector('.ocr-text').textContent, pending: e.classList.contains('is-pending') })));
+    check(`[${label}] S-03에 확인이 필요한 글자 목록 (인식한 그대로)`, (await page.isVisible('#ocr-check')) && items.length > 0 && items.every((i) => i.pending && extracted.includes(i.text)), `${items.length}곳`);
+    await page.screenshot({ path: `${OUT}/${label}-ocr-check.png`, fullPage: true });
+    const submitAndCapture = async () => {
+      const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
+      await page.click('#review-submit');
+      const sent = JSON.parse((await reqP).postData());
+      await page.waitForSelector('#view-result:not([hidden])', { timeout: 30_000 });
+      await page.click('#result-back');
+      await page.waitForSelector('#view-review:not([hidden])');
+      return (sent.lowConfidence ?? []).map((r) => sent.text.slice(r.start, r.end));
+    };
+    // 1) 확인하지 않은 상태로 분석: 분석 버튼은 표시를 해제하지 않고, 확인 필요 글자의 위치만 함께 보낸다
+    const sent1 = await submitAndCapture();
+    const pendingTexts = items.map((i) => i.text);
+    check(`[${label}] 분석 요청: 확인하지 않은 글자의 위치를 함께 전달 (분석 버튼으로 해제되지 않음)`, sent1.length > 0 && sent1.every((t) => pendingTexts.some((p) => t.includes(p))), `${sent1.length}곳`);
+    // 2) 하나를 원본과 대조해 확인하면 그 한 곳만 해제되고, 다음 요청에서 빠진다
+    const pendingBefore = await page.$$eval('#ocr-check-list .ocr-item.is-pending', (els) => els.length);
+    await page.click('#ocr-check-list .ocr-item.is-pending button[data-ocr-action=confirm]');
+    const pendingAfter = await page.$$eval('#ocr-check-list .ocr-item.is-pending', (els) => els.length);
+    check(`[${label}] '원본과 대조해 확인했어요'는 그 한 곳만 해제`, pendingAfter === pendingBefore - 1, `${pendingBefore} → ${pendingAfter}`);
+    const sent2 = await submitAndCapture();
+    check(`[${label}] 확인한 곳은 다음 분석 요청에서 제외`, sent2.length === sent1.length - 1 || (pendingAfter === 0 && sent2.length === 0), `${sent1.length} → ${sent2.length}곳`);
     await page.click('#review-back');
     await page.waitForSelector('#view-input:not([hidden])');
     const reviewItems = await page.$$eval('.image-item', (els) => els.map((e) => (e.classList.contains('image-item-review') ? e.querySelector('.image-review').textContent : '')));

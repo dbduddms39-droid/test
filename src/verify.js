@@ -7,6 +7,10 @@ import { FINDINGS, TERM_TYPES, VALUE_KINDS } from './ai/prompt.js';
 
 const norm = (s) => String(s).replace(/\s+/g, ' ').trim();
 
+// '부여·지급·적용 자체의 부정'(negated)을 받을 수 있는 세부기준. 그 외 세부기준의 negated는 정의된 규칙이 없으므로
+// 오류로 보고 재분석한다 (부정 표현을 공통 규칙으로 일반화하지 않음).
+export const NEGATION_ALLOWED = new Set(['02-c', '07-a', '08-a', '09-a', '10-a']);
+
 // 특정 근로조건을 지칭하지 않는 포괄 문구 (4-3 포괄 문구 제외)
 const CATCH_ALL_HEAD = /^(?:[-•·*]\s*)?(기타|그\s*밖의?|그\s*외|나머지|세부|상세)/;
 const CATCH_ALL_TAIL = /(별도|추후|개별|공통\s*정책|입사\s*시|확정\s*시|안내|공지|고지|참고)/;
@@ -60,13 +64,12 @@ export function verifyCalc(calc, quoteTexts) {
 // raw: AI 응답 ({ criteria: [...] }), expectedIds: 이번 호출에서 요청한 세부기준 ID, segments: 입력 줄
 // 반환: entries[id] = { finding, quotes, sourceValue, termType, valueKind, calc, excluded, errors: [] }
 //   errors가 비어 있지 않으면 그 세부기준의 응답은 쓰지 않는다(검증되지 않은 인용을 표시하지 않음).
-//   errorLines: 오류 인용이 가리킨 줄 번호 (추가(D) 오류가 핵심(C) 근거와 독립적인지 판단할 때 사용)
+//   errorQuotes: 검증에 실패한 인용 { line, text, code } (추가(D) 오류가 핵심(C) 판단과 독립적인지 판단할 때 사용)
 export function verifyResponse(raw, expectedIds, segments) {
   const entries = {};
-  const fail = (id, code, line) => {
-    const e = (entries[id] ||= { errors: [], errorLines: [] });
+  const fail = (id, code) => {
+    const e = (entries[id] ||= { errors: [], errorQuotes: [] });
     e.errors.push(code);
-    if (line !== undefined) e.errorLines.push(line);
   };
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.criteria)) {
     for (const id of expectedIds) fail(id, 'malformed_response');
@@ -88,18 +91,19 @@ export function verifyResponse(raw, expectedIds, segments) {
 }
 
 function verifyEntry(id, c, segments) {
-  const out = { finding: null, quotes: [], sourceValue: null, termType: null, valueKind: null, calc: null, excluded: [], errors: [], errorLines: [] };
-  const err = (code, line) => { out.errors.push(code); if (line !== undefined) out.errorLines.push(line); };
+  const out = { finding: null, quotes: [], sourceValue: null, termType: null, valueKind: null, calc: null, excluded: [], errors: [], errorQuotes: [] };
+  const err = (code, q) => { out.errors.push(code); if (q) out.errorQuotes.push({ line: q.line, text: String(q.text ?? ''), code }); };
   if (!FINDINGS.includes(c.finding)) err('invalid_finding');
+  if (c.finding === 'negated' && !NEGATION_ALLOWED.has(id)) err('negated_not_allowed');
   if (!Array.isArray(c.quotes)) { err('invalid_quotes'); return out; }
 
   const verified = [];
   for (const q of c.quotes) {
     if (!q || !Number.isInteger(q.line) || typeof q.text !== 'string') { err('invalid_quotes'); continue; }
     const seg = segments[q.line - 1];
-    if (!seg) { err('unknown_line', null); continue; }
-    if (!norm(q.text)) { err('empty_quote', q.line); continue; }
-    if (!norm(seg.text).includes(norm(q.text))) { err('quote_not_in_line', q.line); continue; }
+    if (!seg) { err('unknown_line', q); continue; }
+    if (!norm(q.text)) { err('empty_quote', q); continue; }
+    if (!norm(seg.text).includes(norm(q.text))) { err('quote_not_in_line', q); continue; }
     verified.push({ line: q.line, text: q.text.trim() });
   }
   if (c.finding === 'absent' && c.quotes.length) err('absent_with_quotes');

@@ -14,7 +14,7 @@ import { analyzeDocument } from '../src/analyze.js';
 import { MAIN_STATUS, CRITERIA_VERSION } from '../src/criteria.js';
 import { createDemoAnalyzer } from '../src/ai/demo.js';
 import { createGeminiAnalyzer } from '../src/ai/gemini.js';
-import { FIXTURES, TOP_CODE } from '../test/v22-fixtures.js';
+import { FIXTURES, TOP_CODE, rangesOf } from '../test/v22-fixtures.js';
 
 const live = process.argv.includes('--live');
 const only = process.argv.find((a) => a.startsWith('--samples='))?.slice('--samples='.length).split(',').filter(Boolean);
@@ -57,7 +57,7 @@ for (const [i, f] of DOCS.entries()) {
   const logs = [];
   let result;
   try {
-    result = await analyzeDocument({ text: f.text, docType: f.docType, ai, lowConfidence: f.lowConfidence ?? [], log: (e) => logs.push(e) });
+    result = await analyzeDocument({ text: f.text, docType: f.docType, ai, lowConfidence: rangesOf(f.text, f.lowConfidence), log: (e) => logs.push(e) });
   } catch (err) {
     aborted = `${f.key}: ${err.code ?? 'error'}`;
     rows.push({ f, error: err.code ?? 'error' });

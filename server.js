@@ -75,10 +75,12 @@ async function handleAnalyze(req, res, { ai, limiter, trustProxy }) {
   } catch (err) {
     return sendJson(res, err.code === 'too_large' ? 413 : 400, { error: err.code === 'too_large' ? '입력이 너무 길어요.' : '요청 형식이 올바르지 않아요.' });
   }
-  const { docType, text } = body ?? {};
+  const { docType, text, lowConfidence = [] } = body ?? {};
   if (!DOC_TYPES[docType]) return sendJson(res, 400, { error: '문서 유형을 선택해 주세요.' });
   if (typeof text !== 'string' || !text.trim()) return sendJson(res, 400, { error: '문서 내용을 붙여넣어 주세요.' });
   if (text.length > MAX_TEXT_CHARS) return sendJson(res, 400, { error: `문서는 ${MAX_TEXT_CHARS.toLocaleString()}자 이하로 입력해 주세요.` });
+  // OCR 저신뢰 구간 (S-03에서 사용자가 수정하거나 원본과 대조해 확인하지 않은 구간). 위치만 받고 내용은 받지 않는다.
+  if (!validRanges(lowConfidence, text.length)) return sendJson(res, 400, { error: '요청 형식이 올바르지 않아요.' });
 
   const limit = limiter.check(clientIp(req, trustProxy));
   if (!limit.ok) {
@@ -89,13 +91,19 @@ async function handleAnalyze(req, res, { ai, limiter, trustProxy }) {
 
   let result;
   try {
-    result = await analyzeDocument({ text, docType, ai, log });
+    result = await analyzeDocument({ text, docType, ai, log, lowConfidence });
   } catch (err) {
     const known = AI_ERROR_RESPONSES[err.code];
     if (!known) throw err;
     return sendJson(res, known[0], { error: known[1], code: err.code });
   }
   sendJson(res, 200, { ...result, mode: ai.name });
+}
+
+const MAX_RANGES = 300;
+function validRanges(ranges, length) {
+  return Array.isArray(ranges) && ranges.length <= MAX_RANGES && ranges.every((r) => r && Number.isInteger(r.start) && Number.isInteger(r.end)
+    && r.start >= 0 && r.end > r.start && r.end <= length && Object.keys(r).length === 2);
 }
 
 function readBody(req) {

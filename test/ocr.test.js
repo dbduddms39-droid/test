@@ -105,10 +105,14 @@ test('칸 사이 빈 곳·테두리에서 생긴 기호 조각만 지우고 내�
 test('결과 평가: 확인할 숫자는 고치지 않고 그대로 알리고, 일부만 읽힌 이미지는 낮은 품질로', () => {
   const w = (text, confidence = 95) => ({ text, confidence });
   const good = reviewOcr({ words: [w('1,000,000원'), w('2026.11.30'), w('12:00~13:00'), w('02-000-0000')], confidence: 92, lines: 5, inkLines: 5 });
-  assert.deepEqual(good, { quality: 'good', uncertain: [], partial: false });
+  assert.deepEqual(good, { quality: 'good', uncertain: [], uncertainAll: [], partial: false });
   const check = reviewOcr({ words: [w('202712.31'), w('2O27'), w('18:300'), w('5일', 40), w('근무', 30)], confidence: 90, lines: 5, inkLines: 5 });
   assert.equal(check.quality, 'check');
   assert.deepEqual(check.uncertain, ['202712.31', '2O27', '18:300', '5일']);
+  // 안내 문구에는 최대 6개, 구간 추적(S-03)에는 전체 목록을 쓴다
+  const many = reviewOcr({ words: ['1O', '2O', '3O', '4O', '5O', '6O', '7O', '8O'].map((t) => w(t)), confidence: 90, lines: 5, inkLines: 5 });
+  assert.equal(many.uncertain.length, 6);
+  assert.equal(many.uncertainAll.length, 8);
   assert.equal(reviewOcr({ words: [w('담당업무')], confidence: 90, lines: 4, inkLines: 10 }).quality, 'low');
   assert.equal(reviewOcr({ words: [w('담당업무')], confidence: 50, lines: 4, inkLines: 4 }).quality, 'low');
 });
@@ -124,6 +128,7 @@ test('여러 장 합치기: 순서 유지, 확인이 필요한 이미지를 따�
   assert.deepEqual(out.review, [{ index: 1, quality: 'check', uncertain: ['202712.31'] }, { index: 2, quality: 'low', uncertain: [] }]);
   assert.equal(out.lowConfidence, true);
   assert.deepEqual(out.failed, [{ index: 3, code: 'no_text_found' }]);
+  assert.deepEqual(out.uncertainAll, ['202712.31']);
 });
 
 // ---------- 배치(행·칸)에 맞춰 줄 엮기 ----------

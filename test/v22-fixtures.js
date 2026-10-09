@@ -32,6 +32,15 @@ export function buildExtraction(segments, specs, criterionIds) {
 
 const T = (lines) => lines.join('\n');
 
+// 테스트 전제로 주어진 OCR 저신뢰 구절을 입력 텍스트의 문자 구간으로 바꾼다 (모든 출현 위치, 보수적)
+export function rangesOf(text, spans = []) {
+  const out = [];
+  for (const s of spans) {
+    for (let i = text.indexOf(s); i >= 0; i = text.indexOf(s, i + 1)) out.push({ start: i, end: i + s.length });
+  }
+  return out;
+}
+
 export const FIXTURES = [
   {
     key: 'F01', title: '정보가 구체적인 정규직 근로계약서', docType: 'contract',

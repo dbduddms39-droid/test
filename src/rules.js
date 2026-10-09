@@ -1,14 +1,23 @@
 // 상태 결정 규칙 (점검 기준표 v2.2 3·4·6·7장). AI의 추출값으로 세부 상태와 상위 상태를 서버가 결정한다.
 // 입력 entries[id]: verify.js가 검증한 세부기준 추출값, 또는 { unavailable: true, reason } (검증·재분석 실패)
 import {
-  TOPICS, NOTES, MAIN_STATUS, SUB_STATUS, CRITERIA_VERSION, criterionById,
+  TOPICS, NOTES, MAIN_STATUS, SUB_STATUS, CRITERIA_VERSION, criterionById, SOURCE_LINKS, APPLICABILITY_LINKS,
 } from './criteria.js';
 import { verifyCalc } from './verify.js';
 
-const norm = (s) => String(s).replace(/\s+/g, ' ').trim();
-
-// 명시적 부정을 상태 확정으로 인정하는 분기는 07(수습 없음)·10(연차 없음)뿐이다. 06(기간 정함 없음)은 term_type으로 처리 (3-3)
-const NEGATION_CONFIRMS = new Set(['07-a', '10-a']);
+// 명시적 부정(negated)의 세부 상태. 부정 표현을 공통 규칙으로 일반화하지 않고 세부기준마다 정한다.
+// - 07-a(수습 없음)·10-a(연차 없음): 기준표 3-3의 허용 분기 → 확인됨 (06의 '기간 정함 없음'은 term_type으로 처리)
+// - 09-a(휴일 없음): 기준표 4-1 → 일부 확인
+// - 02-c(휴게 없음): 기준표에 규칙 없음(D04 미결정) → 잠정 '일부 확인' (provisional)
+// - 08-a(수습 중 급여 미지급): 기준표에 규칙 없음 → 잠정 '일부 확인'. 08을 주요 내용 기재됨으로 자동 처리하지 않음 (provisional)
+// 그 외 세부기준의 negated는 verify.js가 오류로 보고 재분석한다.
+const NEGATION_STATUS = {
+  '07-a': { status: 'CONFIRMED' },
+  '10-a': { status: 'CONFIRMED' },
+  '09-a': { status: 'PARTIAL' },
+  '02-c': { status: 'PARTIAL', provisional: 'D04' },
+  '08-a': { status: 'PARTIAL', provisional: 'probation_pay_negation' },
+};
 // neutral_note: 근로조건의 부여·지급·적용 자체를 부정한 경우 (6-1). 기준표 예시: 휴일 없음, 연차 미부여, 수습기간 없음, 수습 중 급여 미지급
 // 02-c '휴게 없음'은 미결정(D04)이라 안내를 붙이지 않고 진단에만 남긴다.
 const NEUTRAL_TARGETS = new Set(['07-a', '08-a', '09-a', '10-a']);
@@ -30,7 +39,7 @@ function subStatus(id, e) {
     case 'coarse': return 'PARTIAL';
     case 'undecided':
     case 'conflict': return 'UNCLEAR';
-    case 'negated': return NEGATION_CONFIRMS.has(id) ? 'CONFIRMED' : 'PARTIAL';
+    case 'negated': return NEGATION_STATUS[id]?.status ?? 'UNAVAILABLE';
     default: return 'MISSING';
   }
 }
@@ -74,10 +83,38 @@ function sourceCodes(c, flags) {
   return c.codes;
 }
 
+// 인용 구절의 원문 위치(문자 범위). 줄 안에서 글자 그대로 찾지 못하면(공백 차이 등) 줄 전체로 본다 (보수적).
+function quoteRange(q, lines) {
+  const seg = lines[q.line - 1];
+  if (!seg) return null;
+  const i = seg.text.indexOf(q.text);
+  return i >= 0 ? [seg.start + i, seg.start + i + q.text.length] : [seg.start, seg.end];
+}
+const overlaps = ([a, b], ranges) => ranges.some((r) => r.start < b && a < r.end);
+
+// 7-2: OCR 저신뢰 구간(사용자가 수정하거나 원본과 대조해 확인하지 않은 구간)이 이 세부기준의 판단에 쓰인 원문과 겹치는가.
+// 적용·부여·기간 유형 '표현'만 판정하는 세부기준(PRESENCE_ONLY)은 원문 기재값 위치만 본다. 위치를 특정할 수 없으면 근거 전체를 본다.
+function touchesLowConfidence(id, e, lines, ranges) {
+  if (!ranges.length || e.finding === 'absent') return false;
+  const quoteRanges = e.quotes.map((q) => quoteRange(q, lines)).filter(Boolean);
+  if (PRESENCE_ONLY.has(id) && e.sourceValue) {
+    const svRanges = e.quotes.map((q) => {
+      const r = quoteRange(q, lines);
+      const i = q.text.indexOf(e.sourceValue);
+      return r && i >= 0 && r[1] - r[0] === q.text.length ? [r[0] + i, r[0] + i + e.sourceValue.length] : null;
+    }).filter(Boolean);
+    if (svRanges.length) return svRanges.some((r) => overlaps(r, ranges));
+  }
+  return quoteRanges.some((r) => overlaps(r, ranges));
+}
+
+const linksOf = (keys) => keys.map((k) => SOURCE_LINKS[k]);
+
 // entries: 32개 세부기준 → 추출값 또는 { unavailable }
-// opts.lowConfidence: OCR 저신뢰 구절 목록 (입력 텍스트에 남아 있는 그대로). 근거 없는 자동 판정은 하지 않는다.
+// opts.lowConfidence: 입력 텍스트 기준 OCR 저신뢰 문자 구간 [{ start, end }] (S-03에서 수정·확인되지 않은 구간).
+//   근거 없는 자동 OCR 판정은 하지 않는다. opts.lines: 분할된 줄 (원문 위치 포함)
 export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
-  const lowSpans = lowConfidence.map(norm).filter(Boolean);
+  const lowRanges = lowConfidence.filter((r) => Number.isInteger(r?.start) && Number.isInteger(r?.end) && r.end > r.start);
   const flags = employmentFlags(entries);
   const diagnostics = [];
   const crit = {};
@@ -89,9 +126,8 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
         crit[c.id] = { status: 'UNAVAILABLE', evidence: [], reason: e?.reason ?? 'missing', finding: null };
         continue;
       }
-      // 7-2: OCR 저신뢰 구절이 이 세부기준의 원문 기재값(또는 근거)에 있으면 확정하지 않는다
-      const target = PRESENCE_ONLY.has(c.id) ? [e.sourceValue ?? ''] : [...e.quotes.map((q) => q.text), e.sourceValue ?? ''];
-      if (lowSpans.length && e.finding !== 'absent' && target.some((t) => lowSpans.some((s) => norm(t).includes(s)))) {
+      // 7-2: 확인되지 않은 OCR 저신뢰 구간이 이 세부기준의 판단 근거와 겹치면 확정하지 않는다
+      if (touchesLowConfidence(c.id, e, lines, lowRanges)) {
         crit[c.id] = { status: 'UNAVAILABLE', evidence: [], reason: 'ocr_low_confidence', finding: e.finding };
         continue;
       }
@@ -108,36 +144,44 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
       const ruled = applyBoundaryRules(c.id, status, { ...e, valueKind: derived ? 'calculated' : e.valueKind }, entries, lines);
       if (ruled.diag) diagnostics.push({ id: c.id, diag: ruled.diag });
       if (e.excluded?.length) diagnostics.push({ id: c.id, diag: 'excluded_quotes', reasons: e.excluded.map((x) => x.reason) });
-      if (c.id === '02-c' && e.finding === 'negated') diagnostics.push({ id: c.id, diag: 'D04_break_negation_note_undecided' });
-      crit[c.id] = { status: ruled.status, evidence: e.quotes, sourceValue: e.sourceValue, valueKind, derived, finding: e.finding, termType: e.termType };
+      const provisional = e.finding === 'negated' ? NEGATION_STATUS[c.id]?.provisional ?? null : null;
+      if (provisional) diagnostics.push({ id: c.id, diag: `provisional_negation:${provisional}` });
+      crit[c.id] = { status: ruled.status, evidence: e.quotes, sourceValue: e.sourceValue, valueKind, derived, finding: e.finding, termType: e.termType, provisional };
     }
   }
 
   // 조건부 핵심과 명시적 분기 (3-3, 4-1)
   const confirmed = (id) => crit[id].status === 'CONFIRMED';
   const term = confirmed('06-a') ? crit['06-a'].termType : null;
-  if (term === 'indefinite') crit['06-b'] = { ...crit['06-b'], status: 'NOT_APPLICABLE', evidence: [], derived: null };
+  if (term === 'indefinite') crit['06-b'] = { ...crit['06-b'], status: 'NOT_APPLICABLE', evidence: [], derived: null, naReason: 'indefinite_term' };
   const probationApplies = confirmed('07-a') && crit['07-a'].finding !== 'negated';
   const probationNone = confirmed('07-a') && crit['07-a'].finding === 'negated';
-  if (probationNone) crit['07-b'] = { ...crit['07-b'], status: 'NOT_APPLICABLE', evidence: [], derived: null };
+  if (probationNone) crit['07-b'] = { ...crit['07-b'], status: 'NOT_APPLICABLE', evidence: [], derived: null, naReason: 'no_probation' };
   const leaveGranted = confirmed('10-a') && crit['10-a'].finding !== 'negated';
   const leaveNone = confirmed('10-a') && crit['10-a'].finding === 'negated';
-  if (leaveNone) crit['10-b'] = { ...crit['10-b'], status: 'NOT_APPLICABLE', evidence: [], derived: null };
+  if (leaveNone) crit['10-b'] = { ...crit['10-b'], status: 'NOT_APPLICABLE', evidence: [], derived: null, naReason: 'no_leave' };
   const conditionMet = { fixed_term: term === 'fixed', probation_applies: probationApplies, leave_granted: leaveGranted };
 
   const topics = TOPICS.map((t) => {
     // 08은 07-a가 수습 '적용'으로 확인됐을 때만 표시. 숨긴 항목에는 상태를 만들지 않는다.
     const visible = !t.conditional || probationApplies;
-    if (!visible) return { id: t.id, key: t.key, label: t.label, visible: false, status: null, statusLabel: null, criteria: [], notes: {}, unconfirmed: [] };
+    if (!visible) return { id: t.id, key: t.key, label: t.label, visible: false, status: null, statusLabel: null, criteria: [], notes: {}, unconfirmed: [], links: [], applicabilityLinks: [] };
 
     const criteria = t.criteria.map((c) => {
       const r = crit[c.id];
       const required = c.role === 'C' && (!c.condition || conditionMet[c.condition]);
+      // basis: 상태의 근거 종류 (화면 설명용). 불분명함: undecided|conflict, 해당 없음: 분기 이유, 확인 불가: 실패 이유, 부정 표현: negated
+      const basis = r.status === 'UNAVAILABLE' ? r.reason ?? null
+        : r.status === 'NOT_APPLICABLE' ? r.naReason ?? null
+          : r.finding === 'negated' ? 'negated'
+            : r.status === 'UNCLEAR' ? r.finding : null;
       return {
         id: c.id,
         name: c.name,
+        label: c.label,
         role: c.role,
         conditional: Boolean(c.condition),
+        condition: c.condition ?? null,
         required,
         status: r.status,
         statusLabel: SUB_STATUS[r.status],
@@ -146,6 +190,8 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
         valueKind: r.status === 'UNAVAILABLE' ? null : r.valueKind ?? null,
         derived: r.status === 'UNAVAILABLE' ? null : r.derived ?? null,
         unavailableReason: r.status === 'UNAVAILABLE' ? r.reason ?? null : null,
+        basis,
+        provisional: r.status === 'UNAVAILABLE' ? null : r.provisional ?? null,
         sources: sourceCodes(c, flags),
       };
     });
@@ -160,7 +206,9 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
     const notes = {};
     const negatedTarget = t.criteria.find((c) => NEUTRAL_TARGETS.has(c.id) && crit[c.id].finding === 'negated' && crit[c.id].status !== 'UNAVAILABLE');
     if (negatedTarget) notes.neutral = NOTES.neutral;
-    if (t.criteria.some((c) => APPLICABILITY_TARGETS.has(c.id) && crit[c.id].finding === 'negated' && crit[c.id].status !== 'UNAVAILABLE')) notes.applicability = NOTES.applicability;
+    if (t.criteria.some((c) => APPLICABILITY_TARGETS.has(c.id) && crit[c.id].finding === 'negated' && crit[c.id].status !== 'UNAVAILABLE')) {
+      notes.applicability = NOTES.applicability;
+    }
     if (t.id === '07' && !probationApplies && !probationNone) notes.probationHold = NOTES.probationHold;
 
     return {
@@ -172,6 +220,8 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
       statusLabel: MAIN_STATUS[status],
       criteria,
       notes,
+      links: linksOf(t.links),
+      applicabilityLinks: notes.applicability ? linksOf(APPLICABILITY_LINKS) : [],
       // '이 문서에서 확인되지 않은 내용': 확인되지 않음·불분명함인 세부기준
       unconfirmed: criteria.filter((c) => c.status === 'MISSING' || c.status === 'UNCLEAR').map((c) => c.id),
     };

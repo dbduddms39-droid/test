@@ -474,9 +474,9 @@ export async function extractTextFromFile(file, onProgress = () => {}) {
       const prepared = await prepareImage(file);
       worker = await createOcrWorker(onProgress);
       onProgress({ stage: 'ocr', page: 1, pages: 1 });
-      const { text, quality, uncertain } = await recognize(worker, prepared);
+      const { text, quality, uncertain, uncertainAll } = await recognize(worker, prepared);
       if (!hasText(text)) throw new UploadError('no_text_found');
-      return { text, kind: check.kind, method: 'ocr', pages: 1, ocrPages: 1, lowConfidence: quality === 'low', uncertain };
+      return { text, kind: check.kind, method: 'ocr', pages: 1, ocrPages: 1, lowConfidence: quality === 'low', uncertain, uncertainAll };
     }
 
     onProgress({ stage: 'pdf-load' });
@@ -505,13 +505,13 @@ export async function extractTextFromFile(file, onProgress = () => {}) {
           const r = await recognize(worker, prepared);
           pageTexts[n - 1] = r.text;
           if (hasText(r.text) && r.quality === 'low') lowConfidence = true;
-          if (hasText(r.text)) uncertain.push(...r.uncertain);
+          if (hasText(r.text)) uncertain.push(...r.uncertainAll);
         }
       }
       const text = joinPages(pageTexts);
       if (!hasText(text)) throw new UploadError('no_text_found');
       const method = !scanned.length ? 'pdf-text' : scanned.length === doc.numPages ? 'ocr' : 'mixed';
-      return { text, kind: 'pdf', method, pages: doc.numPages, ocrPages: scanned.length, lowConfidence, uncertain: [...new Set(uncertain)].slice(0, 6) };
+      return { text, kind: 'pdf', method, pages: doc.numPages, ocrPages: scanned.length, lowConfidence, uncertain: [...new Set(uncertain)].slice(0, 6), uncertainAll: [...new Set(uncertain)] };
     } finally {
       await task.destroy(); // 문서와 pdf.js worker 자원 해제
     }
