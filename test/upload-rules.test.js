@@ -95,7 +95,7 @@ test('이미지별 결과를 사용자가 정한 순서대로 합치고 실패�
   ]);
   assert.equal(out.text, '첫 장\n\n넷째 장');
   assert.equal(out.okCount, 2);
-  assert.deepEqual(out.failed, [{ index: 1, code: 'image_decode_failed' }, { index: 2, code: 'no_text_found' }]);
+  assert.deepEqual(out.failed, [{ index: 1, code: 'image_decode_failed', anchor: 3 }, { index: 2, code: 'no_text_found', anchor: 3 }], 'anchor: 그 장의 내용이 들어갈 위치 (첫 장 끝)');
   assert.equal(out.lowConfidence, true);
   assert.equal(combineImageResults([{ ok: false, code: 'no_text_found' }]).okCount, 0);
 });

@@ -413,6 +413,10 @@ main { flex: 1; width: 100%; }
 .issue-state { font-size: 12px; color: var(--annot); }
 .issue-item.is-resolved .issue-title { color: var(--ink-2); }
 .issue-item.is-resolved .issue-state { color: var(--ink-2); }
+.issue-input { display: grid; gap: 4px; }
+.issue-input label { font-size: 13px; font-weight: 600; }
+.issue-input textarea { width: 100%; box-sizing: border-box; min-height: 5.5em; padding: 8px 10px; font: inherit; font-size: 14px; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius); resize: vertical; }
+.ocr-unlocated { flex-basis: 100%; }
 .issue-error { margin: 0; font-size: 13px; color: var(--ink); font-weight: 500; }
 
 /* ---------- S-05 점검 결과 (최종 디자인) ---------- */

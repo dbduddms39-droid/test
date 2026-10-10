@@ -8,6 +8,8 @@
 // - 고친 범위가 커서(붙여넣기·대량 삭제 등) 원래 위치와 대응할 수 없게 되면 안전하게 처리한다:
 //   새로 들어온 글자 전체를 '대응 불가 구간'으로 표시하고, 사라진 저신뢰 글자는 텍스트에 같은 글자가 다시 나타나면 그 위치도 확정하지 않는다.
 //
+// - 위치를 특정할 수 없는 확인 필요 항목(unlocatedPending)이 남아 있으면 분석하지 않는다. 어느 조건에 영향을 주는지 판단할 수 없어서다.
+//
 // 구간 종류(kind): ocr(인식이 불확실한 글자), untracked(대량 수정으로 대응할 수 없게 된 구간),
 //                  lost(대량 수정으로 위치를 잃은 저신뢰 글자), unlocated(추출 텍스트에서 위치를 찾지 못한 저신뢰 글자)
 // 상태(state): pending(확인 필요), edited(사용자가 고침), confirmed(원본과 대조해 확인함)
@@ -110,6 +112,15 @@ export function pendingRanges(tracker, text) {
     else merged.push([...r]);
   }
   return merged.map(([start, end]) => ({ start, end }));
+}
+
+// 위치를 특정할 수 없는 확인 필요 항목: 추출 텍스트에서 찾지 못한 글자(unlocated)나 수정 중 위치를 잃은 글자(lost) 가운데
+// 지금 텍스트에 같은 글자가 하나도 없어 분석 요청에 위치로 보낼 수 없는 것. 어느 근로조건에 영향을 주는지 알 수 없으므로
+// 조용히 넘기지 않는다: 사용자가 원본과 대조해 확인하기 전에는 분석하지 않는다 (S-03).
+export function unlocatedPending(tracker, text) {
+  const spanless = tracker.spans.filter((s) => s.state === 'pending' && (s.start == null || s.end > text.length));
+  const lost = tracker.lost.filter((l) => l.state === 'pending' && !occurrences(text, l.text).length);
+  return [...spanless, ...lost];
 }
 
 export function summary(tracker) {

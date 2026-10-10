@@ -249,7 +249,8 @@ try {
     await analyzeEdited(label, 'job_posting', extracted);
   }
 
-  // 3) 일부 이미지 실패 (OCR 처리 정책 3): 나머지는 합치되, 실패한 장을 복구하기 전에는 분석할 수 없다
+  // 3) 일부 이미지 실패 (OCR 처리 정책 3): 나머지는 합치되, 실패한 장을 각각 복구하기 전에는 분석할 수 없다
+  //    2번째(blank.png)는 글자를 찾지 못함, 3번째(corrupt.png)는 파일 손상 → 빈 이미지 확인 선택지 없음
   {
     const label = 'partial-failure';
     await fresh('job_posting');
@@ -257,34 +258,44 @@ try {
     const extracted = await reviewValue();
     const before = analyzeCount();
     const issues = await issueList();
-    check(`[${label}] S-03에 추출 실패 2건을 '처리 필요'로 표시`, (await page.isVisible('#extract-issues')) && issues.length === 2
+    check(`[${label}] S-03에 추출 실패 2건을 이미지별 '처리 필요'로 표시`, (await page.isVisible('#extract-issues')) && issues.length === 2
       && issues.every((x) => x.kind === 'failed' && !x.resolved) && issues[0].title.includes('2번째 이미지') && issues[1].title.includes('3번째 이미지'), issues.map((x) => x.title).join(' / '));
     check(`[${label}] 복구 전에는 분석 버튼 비활성·안내 표시`, (await page.isDisabled('#review-submit')) && (await page.isVisible('#review-blocked')));
     await page.click('#review-submit', { force: true }).catch(() => {});
     check(`[${label}] 버튼을 눌러도 분석 요청 없음`, analyzeCount() === before && (await page.isVisible('#view-review')));
-    // 다시 추출하기 경로: S-02로 돌아가 이미지를 바꿀 수 있다
     check(`[${label}] '이미지 바꾸고 다시 추출하기'는 S-02로 연결`, (await page.getAttribute('#extract-issues-list [data-issue-action=reextract]', 'href')) === '#/input');
-    // 직접 입력 경로: 텍스트를 고치지 않으면 '직접 입력했어요'를 받지 않는다
+    // 파일 손상(3번째)에는 빈 이미지 확인 선택지를 주지 않고, 글자를 찾지 못한 2번째에만 준다
+    const blankBtn = async (id) => (await page.$$(`#extract-issues-list [data-issue-id="${id}"] [data-issue-resolve=blank_confirmed]`)).length;
+    check(`[${label}] 빈 이미지 확인은 글자를 찾지 못한 장에만 (손상 파일 제외)`, (await blankBtn('failed-2')) === 1 && (await blankBtn('failed-3')) === 0
+      && issues[1].title.includes('파일을 열지 못했어요'), issues[1].title);
+    // 추출 텍스트 전체에서 한 글자를 고쳐도 실패한 장의 복구로 보지 않는다
+    await page.fill('#review-text', extracted.replace('240', '250'));
     await page.click('#extract-issues-list [data-issue-id="failed-2"] [data-issue-resolve=manual_input]');
-    check(`[${label}] 텍스트를 고치지 않으면 직접 입력 표시 거부`, (await page.textContent('#extract-issues-list [data-issue-id="failed-2"] .issue-error')).includes('직접 입력') && (await page.isDisabled('#review-submit')));
-    await page.fill('#review-text', `${extracted}\n[2번째 이미지 직접 입력] 근무지: 서울 (가상 예시)`);
+    check(`[${label}] 다른 장의 글자만 고치면 직접 입력 표시 거부`, (await page.textContent('#extract-issues-list [data-issue-id="failed-2"] .issue-error')).includes('이 쪽의 입력 칸') && (await page.isDisabled('#review-submit')));
+    await page.fill('#extract-issues-list [data-issue-input="failed-2"]', '   ');
     await page.click('#extract-issues-list [data-issue-id="failed-2"] [data-issue-resolve=manual_input]');
-    check(`[${label}] 한 건만 처리하면 아직 분석 불가`, await page.isDisabled('#review-submit'));
+    check(`[${label}] 공백만 입력하면 거부`, await page.isVisible('#extract-issues-list [data-issue-id="failed-2"] .issue-error'));
+    await page.fill('#extract-issues-list [data-issue-input="failed-2"]', '[2번째 이미지 직접 입력] 근무지: 서울 (가상 예시)');
+    await page.click('#extract-issues-list [data-issue-id="failed-2"] [data-issue-resolve=manual_input]');
+    check(`[${label}] 한 장만 복구하면 아직 분석 불가`, (await page.isDisabled('#review-submit')) && (await issueList()).filter((x) => !x.resolved).map((x) => x.id).join() === 'failed-3');
+    await page.fill('#extract-issues-list [data-issue-input="failed-3"]', '[3번째 이미지 직접 입력] 지원방법: 이메일 (가상 예시)');
     await page.click('#extract-issues-list [data-issue-id="failed-3"] [data-issue-resolve=manual_input]');
-    check(`[${label}] 모두 처리하면 분석 가능`, !(await page.isDisabled('#review-submit')) && !(await page.isVisible('#review-blocked')));
+    check(`[${label}] 각 장을 모두 복구하면 분석 가능`, !(await page.isDisabled('#review-submit')) && !(await page.isVisible('#review-blocked')));
     const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
     await page.click('#review-submit');
     const sent = JSON.parse((await reqP).postData());
     await page.waitForSelector('#view-result:not([hidden])', { timeout: 30_000 });
     const note = await page.textContent('#input-source-note');
-    check(`[${label}] 분석 요청은 직접 입력한 텍스트 그대로`, sent.text.includes('[2번째 이미지 직접 입력]'));
-    check(`[${label}] 결과 안내: 직접 입력한 부분을 밝히고 원본 전체 확보를 보장하지 않음`, note.includes('2번째 이미지, 3번째 이미지') && note.includes('빠짐없이 옮겼는지는 확인할 수 없어요'), note.slice(-90));
+    const i1 = sent.text.indexOf('250'), i2 = sent.text.indexOf('[2번째 이미지 직접 입력]'), i3 = sent.text.indexOf('[3번째 이미지 직접 입력]');
+    check(`[${label}] 분석 요청: 고친 1번째 이미지 텍스트 뒤에 2·3번째 직접 입력 내용이 순서대로`, i1 >= 0 && i1 < i2 && i2 < i3);
+    check(`[${label}] 결과 안내: 직접 입력한 부분을 밝히고 원본 전체 확보를 보장하지 않음`, note.includes('2번째 이미지, 3번째 이미지는') && note.includes('빠짐없이 옮겼는지는 확인할 수 없어요'), note.slice(-90));
     await page.screenshot({ path: `${OUT}/${label}-result-note.png`, fullPage: false });
-    // 처음 추출한 내용으로 되돌리면 직접 입력 표시는 다시 '처리 필요'
+    // 처음 추출한 내용으로 되돌리면 직접 입력 내용과 표시도 지워져 다시 분석 불가
     await page.click('#result-back');
     await page.waitForSelector('#view-review:not([hidden])');
     await page.click('#review-restore');
-    check(`[${label}] 원래 내용으로 되돌리면 다시 분석 불가`, (await page.isDisabled('#review-submit')) && (await issueList()).every((x) => !x.resolved));
+    check(`[${label}] 원래 내용으로 되돌리면 다시 분석 불가`, (await page.isDisabled('#review-submit')) && (await issueList()).every((x) => !x.resolved)
+      && (await page.inputValue('#extract-issues-list [data-issue-input="failed-2"]')) === '');
     await page.screenshot({ path: `${OUT}/${label}-issues.png`, fullPage: true });
     await page.click('#review-back'); // 실패 표시는 S-02 이미지 목록에도 있다
     await page.waitForSelector('#view-input:not([hidden])');
@@ -304,6 +315,65 @@ try {
     check(`[${label}] S-03으로 이동, PDF 2쪽 추출 실패 표시`, (await page.isVisible('#view-review')) && issues.some((x) => x.kind === 'failed' && x.title.includes('PDF 2쪽')), issues.map((x) => x.title).join(' / '));
     check(`[${label}] 안내에 읽지 못한 쪽`, status.text.includes('2쪽에서는 글자를 읽지 못했어요'), status.text.slice(0, 120));
     check(`[${label}] 복구 전에는 분석 불가`, (await page.isDisabled('#review-submit')) && analyzeCount() === before);
+  }
+
+  // 3-0-1) 3쪽 PDF에서 글자가 있는 2쪽의 OCR 실패 → 1쪽만 고치면 복구로 보지 않음, 2쪽 입력 칸에 넣어야 복구
+  {
+    const label = 'pdf3-ocr-failed';
+    await fresh('contract');
+    const before = analyzeCount();
+    const status = await uploadAndExtract('three-page-ocr-failed.pdf');
+    const extracted = await reviewValue();
+    const issues = await issueList();
+    const p2 = issues.find((x) => x.id === 'failed-2');
+    check(`[${label}] 글자가 있는 2쪽의 OCR 실패를 '처리 필요'로 표시 (시스템이 빈 쪽으로 정하지 않음)`, Boolean(p2) && !p2.resolved && issues.length === 1
+      && p2.desc.includes('그대로는 분석할 수 없어요'), issues.map((x) => x.title).join(' / ') || status.text.slice(0, 120));
+    check(`[${label}] 빈 페이지 확인은 사용자 선택지로만 (안내에 '찾지 못했다는 것만으로 빈 페이지로 보지 않아요')`,
+      (await page.textContent('#extract-issues-list [data-issue-id="failed-2"]')).includes('글자를 찾지 못했다는 것만으로 빈 페이지로 보지 않아요'));
+    check(`[${label}] 1쪽·3쪽 텍스트는 추출됨`, extracted.includes('둔산로') && extracted.includes('연차 유급휴가') && !extracted.includes('휴일: 매주'));
+    await page.fill('#review-text', extracted.replace('2,500,000원', '2,600,000원')); // 1쪽만 수정
+    await page.click('#extract-issues-list [data-issue-id="failed-2"] [data-issue-resolve=manual_input]');
+    check(`[${label}] 1쪽만 수정하면 2쪽 복구로 보지 않음`, (await page.isDisabled('#review-submit')) && analyzeCount() === before
+      && (await page.isVisible('#extract-issues-list [data-issue-id="failed-2"] .issue-error')));
+    await page.fill('#extract-issues-list [data-issue-input="failed-2"]', '근로시간: 09:00 ~ 18:00 (휴게 1시간)\n휴일: 매주 일요일');
+    await page.click('#extract-issues-list [data-issue-id="failed-2"] [data-issue-resolve=manual_input]');
+    check(`[${label}] 2쪽 입력 칸에 입력하고 표시하면 분석 가능`, !(await page.isDisabled('#review-submit')));
+    await page.screenshot({ path: `${OUT}/${label}-issues.png`, fullPage: true });
+    const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
+    await page.click('#review-submit');
+    const sent = JSON.parse((await reqP).postData());
+    await page.waitForSelector('#view-result:not([hidden])', { timeout: 30_000 });
+    const a = sent.text.indexOf('2,600,000원'), b = sent.text.indexOf('휴일: 매주 일요일'), c = sent.text.indexOf('연차 유급휴가');
+    check(`[${label}] 분석 요청: 1쪽 → 직접 입력한 2쪽 → 3쪽 순서`, a >= 0 && a < b && b < c);
+  }
+
+  // 3-0-2) 실제 빈 쪽: 사용자가 원본과 대조해 빈 페이지임을 확인하면 그 쪽은 빼고 나머지 쪽을 분석
+  {
+    const label = 'pdf3-blank';
+    await fresh('contract');
+    await uploadAndExtract('three-page-blank.pdf');
+    const extracted = await reviewValue();
+    const issues = await issueList();
+    check(`[${label}] 빈 2쪽도 자동으로 빈 쪽 처리하지 않고 '처리 필요'`, issues.length === 1 && issues[0].id === 'failed-2' && !issues[0].resolved && (await page.isDisabled('#review-submit')));
+    await page.click('#extract-issues-list [data-issue-id="failed-2"] [data-issue-resolve=blank_confirmed]');
+    check(`[${label}] 빈 페이지 확인 후 나머지 쪽 분석 가능`, !(await page.isDisabled('#review-submit')) && (await issueList())[0].resolved);
+    const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
+    await page.click('#review-submit');
+    const sent = JSON.parse((await reqP).postData());
+    await page.waitForSelector('#view-result:not([hidden])', { timeout: 30_000 });
+    const cards = await page.$$eval('#item-list > *', (els) => els.length);
+    const note = await page.textContent('#input-source-note');
+    check(`[${label}] 분석 요청은 1쪽·3쪽 텍스트 그대로 (빈 쪽에 넣은 내용 없음)`, sent.text === extracted);
+    check(`[${label}] 결과: 점검 항목 카드만 있고 빈 쪽용 결과는 없음, 안내에 제외한 쪽 표시`, cards >= 9 && cards <= 10 && note.includes('PDF 2쪽은') && note.includes('분석에서 제외'), `${cards}개, ${note.slice(-70)}`);
+  }
+
+  // 3-0-3) 문서 전체가 빈 PDF: 기존 빈 입력 차단 (S-02에 머묾, S-03으로 가지 않음)
+  {
+    const label = 'all-blank';
+    await fresh('contract');
+    const before = analyzeCount();
+    const status = await uploadAndExtract('all-blank.pdf');
+    check(`[${label}] 문서 전체가 비면 S-02에서 막고 분석하지 않음`, status.kind === 'error' && (await page.isVisible('#view-input')) && analyzeCount() === before, status.text.slice(0, 60));
   }
 
   // 3-1) 일부만 읽힌 이미지: 성공으로만 처리하지 않고 '확인 필요'로 알린다 (인식한 글자는 고치지 않고 입력란에 그대로)
@@ -359,6 +429,22 @@ try {
     const nums = status.text.match(/인식이 불확실한 부분: (.+?)\. 원본 이미지와/)?.[1] ?? '';
     await page.screenshot({ path: `${OUT}/partial-read.png`, fullPage: true });
     check(`[${label}] 확인할 숫자는 인식한 그대로 안내 (고친 값을 만들지 않음)`, [...nums.matchAll(/'([^']+)'/g)].every((m) => extracted.includes(m[1])), nums || '없음');
+    // 위치를 잃은 불확실한 글자: 텍스트를 통째로 바꿔 불확실한 글자가 어디에도 없으면 조용히 넘기지 않고 확인 전까지 분석하지 않음
+    // 같은 이미지를 다시 추출해 불확실한 글자 표시를 처음 상태로 (S-02에 있음)
+    await resetStatus();
+    await page.click('#extract-btn');
+    await waitStatus();
+    await page.waitForSelector('#view-review:not([hidden])');
+    for (const x of (await issueList()).filter((i) => !i.resolved)) await page.click(`#extract-issues-list [data-issue-id="${x.id}"] [data-issue-resolve=range_checked]`);
+    const lostBefore = analyzeCount();
+    await page.fill('#review-text', `[가상] 원본을 보고 처음부터 다시 옮겨 적은 내용입니다. 이 줄은 위치 대응을 잃게 하려고 길게 씁니다.\n${extracted.split('\n').filter((l) => !items.some((i) => l.includes(i.text))).join('\n')}`);
+    const lostMsg = await page.textContent('#review-blocked');
+    check(`[${label}] 위치를 잃은 불확실한 글자가 남으면 분석 불가·안내`, (await page.isDisabled('#review-submit')) && lostMsg.includes('위치를 찾을 수 없는 불확실한 글자')
+      && (await page.isVisible('#ocr-check-list .ocr-unlocated')), lostMsg.slice(0, 80));
+    await page.click('#review-submit', { force: true }).catch(() => {});
+    const unlocatedBtn = '#ocr-check-list .ocr-item:has(.ocr-unlocated) button[data-ocr-action=confirm]';
+    for (let i = 0; i < 10 && (await page.$(unlocatedBtn)); i += 1) await page.click(unlocatedBtn); // 목록을 다시 그리므로 하나씩
+    check(`[${label}] 원본과 대조해 확인하면 다시 분석 가능`, !(await page.isDisabled('#review-submit')) && analyzeCount() === lostBefore);
   }
 
   // 3-2) 실제 서비스에서 오류가 났던 오퍼 안내문 캡처 2장 (아이콘이 있는 표, 좌우 2열 복리후생)

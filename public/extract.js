@@ -4,7 +4,7 @@
 // 라이브러리는 같은 사이트의 /vendor/에서 처음 사용할 때만 불러온다.
 import {
   UPLOAD_MESSAGES, MAX_PDF_PAGES, MAX_OCR_PAGES,
-  checkFile, pageTextFromItems, needsOcr, joinPages, hasText, tidyText, stripOcrJunk, fitSize, combineImageResults, reviewOcr,
+  checkFile, pageTextFromItems, needsOcr, joinPages, pageAnchors, hasText, tidyText, stripOcrJunk, fitSize, combineImageResults, reviewOcr,
 } from './upload-rules.js';
 import { toGray, writeGray, normalizeForOcr, estimateTextHeight, textLineStats, ocrScale, removeLongLines } from './ocr-prep.js';
 import { analyzeLayout, placeWords, assembleLines } from './ocr-layout.js';
@@ -525,7 +525,9 @@ export async function extractTextFromFile(file, onProgress = () => {}) {
         }
       }
       const text = joinPages(pageTexts);
-      if (!hasText(text)) throw new UploadError('no_text_found');
+      if (!hasText(text)) throw new UploadError('no_text_found'); // 문서 전체가 비어 있으면 기존처럼 S-02에서 막는다
+      const anchors = pageAnchors(pageTexts);
+      for (const f of failedPages) f.anchor = anchors[f.page - 1];
       const method = !scanned.length ? 'pdf-text' : scanned.length === doc.numPages ? 'ocr' : 'mixed';
       return { text, kind: 'pdf', method, pages: doc.numPages, ocrPages: scanned.length, lowConfidence, uncertain: [...new Set(uncertain)].slice(0, 6), uncertainAll: [...new Set(uncertain)], failedPages, suspectPages };
     } finally {

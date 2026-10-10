@@ -2,8 +2,10 @@ import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-r
 import { buildQuestion, copyText } from './questions.js';
 import { el, statusBadge, V22_STATUS_LABEL, sourcePanelLines } from './components.js';
 import { ROUTES, checkText, editRouteFor, resolveRoute, classifyAnalyzeFailure } from './flow.js';
-import { createTracker, applyEdit, confirmSpan, pendingRanges, summary as ocrSummary } from './ocr-spans.js';
-import { buildIssues, resolveIssue, unresolve, blockingIssues, resetTextDependent, resultNotes, isResolved } from './extract-issues.js';
+import { createTracker, applyEdit, confirmSpan, pendingRanges, unlocatedPending, summary as ocrSummary } from './ocr-spans.js';
+import {
+  buildIssues, resolveIssue, unresolve, blockingIssues, resetTextDependent, resultNotes, isResolved, setSupplement, shiftAnchors, assembleText,
+} from './extract-issues.js';
 
 // 일단확인 클라이언트.
 // 입력 원문·추출 텍스트·분석 결과는 이 창의 메모리에만 둔다(브라우저 저장소·URL에 남기지 않음).
@@ -297,7 +299,8 @@ async function extractPdf(file, notes = []) {
     const out = await extractTextFromFile(file, onProgress);
     const urls = await renderPdfPreview(file).catch(() => []); // 미리보기 실패는 추출 결과에 영향 없음
     const previews = urls.map((url) => ({ url, name: file.name }));
-    const issues = buildIssues({ failed: out.failedPages ?? [], suspect: out.suspectPages ?? [], unit: 'pdf' });
+    // 원본 미리보기가 있는 쪽만 '빈 쪽 확인'을 할 수 있다 (미리보기를 못 그리면 원본 대조가 어려움)
+    const issues = buildIssues({ failed: out.failedPages ?? [], suspect: out.suspectPages ?? [], unit: 'pdf', previewed: (page) => page <= urls.length });
     if (!applyExtracted(out.text, out.method === 'pdf-text' ? 'pdf' : 'ocr', previews, urls, out.uncertainAll ?? [], issues)) {
       return showUploadStatus('확인·수정하던 추출 텍스트를 그대로 두었어요. 새로 추출한 텍스트로 바꾸려면 다시 추출해 주세요.', 'warn');
     }
@@ -378,9 +381,15 @@ function updateReviewState() {
   $('#review-chars').textContent = v.length.toLocaleString();
   $('#review-lines').textContent = String(v ? v.split('\n').length : 0);
   const blocking = reviewBlocking();
-  reviewSubmit.disabled = !state.file || !checkText(v).ok || Boolean(state.inflight) || blocking.length > 0;
-  $('#review-restore').disabled = !state.file || v === state.file.original;
-  showMsg($('#review-blocked'), blocking.length ? `분석 전에 확인할 추출 문제 ${blocking.length}건을 먼저 처리해 주세요. 위의 '분석 전에 확인할 추출 문제'에서 처리할 수 있어요.` : '');
+  const unlocated = state.file ? unlocatedPending(state.file.tracker, v) : [];
+  // 빈 쪽으로 확인한 쪽은 빼고, 직접 입력한 쪽은 넣은 텍스트로 빈 입력·길이를 검사한다 (문서 전체가 비면 기존처럼 막음)
+  const finalText = state.file ? assembleText(v, state.file.issues ?? []).text : v;
+  reviewSubmit.disabled = !state.file || !checkText(finalText).ok || Boolean(state.inflight) || blocking.length > 0 || unlocated.length > 0;
+  $('#review-restore').disabled = !state.file || (v === state.file.original && !(state.file.issues ?? []).some((x) => x.supplement));
+  const blockedMsg = [];
+  if (blocking.length) blockedMsg.push(`분석 전에 확인할 추출 문제 ${blocking.length}건을 먼저 처리해 주세요. 위의 '분석 전에 확인할 추출 문제'에서 처리할 수 있어요.`);
+  if (unlocated.length) blockedMsg.push(`위치를 찾을 수 없는 불확실한 글자 ${unlocated.length}곳이 있어요. 어느 조건에 영향을 주는지 알 수 없어, '확인이 필요한 글자'에서 원본과 대조해 확인하기 전에는 분석할 수 없어요.`);
+  showMsg($('#review-blocked'), blockedMsg.join(' '));
 }
 function textEdited() { return Boolean(state.file) && reviewText.value !== state.file.original; }
 function reviewBlocking() { return state.file ? blockingIssues(state.file.issues ?? [], { textEdited: textEdited() }) : []; }
@@ -388,6 +397,8 @@ function reviewBlocking() { return state.file ? blockingIssues(state.file.issues
 function trackReviewText() {
   if (!state.file) return;
   state.file.tracker = applyEdit(state.file.tracker, state.file.lastText, reviewText.value);
+  // 추출 실패한 쪽이 들어갈 자리도 함께 옮긴다 (직접 입력한 내용을 그 쪽 위치에 넣기 위해)
+  state.file.issues = shiftAnchors(state.file.issues ?? [], state.file.lastText, reviewText.value);
   state.file.lastText = reviewText.value;
   renderOcrCheck();
   renderExtractIssues();
@@ -411,12 +422,14 @@ function renderOcrCheck() {
   box.hidden = !items.length;
   if (!items.length) return;
   const sum = ocrSummary(tracker);
+  const unlocated = new Set(unlocatedPending(tracker, reviewText.value).map((x) => x.id));
   $('#ocr-check-count').textContent = sum.pending ? `${sum.total}곳 중 ${sum.pending}곳 확인 필요` : `${sum.total}곳 모두 확인함`;
   $('#ocr-check-list').replaceChildren(...items.map((x) => el('li', { class: `ocr-item is-${x.state}`, 'data-ocr-id': String(x.id) },
     el('div', { class: 'ocr-item-main' },
       el('q', { class: 'ocr-text' }, clip(x.state === 'edited' ? x.editedTo || '(삭제함)' : x.text)),
       el('span', { class: 'ocr-kind' }, OCR_KIND_TEXT[x.kind]),
       el('span', { class: 'ocr-state' }, OCR_STATE_TEXT[x.state])),
+    unlocated.has(x.id) ? el('p', { class: 'issue-desc ocr-unlocated' }, '지금 텍스트에서 위치를 찾을 수 없어 어느 조건에 영향을 주는지 알 수 없어요. 원본에서 이 글자가 있던 곳을 찾아 확인한 뒤 눌러 주세요. 확인하기 전에는 분석하지 않아요.') : null,
     x.state === 'pending' ? el('div', { class: 'ocr-item-actions' },
       x.start != null ? el('button', { type: 'button', class: 'btn-text', 'data-ocr-action': 'locate' }, '위치 보기') : null,
       el('button', { type: 'button', class: 'icon-btn', 'data-ocr-action': 'confirm' }, '원본과 대조해 확인했어요')) : null)));
@@ -429,6 +442,7 @@ $('#ocr-check-list').addEventListener('click', (e) => {
   if (b.dataset.ocrAction === 'confirm') {
     state.file.tracker = confirmSpan(state.file.tracker, id); // 이 구간 하나만 해제
     renderOcrCheck();
+    updateReviewState();
   } else if (span?.start != null) {
     $('#rtab-text').click();
     reviewText.focus();
@@ -437,7 +451,8 @@ $('#ocr-check-list').addEventListener('click', (e) => {
 });
 
 // ---------- S-03 분석 전에 확인할 추출 문제 (OCR 처리 정책 2·3) ----------
-// 추출 실패: 다시 추출(S-02)하거나 원본을 보고 직접 입력한 뒤 표시해야 분석할 수 있다.
+// 추출 실패(쪽마다 따로): 다시 추출(S-02)하거나, 그 쪽의 입력 칸에 원본 내용을 직접 입력한 뒤 표시해야 분석할 수 있다.
+//   글자를 찾지 못한 쪽은 원본 미리보기로 대조해 빈 쪽임을 확인하면 분석 대상에서 뺄 수 있다.
 // 일부 누락 의심: 품질 추정일 뿐 실제 누락을 확정하지 않는다. 직접 보완하거나 원본과 비교해 범위를 확인했다고 표시해야 한다.
 const ISSUE_REASON_TEXT = {
   partial: '인식한 줄 수가 이미지에서 찾은 글자 줄보다 적어요.',
@@ -447,27 +462,52 @@ const ISSUE_STATE_TEXT = {
   manual_input: '원본을 보고 직접 입력함',
   supplemented: '빠진 내용을 직접 보완함',
   range_checked: '원본과 비교해 추출 범위를 확인함',
+  blank_confirmed: '원본에서 빈 쪽임을 확인함 (분석에서 제외)',
 };
 const ISSUE_REFUSED_TEXT = {
   text_not_edited: '추출 텍스트가 처음 추출한 내용 그대로예요. 원본을 보고 내용을 직접 입력·보완한 뒤 눌러 주세요.',
+  no_page_input: '이 쪽의 입력 칸에 원본 내용을 입력한 뒤 눌러 주세요. 추출 텍스트의 다른 부분을 고치거나 공백만 넣은 것으로는 처리되지 않아요.',
+  blank_not_checkable: '원본을 확인하기 어려운 경우라 빈 쪽으로 표시할 수 없어요.',
+};
+const FAIL_CAUSE_TEXT = {
+  no_text_found: '글자를 찾지 못했어요',
+  image_decode_failed: '파일을 열지 못했어요(손상 가능)',
 };
 let issueError = null; // { id, code }
 
 function issueItem(x) {
   const resolved = isResolved(x, { textEdited: textEdited() });
   const failed = x.kind === 'failed';
-  const title = failed ? `${x.label}: 글자를 읽지 못했어요` : `${x.label}: 일부가 빠졌을 수 있어요`;
+  const unitName = x.unit === 'pdf' ? '쪽' : '이미지';
+  const blankName = x.unit === 'pdf' ? '페이지' : '이미지';
+  const title = failed ? `${x.label}: ${FAIL_CAUSE_TEXT[x.code] ?? '글자를 읽지 못했어요'}` : `${x.label}: 일부가 빠졌을 수 있어요`;
   const desc = failed
-    ? (x.unit === 'pdf'
-      ? '이 쪽의 내용은 지금 추출 텍스트에 없어요. 그대로는 분석할 수 없어요. 파일을 다시 올려 추출하거나, 원본을 보고 그 내용을 추출 텍스트에 직접 입력해 주세요.'
-      : '이 이미지의 내용은 지금 추출 텍스트에 없어요. 그대로는 분석할 수 없어요. 더 선명한 이미지로 바꿔 다시 추출하거나, 원본을 보고 그 내용을 추출 텍스트에 직접 입력해 주세요.')
+    ? `이 ${unitName}의 내용은 지금 추출 텍스트에 없어요. 그대로는 분석할 수 없어요. ${x.unit === 'pdf' ? '파일을 다시 올려 추출하거나' : '더 선명한 이미지로 바꿔 다시 추출하거나'}, 원본을 보고 이 ${unitName}의 내용을 아래 칸에 직접 입력해 주세요. 추출 텍스트의 다른 부분을 고친 것으로는 복구한 것으로 보지 않아요.`
     : `${ISSUE_REASON_TEXT[x.reason] ?? ''} 자동으로 추정한 것이라 실제로 빠졌는지는 확정할 수 없어요. 원본과 추출 텍스트를 비교해 주세요.`;
   const actions = [];
+  let input = null;
+  let blankNote = null;
+  if (failed && x.resolution !== 'blank_confirmed') {
+    const inputId = `issue-input-${x.id}`;
+    input = el('div', { class: 'issue-input' },
+      el('label', { for: inputId }, `${x.label} 내용 직접 입력`),
+      el('textarea', { id: inputId, rows: '4', maxlength: '20000', 'data-issue-input': x.id }));
+    input.querySelector('textarea').value = x.supplement ?? '';
+  }
   if (!resolved) {
     if (state.file?.previews?.length) actions.push(el('button', { type: 'button', class: 'btn-text', 'data-issue-action': 'view' }, '원본 보기'));
     if (failed) {
       actions.push(el('a', { href: ROUTES.input, class: 'btn-text', 'data-issue-action': 'reextract' }, x.unit === 'pdf' ? '파일 다시 올려 추출하기' : '이미지 바꾸고 다시 추출하기'));
       actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'manual_input' }, '원본을 보고 직접 입력했어요'));
+      // 글자를 찾지 못했고 원본 미리보기로 대조할 수 있는 경우에만. 시스템이 빈 쪽이라고 정한 것이 아님을 밝힌다.
+      if (x.canConfirmBlank) {
+        actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'blank_confirmed' }, `원본에서 빈 ${blankName}임을 확인했어요`));
+        blankNote = el('p', { class: 'issue-desc' }, `글자를 찾지 못했다는 것만으로 빈 ${blankName}로 보지 않아요. 원본에 정말 아무 내용이 없을 때만 '빈 ${blankName}임을 확인했어요'를 눌러 주세요. 그러면 이 ${unitName}은(는) 분석에서 빠져요.`);
+      } else {
+        blankNote = el('p', { class: 'issue-desc' }, x.code === 'no_text_found'
+          ? `원본 미리보기를 만들지 못해 빈 ${blankName}인지 이 화면에서 확인할 수 없어요. 다시 추출하거나 원본을 보고 직접 입력해 주세요.`
+          : '파일을 열거나 그리지 못해 원본을 확인하기 어려워요. 다시 추출하거나 원본을 보고 직접 입력해 주세요.');
+      }
     } else {
       actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'supplemented' }, '빠진 내용을 직접 보완했어요'));
       actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'range_checked' }, '원본과 비교해 추출 범위를 확인했어요'));
@@ -479,6 +519,8 @@ function issueItem(x) {
   return el('li', { class: `issue-item is-${x.kind}${resolved ? ' is-resolved' : ''}`, 'data-issue-id': x.id },
     el('p', { class: 'issue-title' }, title, el('span', { class: 'issue-kind' }, resolved ? '처리함' : '처리 필요')),
     el('p', { class: 'issue-desc' }, desc),
+    input,
+    blankNote,
     el('div', { class: 'issue-actions' }, ...actions),
     issueError?.id === x.id ? el('p', { class: 'issue-error', role: 'alert' }, ISSUE_REFUSED_TEXT[issueError.code] ?? '처리하지 못했어요.') : null);
 }
@@ -519,6 +561,24 @@ $('#extract-issues-list').addEventListener('click', (e) => {
   updateReviewState();
 });
 
+// 쪽별 직접 입력 칸: 목록을 다시 그리지 않고(커서·버튼 클릭 유지) 그 항목의 처리 상태 표시만 바꾼다
+$('#extract-issues-list').addEventListener('input', (e) => {
+  const id = e.target.dataset?.issueInput;
+  if (!id || !state.file) return;
+  state.file.issues = setSupplement(state.file.issues, id, e.target.value);
+  const issue = state.file.issues.find((x) => x.id === id);
+  const item = e.target.closest('[data-issue-id]');
+  if (issue.resolution && item) {
+    const resolved = isResolved(issue, { textEdited: textEdited() });
+    item.classList.toggle('is-resolved', resolved);
+    item.querySelector('.issue-kind').textContent = resolved ? '처리함' : '처리 필요 (입력 칸이 비었어요)';
+  }
+  const open = reviewBlocking().length;
+  const total = state.file.issues.length;
+  $('#extract-issues-count').textContent = open ? `${total}건 중 ${open}건 처리 필요` : `${total}건 모두 처리함`;
+  updateReviewState();
+});
+
 $('#review-select').addEventListener('click', () => { reviewText.focus(); reviewText.select(); });
 $('#review-clear').addEventListener('click', () => {
   // 사용자가 고친 내용이 있으면 지우기 전에 묻는다 (처음 추출한 내용은 '원래 내용으로'로 되돌릴 수 있음)
@@ -531,12 +591,13 @@ $('#review-clear').addEventListener('click', () => {
 });
 $('#review-restore').addEventListener('click', () => {
   if (!state.file) return;
-  if (reviewText.value.trim() && !confirm('수정한 내용을 지우고 처음 추출한 내용으로 되돌릴까요?')) return;
+  const hasSupplement = (state.file.issues ?? []).some((x) => x.supplement?.trim());
+  if ((reviewText.value.trim() || hasSupplement) && !confirm('수정한 내용과 직접 입력한 내용을 지우고 처음 추출한 내용으로 되돌릴까요?')) return;
   reviewText.value = state.file.original;
   // 처음 추출한 상태로 되돌리면 불확실한 글자 표시도 처음 상태(모두 확인 필요)로 돌아간다
   state.file.tracker = createTracker(state.file.original, state.file.words);
   state.file.lastText = state.file.original;
-  // 직접 입력·보완했다는 표시도 다시 '처리 필요'로 (원본과 비교해 범위를 확인한 표시는 텍스트와 무관해 유지)
+  // 직접 입력·보완한 내용과 표시도 다시 '처리 필요'로 (범위 확인·빈 쪽 확인 표시는 텍스트와 무관해 유지)
   state.file.issues = resetTextDependent(state.file.issues ?? []);
   renderOcrCheck();
   renderExtractIssues();
@@ -578,14 +639,15 @@ $('#zoom-in').addEventListener('click', () => { preview.zoom = Math.min(200, pre
 // 파일 추출: S-03 → S-04. 이 버튼은 불확실한 글자 표시를 해제하지 않는다.
 // 사용자가 고치거나 원본과 대조해 확인하지 않은 구간은 위치만 함께 보내고, 서버는 그 구간이 든 기준을 확정하지 않는다.
 reviewSubmit.addEventListener('click', () => {
-  const text = reviewText.value;
+  trackReviewText();
+  // 추출 실패·일부 누락 의심을 처리하지 않았거나, 위치를 찾을 수 없는 불확실한 글자가 남아 있으면 분석하지 않는다
+  // (이 버튼은 어떤 문제도 처리한 것으로 보지 않음)
+  if (reviewBlocking().length || unlocatedPending(state.file.tracker, reviewText.value).length) return updateReviewState();
+  // 직접 입력한 쪽은 그 쪽 자리에 넣고, 빈 쪽으로 확인한 쪽은 넣지 않는다. 저신뢰 구간 위치도 넣은 길이만큼 옮긴다.
+  const { text, ranges } = assembleText(reviewText.value, state.file.issues ?? [], pendingRanges(state.file.tracker, reviewText.value));
   const c = checkText(text);
   if (!c.ok) return showMsg(reviewError, c.code === 'too_long' ? '문서는 20,000자 이하로 줄여 주세요.' : '분석할 문서 내용을 입력해 주세요.');
-  trackReviewText();
-  // 추출 실패·일부 누락 의심을 처리하지 않았으면 분석하지 않는다 (이 버튼은 어떤 문제도 처리한 것으로 보지 않음)
-  if (reviewBlocking().length) return updateReviewState();
-  const lowConfidence = pendingRanges(state.file.tracker, text);
-  startAnalysis({ docType: docType(), text, inputSource: state.file.source, lowConfidence, extractNotes: resultNotes(state.file.issues ?? []) });
+  startAnalysis({ docType: docType(), text, inputSource: state.file.source, lowConfidence: ranges, extractNotes: resultNotes(state.file.issues ?? []) });
 });
 
 // ---------- S-04 분석 중 · S-07 오류 ----------

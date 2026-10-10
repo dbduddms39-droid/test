@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createTracker, applyEdit, confirmSpan, pendingRanges, summary, diffRegion } from '../public/ocr-spans.js';
+import { createTracker, applyEdit, confirmSpan, pendingRanges, summary, diffRegion, unlocatedPending } from '../public/ocr-spans.js';
 
 const TEXT = '임금: 월 280만원. 매월 2O일 지급\n주소: 상도로 77';
 const slice = (text, ranges) => ranges.map((r) => text.slice(r.start, r.end));
@@ -75,4 +75,24 @@ test('저신뢰 글자가 든 줄을 통째로 다른 내용으로 바꾸면 그
   const t1 = applyEdit(t0, TEXT, after);
   assert.equal(summary(t1).edited, 0);
   assert.ok(pendingRanges(t1, after).length > 0);
+});
+
+test('위치를 잃은 불확실한 글자: 텍스트에 같은 글자가 없어 위치로 보낼 수 없으면 조용히 넘기지 않고 확인 전까지 분석을 막는 목록에 남김', () => {
+  const text = '급여: 월 2O0만원\n근무: 09:00~18:00';
+  let t = createTracker(text, ['2O0', '1O:30']); // '1O:30'은 추출 텍스트에서 위치를 찾지 못함
+  assert.deepEqual(unlocatedPending(t, text).map((x) => [x.kind, x.text]), [['unlocated', '1O:30']]);
+  // 문서를 통째로 바꿔 '2O0'의 위치를 잃고, 새 텍스트에도 그 글자가 없음
+  const replaced = `[가상] 새로 붙여넣은 문서입니다. 원본을 보고 처음부터 다시 옮겨 적은 내용이라 줄이 깁니다.\n급여: 월 200만원 (확인 전)\n근무: 09:00~18:00`;
+  t = applyEdit(t, text, replaced);
+  assert.deepEqual(unlocatedPending(t, replaced).map((x) => [x.kind, x.text]).sort(), [['lost', '2O0'], ['unlocated', '1O:30']]);
+  assert.ok(pendingRanges(t, replaced).length > 0, '대량 수정한 구간은 대응 불가 구간으로 함께 보냄');
+  // 하나씩 원본과 대조해 확인하면 그 항목만 목록에서 빠짐
+  const lostId = t.lost.find((x) => x.text === '2O0').id;
+  t = confirmSpan(t, lostId);
+  assert.deepEqual(unlocatedPending(t, replaced).map((x) => x.text), ['1O:30']);
+  // 같은 글자가 텍스트에 다시 나타나면 위치로 보낼 수 있어 막지 않음 (그 위치는 확정하지 않음)
+  const withWord = `${replaced}\n휴게: 1O:30부터`;
+  assert.deepEqual(unlocatedPending(t, withWord), []);
+  const r = pendingRanges(t, withWord);
+  assert.ok(r.some((x) => withWord.slice(x.start, x.end) === '1O:30'));
 });
