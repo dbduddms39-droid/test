@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 6 382 100" role="img" aria-label="일단확인">
+  <!-- 시안 A '받침 세 줄': 글꼴의 '일'에서 받침 ㄹ 자리만 비우고 세 줄의 문서 줄로 다시 그린다.
+       마지막 줄은 문단의 끝 줄처럼 조금 짧고, 그 줄에만 형광펜 -->
+  <defs><clipPath id="la-clip"><path clip-rule="evenodd" d="M-10 -10H400V120H-10Z M0 63.5H95V120H0Z"/></clipPath></defs>
+  <rect x="16" y="96" width="68" height="9.5" fill="#F5DF76"/>
+  <g fill="#262626">
+    <text clip-path="url(#la-clip)" x="0" y="88" font-family="'Pretendard Variable', Pretendard, sans-serif" font-weight="800" font-size="100" letter-spacing="-4">일단확인</text>
+    <rect x="19" y="64" width="67" height="7"/>
+    <rect x="80" y="64" width="6" height="21.5"/>
+    <rect x="19" y="78.5" width="67" height="7"/>
+    <rect x="19" y="78.5" width="6" height="21.5"/>
+    <rect x="19" y="93" width="57" height="7"/>
+  </g>
+</svg>

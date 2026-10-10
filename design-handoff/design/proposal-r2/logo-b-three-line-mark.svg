@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 6 470 100" role="img" aria-label="일단확인">
+  <!-- 시안 B '세 줄 표지': 문서의 세 줄을 짧은 세로획으로 이어 ㄹ로 읽히게 한 표지 + 가운데 줄 형광펜, 옆에 워드마크 -->
+  <rect x="7" y="55" width="86" height="12" fill="#F5DF76"/>
+  <g fill="#262626">
+    <rect x="10" y="22" width="70" height="10"/>
+    <rect x="74" y="22" width="6" height="34"/>
+    <rect x="10" y="50" width="70" height="10"/>
+    <rect x="10" y="50" width="6" height="38"/>
+    <rect x="10" y="78" width="70" height="10"/>
+    <text x="104" y="88" font-family="'Pretendard Variable', Pretendard, sans-serif" font-weight="800" font-size="88" letter-spacing="-3.5">일단확인</text>
+  </g>
+</svg>
