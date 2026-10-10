@@ -130,6 +130,7 @@ public/vendor/         pdf.js·Tesseract.js·언어 데이터 (npm run vendor로
 vercel.json            Vercel 함수 번들에서 public/vendor/만 제외 (메인 화면은 함수가 제공)
 scripts/check-vercel-output.mjs  vercel build 결과 점검 (정적 파일·함수 번들·/ ·API)
 scripts/smoke-deployed.mjs       실제 배포 주소 점검 (새로고침·정적 파일·API)
+scripts/e2e-screens.mjs          S-01~S-07 화면 검수 (데스크톱·모바일 폭, 주요 경로, 데모 모드 로컬 서버, API 호출 없음)
 scripts/make-ocr-failure-fixtures.mjs  추출 실패·빈 쪽 확인용 가상 PDF 만들기 (기존 업로드 테스트 파일은 그대로)
 scripts/ocr-bench.mjs            OCR 정확도 비교 (가상 채용공고 이미지, 수정 전후 같은 기준)
 test/                  테스트, 가상 문서 F01~F11과 기획상 기대 판정

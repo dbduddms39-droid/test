@@ -85,6 +85,10 @@ jobs:
         if: always()
         run: node scripts/e2e-result.mjs
 
+      - name: Screen walkthrough S-01~S-07, desktop and mobile (local demo server, no API calls)
+        if: always()
+        run: node scripts/e2e-screens.mjs
+
       - name: OCR accuracy benchmark (fictional images, browser only, no API calls)
         if: always()
         env:
