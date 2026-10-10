@@ -142,6 +142,16 @@ w.encrypt(user_password="test-only-password", algorithm="AES-256")
 w.write("${OUT}/encrypted.pdf")
 `]);
 
+// 7-1) 2쪽 중 1쪽에서 글자를 읽을 수 없는 스캔 PDF (2쪽은 텍스트 레이어·글자 이미지가 없는 빈 쪽 → 추출 실패 쪽)
+execFileSync('python3', ['-c', `
+from pypdf import PdfReader, PdfWriter
+r = PdfReader("${OUT}/scanned.pdf")
+w = PdfWriter()
+w.add_page(r.pages[0])
+w.add_blank_page(width=r.pages[0].mediabox.width, height=r.pages[0].mediabox.height)
+w.write("${OUT}/scanned-missing-page.pdf")
+`]);
+
 // 8) 확장자만 PDF인 텍스트 파일, 손상된 PDF
 await writeFile(`${OUT}/not-really.pdf`, '이 파일은 PDF가 아닙니다 (가상 예시).\n');
 await writeFile(`${OUT}/broken.pdf`, '%PDF-1.7\n이 파일은 손상된 PDF입니다.\n');

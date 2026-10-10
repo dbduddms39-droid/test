@@ -493,3 +493,44 @@ test("'이 문서에서 확인되지 않은 내용': 확인되지 않음·불분
   const f3 = (await run({ text: fx('F03').text, specs: fx('F03').extraction })).result;
   assert.ok(!topic(f3, '07').unconfirmed.includes('07-b'), '해당 없음은 제외');
 });
+
+// ---------- OCR 처리 정책 1: 특정 글자만 불확실한 경우 ----------
+test('OCR 정책 1: 추가(D) 근거에만 걸린 불확실한 글자라도 주변에 핵심 표현(금액)이 있으면 독립으로 보지 않고 주제 전체를 분석 확인 불가', async () => {
+  const text = '임금: 월 280만원\n지급 안내: 매월 20일 지급, 식대 수당 3O만원 포함';
+  const specs = {
+    '01-a': { f: 'specific', q: ['월 280만원'], sv: '280만원' },
+    '01-b': { f: 'specific', q: ['월 280만원'], sv: '월' },
+    '01-f': { f: 'specific', q: ['매월 20일 지급, 식대 수당 3O만원 포함'], sv: '매월 20일' },
+  };
+  const { result } = await run({ text, specs, lowConfidence: ['3O'] });
+  assert.equal(sub(result, '01-f').status, 'UNAVAILABLE');
+  assert.equal(sub(result, '01-a').status, 'UNAVAILABLE', '핵심값을 임의로 확정하지 않음');
+  assert.equal(sub(result, '01-a').basis, 'ocr_low_confidence_related');
+  assert.equal(sub(result, '01-a').evidence.length, 0);
+  assert.equal(topic(result, '01').status, 'MAIN_UNAVAILABLE');
+  // 사용자가 그 글자를 확인하면(구간 없음) 원래 판정
+  const ok = (await run({ text, specs })).result;
+  assert.equal(topic(ok, '01').status, 'MAIN_FOUND');
+  assert.equal(sub(ok, '01-f').status, 'CONFIRMED');
+});
+
+test('OCR 정책 1: 같은 줄이라도 불확실한 글자 주변에 핵심 표현이 없으면(F08 지급일) 추가(D)에만 적용', async () => {
+  const f = fx('F08');
+  const { result } = await run({ text: f.text, docType: f.docType, specs: f.extraction, lowConfidence: f.lowConfidence });
+  assert.equal(sub(result, '01-f').status, 'UNAVAILABLE');
+  assert.equal(sub(result, '01-a').status, 'CONFIRMED');
+  assert.equal(topic(result, '01').status, 'MAIN_FOUND');
+});
+
+test("OCR 정책 1: 어떤 근거에도 인용되지 않은 불확실한 금액이 있으면 그 주제를 '관련 내용 찾지 못함'으로 두지 않음", async () => {
+  const text = '[가상] 채용 안내\n담당업무: 매장 운영\n급여: 4,0O0만원';
+  const specs = { '04-a': { f: 'specific', q: ['매장 운영'] } }; // AI가 급여 줄을 인용하지 않음
+  const low = (await run({ text, specs, lowConfidence: ['4,0O0'] })).result;
+  assert.equal(topic(low, '01').status, 'MAIN_UNAVAILABLE');
+  assert.equal(topic(low, '04').status, 'MAIN_FOUND', '핵심 표현이 없는 다른 주제는 영향 없음');
+  const confirmed = (await run({ text, specs })).result;
+  assert.equal(topic(confirmed, '01').status, 'MAIN_MISSING', '저신뢰 구간이 없으면 기존 규칙 그대로');
+  // 핵심 표현과 무관한 곳의 불확실한 글자는 어느 주제에도 영향 없음
+  const harmless = (await run({ text: '[가상] 채용 안내 ABC1O\n담당업무: 매장 운영', specs, lowConfidence: ['ABC1O'] })).result;
+  assert.ok(harmless.topics.filter((t) => t.visible).every((t) => t.status !== 'MAIN_UNAVAILABLE'));
+});

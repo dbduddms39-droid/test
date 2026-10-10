@@ -400,6 +400,21 @@ main { flex: 1; width: 100%; }
 .ocr-item.is-edited .ocr-state, .ocr-item.is-confirmed .ocr-state { color: var(--ink-2); }
 .ocr-item-actions { display: flex; align-items: center; gap: var(--space-sm); }
 
+/* ---------- S-03 분석 전에 확인할 추출 문제 (추출 실패·일부 누락 의심) ---------- */
+.extract-issues { margin: 0 0 var(--space-md); padding: var(--space-md); border: 1px solid var(--rule); border-left: 3px solid var(--annot); background: var(--paper); }
+.extract-issues h2 { margin: 0 0 6px; font-size: 15px; }
+.extract-issues .small { margin: 0 0 var(--space-sm); color: var(--ink-2); }
+.issue-list { list-style: none; margin: 0; padding: 0; }
+.issue-item { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid var(--rule-soft); }
+.issue-title { margin: 0; font-weight: 600; }
+.issue-kind { margin-left: 6px; font-size: 12px; font-weight: 500; color: var(--annot); }
+.issue-desc { margin: 0; font-size: 14px; color: var(--ink-2); }
+.issue-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); }
+.issue-state { font-size: 12px; color: var(--annot); }
+.issue-item.is-resolved .issue-title { color: var(--ink-2); }
+.issue-item.is-resolved .issue-state { color: var(--ink-2); }
+.issue-error { margin: 0; font-size: 13px; color: var(--ink); font-weight: 500; }
+
 /* ---------- S-05 점검 결과 (최종 디자인) ---------- */
 .result-head { display: grid; gap: var(--space-sm); align-items: end; padding-bottom: var(--space-md); border-bottom: 1px solid var(--rule); margin-bottom: var(--space-md); }
 @media (min-width: 1024px) { .result-head { grid-template-columns: 1fr auto; } .result-head-side { text-align: right; } }

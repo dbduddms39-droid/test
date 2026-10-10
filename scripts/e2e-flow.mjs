@@ -155,8 +155,11 @@ try {
   await page.click('#error-edit');
   await waitView('input');
   await page.route('**/api/analyze', (route) => route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: '문서 유형을 선택해 주세요.' }) }));
+  const res400 = page.waitForResponse((r) => r.url().endsWith('/api/analyze'));
   await page.click('#submit-btn');
+  await res400; // 이미 S-02에 있으므로 화면만 기다리면 응답 전에 검사하게 된다
   await waitView('input');
+  await page.waitForSelector('#input-error:not([hidden])', { timeout: 5000 }).catch(() => {});
   check('입력 형식 오류(400) → S-02에서 바로 안내, 텍스트 유지', (await page.isVisible('#input-error')) && (await page.inputValue('#doc-text')) === EDITED);
   await page.unroute('**/api/analyze');
 

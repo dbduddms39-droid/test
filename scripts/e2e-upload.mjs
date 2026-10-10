@@ -121,6 +121,11 @@ try {
   const fix = (f) => (typeof f === 'string' ? path.join(FIX, f) : f);
   const names = () => page.$$eval('.image-name', (els) => els.map((e) => e.textContent));
   const analyzeCount = () => posts.filter((p) => p.path === '/api/analyze').length;
+  // S-03 '분석 전에 확인할 추출 문제' 목록
+  const issueList = () => page.$$eval('#extract-issues-list .issue-item', (els) => els.map((e) => ({
+    id: e.dataset.issueId, kind: e.classList.contains('is-failed') ? 'failed' : 'suspect', resolved: e.classList.contains('is-resolved'),
+    title: e.querySelector('.issue-title').textContent, desc: e.querySelector('.issue-desc').textContent,
+  })));
   const isImage = (f) => /\.(png|jpe?g|webp)$/i.test(f);
 
   // 이미지는 목록에 올린 뒤 '텍스트 추출'을 눌러야 추출된다. PDF는 바로 추출된다.
@@ -244,18 +249,61 @@ try {
     await analyzeEdited(label, 'job_posting', extracted);
   }
 
-  // 3) 일부 이미지 실패: 글자 없는 이미지·손상된 이미지가 섞여도 나머지는 합치고 실패한 장을 알려 준다
+  // 3) 일부 이미지 실패 (OCR 처리 정책 3): 나머지는 합치되, 실패한 장을 복구하기 전에는 분석할 수 없다
   {
     const label = 'partial-failure';
     await fresh('job_posting');
     const status = await uploadAndExtract(['multi-1.png', 'blank.png', 'corrupt.png']);
     const extracted = await reviewValue();
-    await page.click('#review-back'); // 실패 표시는 S-02 이미지 목록에 있다
+    const before = analyzeCount();
+    const issues = await issueList();
+    check(`[${label}] S-03에 추출 실패 2건을 '처리 필요'로 표시`, (await page.isVisible('#extract-issues')) && issues.length === 2
+      && issues.every((x) => x.kind === 'failed' && !x.resolved) && issues[0].title.includes('2번째 이미지') && issues[1].title.includes('3번째 이미지'), issues.map((x) => x.title).join(' / '));
+    check(`[${label}] 복구 전에는 분석 버튼 비활성·안내 표시`, (await page.isDisabled('#review-submit')) && (await page.isVisible('#review-blocked')));
+    await page.click('#review-submit', { force: true }).catch(() => {});
+    check(`[${label}] 버튼을 눌러도 분석 요청 없음`, analyzeCount() === before && (await page.isVisible('#view-review')));
+    // 다시 추출하기 경로: S-02로 돌아가 이미지를 바꿀 수 있다
+    check(`[${label}] '이미지 바꾸고 다시 추출하기'는 S-02로 연결`, (await page.getAttribute('#extract-issues-list [data-issue-action=reextract]', 'href')) === '#/input');
+    // 직접 입력 경로: 텍스트를 고치지 않으면 '직접 입력했어요'를 받지 않는다
+    await page.click('#extract-issues-list [data-issue-id="failed-2"] [data-issue-resolve=manual_input]');
+    check(`[${label}] 텍스트를 고치지 않으면 직접 입력 표시 거부`, (await page.textContent('#extract-issues-list [data-issue-id="failed-2"] .issue-error')).includes('직접 입력') && (await page.isDisabled('#review-submit')));
+    await page.fill('#review-text', `${extracted}\n[2번째 이미지 직접 입력] 근무지: 서울 (가상 예시)`);
+    await page.click('#extract-issues-list [data-issue-id="failed-2"] [data-issue-resolve=manual_input]');
+    check(`[${label}] 한 건만 처리하면 아직 분석 불가`, await page.isDisabled('#review-submit'));
+    await page.click('#extract-issues-list [data-issue-id="failed-3"] [data-issue-resolve=manual_input]');
+    check(`[${label}] 모두 처리하면 분석 가능`, !(await page.isDisabled('#review-submit')) && !(await page.isVisible('#review-blocked')));
+    const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
+    await page.click('#review-submit');
+    const sent = JSON.parse((await reqP).postData());
+    await page.waitForSelector('#view-result:not([hidden])', { timeout: 30_000 });
+    const note = await page.textContent('#input-source-note');
+    check(`[${label}] 분석 요청은 직접 입력한 텍스트 그대로`, sent.text.includes('[2번째 이미지 직접 입력]'));
+    check(`[${label}] 결과 안내: 직접 입력한 부분을 밝히고 원본 전체 확보를 보장하지 않음`, note.includes('2번째 이미지, 3번째 이미지') && note.includes('빠짐없이 옮겼는지는 확인할 수 없어요'), note.slice(-90));
+    await page.screenshot({ path: `${OUT}/${label}-result-note.png`, fullPage: false });
+    // 처음 추출한 내용으로 되돌리면 직접 입력 표시는 다시 '처리 필요'
+    await page.click('#result-back');
+    await page.waitForSelector('#view-review:not([hidden])');
+    await page.click('#review-restore');
+    check(`[${label}] 원래 내용으로 되돌리면 다시 분석 불가`, (await page.isDisabled('#review-submit')) && (await issueList()).every((x) => !x.resolved));
+    await page.screenshot({ path: `${OUT}/${label}-issues.png`, fullPage: true });
+    await page.click('#review-back'); // 실패 표시는 S-02 이미지 목록에도 있다
     await page.waitForSelector('#view-input:not([hidden])');
     const failedItems = await page.$$eval('.image-item-failed .image-fail', (els) => els.map((e) => e.textContent));
-    check(`[${label}] 일부 실패 안내`, status.kind === 'warn' && status.text.includes('3장 중 1장') && status.text.includes('2번째, 3번째'), status.text.slice(0, 80));
+    check(`[${label}] 일부 실패 안내`, status.kind === 'warn' && status.text.includes('3장 중 1장') && status.text.includes('2번째, 3번째') && status.text.includes('복구하기 전에는 분석할 수 없어요'), status.text.slice(0, 120));
     check(`[${label}] 실패한 이미지 표시`, failedItems.length === 2, failedItems.join(' / '));
     check(`[${label}] 성공한 이미지 텍스트는 S-03 확인란에`, extracted.includes('고객센터') && extracted.includes('240'));
+  }
+
+  // 3-0) PDF 일부 쪽 추출 실패 (OCR 처리 정책 3): 빈 쪽으로 조용히 넘기지 않고, 복구 전에는 분석하지 않는다
+  {
+    const label = 'pdf-failed-page';
+    await fresh('contract');
+    const before = analyzeCount();
+    const status = await uploadAndExtract('scanned-missing-page.pdf');
+    const issues = await issueList();
+    check(`[${label}] S-03으로 이동, PDF 2쪽 추출 실패 표시`, (await page.isVisible('#view-review')) && issues.some((x) => x.kind === 'failed' && x.title.includes('PDF 2쪽')), issues.map((x) => x.title).join(' / '));
+    check(`[${label}] 안내에 읽지 못한 쪽`, status.text.includes('2쪽에서는 글자를 읽지 못했어요'), status.text.slice(0, 120));
+    check(`[${label}] 복구 전에는 분석 불가`, (await page.isDisabled('#review-submit')) && analyzeCount() === before);
   }
 
   // 3-1) 일부만 읽힌 이미지: 성공으로만 처리하지 않고 '확인 필요'로 알린다 (인식한 글자는 고치지 않고 입력란에 그대로)
@@ -270,6 +318,17 @@ try {
     const items = await page.$$eval('#ocr-check-list .ocr-item', (els) => els.map((e) => ({ text: e.querySelector('.ocr-text').textContent, pending: e.classList.contains('is-pending') })));
     check(`[${label}] S-03에 확인이 필요한 글자 목록 (인식한 그대로)`, (await page.isVisible('#ocr-check')) && items.length > 0 && items.every((i) => i.pending && extracted.includes(i.text)), `${items.length}곳`);
     await page.screenshot({ path: `${OUT}/${label}-ocr-check.png`, fullPage: true });
+    // 일부 누락 의심 (OCR 처리 정책 2): 추정임을 밝히고, 명시적으로 확인하기 전에는 분석할 수 없다
+    const suspects = (await issueList()).filter((x) => x.kind === 'suspect');
+    check(`[${label}] 흐린 이미지를 '일부가 빠졌을 수 있어요'(추정)로 표시`, suspects.length >= 1 && suspects.some((x) => x.title.includes('2번째 이미지'))
+      && suspects.every((x) => x.desc.includes('확정할 수 없어요') && !/누락됐|빠졌어요/.test(x.title + x.desc)), suspects.map((x) => x.title).join(' / '));
+    const beforeGate = analyzeCount();
+    await page.click('#review-submit', { force: true }).catch(() => {});
+    check(`[${label}] 확인 전에는 분석 버튼으로 진행되지 않음`, (await page.isDisabled('#review-submit')) && analyzeCount() === beforeGate);
+    await page.click('#extract-issues-list .issue-item.is-suspect [data-issue-resolve=supplemented]');
+    check(`[${label}] 텍스트를 고치지 않으면 '직접 보완했어요' 거부`, await page.isVisible('#extract-issues-list .issue-error') && await page.isDisabled('#review-submit'));
+    for (const x of suspects) await page.click(`#extract-issues-list [data-issue-id="${x.id}"] [data-issue-resolve=range_checked]`);
+    check(`[${label}] 원본과 비교해 범위를 확인했다고 표시하면 분석 가능`, !(await page.isDisabled('#review-submit')) && (await issueList()).every((x) => x.resolved));
     const submitAndCapture = async () => {
       const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
       await page.click('#review-submit');
@@ -293,8 +352,8 @@ try {
     await page.click('#review-back');
     await page.waitForSelector('#view-input:not([hidden])');
     const reviewItems = await page.$$eval('.image-item', (els) => els.map((e) => (e.classList.contains('image-item-review') ? e.querySelector('.image-review').textContent : '')));
-    check(`[${label}] 흐린 2번째 이미지에 확인 필요 표시`, reviewItems[1].includes('일부만 읽혔거나') && !reviewItems[0].includes('일부만'), reviewItems.join(' / '));
-    check(`[${label}] 안내에 확인할 이미지 번호`, status.kind === 'warn' && status.text.includes('2번째 이미지는 일부만 읽혔거나'), status.text.slice(0, 120));
+    check(`[${label}] 흐린 2번째 이미지에 확인 필요 표시`, reviewItems[1].includes('일부만 인식됐을 수 있어요') && !reviewItems[0].includes('일부만'), reviewItems.join(' / '));
+    check(`[${label}] 안내에 확인할 이미지 번호`, status.kind === 'warn' && status.text.includes('2번째 이미지는 일부만 인식됐을 수 있어요'), status.text.slice(0, 120));
     check(`[${label}] 읽힌 텍스트는 순서대로 S-03 확인란에 (사용자가 확인·수정)`, onReview && extracted.indexOf('급여') >= 0 && extracted.indexOf('담당업무') > extracted.indexOf('급여'));
     check(`[${label}] S-03에도 같은 확인 안내`, reviewStatus === status.text);
     const nums = status.text.match(/인식이 불확실한 부분: (.+?)\. 원본 이미지와/)?.[1] ?? '';
@@ -326,8 +385,9 @@ try {
   const KEEP = '이미 입력해 둔 내용입니다 (가상 예시)\n급여: 월 200만원';
   {
     await fresh('job_posting', KEEP);
+    const dialogs0 = dialogs; // 앞 단계(되돌리기 확인 등)의 대화상자는 세지 않는다
     const s1 = await uploadAndExtract(['blank.png']);
-    check('[all-failed] 전부 인식 실패: S-02에 머물고 OCR 실패 안내, 입력란 유지', s1.kind === 'error' && (await page.isVisible('#view-input')) && (await page.inputValue('#doc-text')) === KEEP && dialogs === 0, s1.text.slice(0, 60));
+    check('[all-failed] 전부 인식 실패: S-02에 머물고 OCR 실패 안내, 입력란 유지', s1.kind === 'error' && (await page.isVisible('#view-input')) && (await page.inputValue('#doc-text')) === KEEP && dialogs === dialogs0, s1.text.slice(0, 60));
 
     await resetStatus();
     await page.setInputFiles('#file-input', fix('not-really.pdf'));
@@ -348,7 +408,7 @@ try {
     // 파일 추출은 직접 입력란을 건드리지 않는다. 확인·수정하던 추출 텍스트를 새 추출로 바꿀 때만 묻고, 취소하면 그대로 둔다.
     const s5a = await uploadAndExtract(['multi-1.png']);
     await page.waitForSelector('#view-review:not([hidden])');
-    check('[separate] 파일 추출 후에도 직접 입력란 내용 유지', s5a.kind !== 'error' && (await page.inputValue('#doc-text')) === KEEP && dialogs === 0);
+    check('[separate] 파일 추출 후에도 직접 입력란 내용 유지', s5a.kind !== 'error' && (await page.inputValue('#doc-text')) === KEEP && dialogs === dialogs0);
     const EDITED = `${await reviewValue()}\n수정한 줄 (가상 예시)`;
     await page.fill('#review-text', EDITED);
     await page.click('#review-back');

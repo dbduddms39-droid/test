@@ -143,7 +143,7 @@ export function reviewOcr({ words = [], confidence = 0, lines = 0, inkLines = 0 
 
 // 이미지별 OCR 결과를 사용자가 정한 순서대로 하나의 문서로 합친다.
 // results: [{ ok: true, text, confidence, quality, uncertain } | { ok: false, code }] (목록 순서)
-// review: 확인이 필요한 이미지 [{ index, quality, uncertain }]
+// review: 확인이 필요한 이미지 [{ index, quality, partial, uncertain }] (quality 'low'는 S-03에서 일부 누락 의심으로 다룬다)
 export function combineImageResults(results) {
   const okTexts = [];
   const failed = [];
@@ -154,7 +154,7 @@ export function combineImageResults(results) {
       okTexts.push(r.text);
       uncertainAll.push(...(r.uncertainAll ?? r.uncertain ?? []));
       const quality = r.quality ?? (r.confidence < LOW_CONFIDENCE ? 'low' : 'good');
-      if (quality !== 'good') review.push({ index, quality, uncertain: r.uncertain ?? [] });
+      if (quality !== 'good') review.push({ index, quality, partial: Boolean(r.partial), uncertain: r.uncertain ?? [] });
     } else {
       failed.push({ index, code: r.ok ? 'no_text_found' : r.code });
     }

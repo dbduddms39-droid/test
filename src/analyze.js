@@ -6,6 +6,7 @@ import {
 import { segmentText } from './segment.js';
 import { verifyResponse } from './verify.js';
 import { evaluate } from './rules.js';
+import { CORE_PATTERN } from './core-pattern.js';
 
 // throwFatal: 키 없음·무료 한도 초과·타임아웃처럼 재분석해도 해결되지 않는 오류는 그대로 던진다.
 async function callAndVerify(ai, { docType, segments, criterionIds, feedback }, { throwFatal = false } = {}) {
@@ -31,18 +32,7 @@ const failed = (e) => Boolean(e?.errors?.length);
 //       → 다른 금액·시간 같은 상충 근거나 조건부 분기 근거가 숨어 있을 가능성을 배제
 //   하나라도 입증되지 않으면 그 주제 전체를 보류하고 1회 재분석한다.
 const QUOTE_ERRORS = new Set(['quote_not_in_line', 'empty_quote']);
-export const CORE_PATTERN = {
-  '01': /(\d[\d,.]*\s*(만\s*|천\s*)?원|연봉|월급|시급|시간급|일급|주급|월\s*보수)/,
-  '02': /(\d+(\.\d+)?\s*시간|\d{1,2}\s*:\s*\d{2}|주\s*\d+(\.\d+)?\s*일)/,
-  '03': /(근무\s*(장소|지)|근무지|취업\s*장소|배치\s*장소|사업장|본사|지점|사무실|오피스|사옥|매장|[가-힣]+(특별시|광역시|시|도|구|군)\s|[가-힣\d]+(로|길)\s*\d)/,
-  '04': /(업무|직무|담당)/,
-  '05': /(정규직|계약직|기간제|단시간|인턴|파견|고용\s*(형태|방식)|계약\s*(형태|유형))/,
-  '06': /(계약\s*기간|기간의\s*정함|기간제|기간을\s*정|\d{4}\s*년|\d+\s*(개월|년)|종료)/,
-  '07': /(수습|시용)/,
-  '08': /(수습|시용|\d+\s*%)/,
-  '09': /(휴일|휴무|주휴|공휴)/,
-  '10': /(연차|유급\s*휴가)/,
-};
+export { CORE_PATTERN };
 export function isIndependentD(topic, entry, cLines, segments) {
   if (!entry.errors.every((code) => QUOTE_ERRORS.has(code)) || !entry.errorQuotes.length) return false;
   return entry.errorQuotes.every((q) => {

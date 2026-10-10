@@ -3,6 +3,7 @@ import { buildQuestion, copyText } from './questions.js';
 import { el, statusBadge, V22_STATUS_LABEL, sourcePanelLines } from './components.js';
 import { ROUTES, checkText, editRouteFor, resolveRoute, classifyAnalyzeFailure } from './flow.js';
 import { createTracker, applyEdit, confirmSpan, pendingRanges, summary as ocrSummary } from './ocr-spans.js';
+import { buildIssues, resolveIssue, unresolve, blockingIssues, resetTextDependent, resultNotes, isResolved } from './extract-issues.js';
 
 // 일단확인 클라이언트.
 // 입력 원문·추출 텍스트·분석 결과는 이 창의 메모리에만 둔다(브라우저 저장소·URL에 남기지 않음).
@@ -38,7 +39,7 @@ const EXAMPLE_TEXT = [
 
 const state = {
   tab: 'paste',     // S-02에서 고른 입력 방식
-  file: null,       // 파일 추출 결과 { source: 'ocr'|'pdf', original, previews: [{ url, name }], imagesVersion, ownUrls, words, tracker, lastText }
+  file: null,       // 파일 추출 결과 { source: 'ocr'|'pdf', original, previews: [{ url, name }], imagesVersion, ownUrls, words, tracker, lastText, issues }
   last: null,       // 마지막으로 분석을 요청한 { docType, text, inputSource } — S-07 재시도·수정에 사용
   inflight: null,   // 진행 중인 분석 { controller }
   error: null,      // S-07에 보여 줄 { message }
@@ -141,7 +142,7 @@ const ITEM_FAIL_TEXT = {
 };
 // 인식은 됐지만 원본과 비교해 확인이 필요한 이미지 (글자를 고치지 않고 확인할 곳만 알림)
 const ITEM_REVIEW_TEXT = {
-  low: '일부만 읽혔거나 인식이 불확실해요. 원본과 꼭 비교해 주세요',
+  low: '일부만 인식됐을 수 있어요(자동 추정). 원본과 꼭 비교해 주세요',
   check: '확인할 숫자·글자가 있어요',
 };
 const uncertainNote = (list) => (list.length ? `인식이 불확실한 부분: ${list.map((t) => `'${t}'`).join(', ')}. 원본 이미지와 비교해 고쳐 주세요.` : '');
@@ -237,7 +238,8 @@ $('#clear-images').addEventListener('click', () => {
 
 // 추출 결과를 S-03 확인 텍스트로 둔다. 확인·수정하던 텍스트가 있으면 바꿀지 먼저 묻는다(취소하면 그대로 둠).
 // 직접 입력란(S-02)의 내용은 건드리지 않는다.
-function applyExtracted(text, source, previews, ownUrls = [], words = []) {
+// issues: 추출 실패·일부 누락 의심 (extract-issues.js). 처리하기 전에는 S-03에서 분석할 수 없다.
+function applyExtracted(text, source, previews, ownUrls = [], words = [], issues = []) {
   const reviewText = $('#review-text');
   if (state.file && reviewText.value.trim() && reviewText.value !== state.file.original
     && !confirm('확인·수정하던 추출 텍스트를 새로 추출한 내용으로 바꿀까요?')) {
@@ -246,7 +248,7 @@ function applyExtracted(text, source, previews, ownUrls = [], words = []) {
   }
   const old = state.file;
   // OCR이 알려 준 불확실한 글자의 위치를 추적한다 (사용자가 고치거나 원본과 대조해 확인한 곳만 해제)
-  state.file = { source, original: text, previews, imagesVersion, ownUrls, words, tracker: createTracker(text, words), lastText: text };
+  state.file = { source, original: text, previews, imagesVersion, ownUrls, words, tracker: createTracker(text, words), lastText: text, issues };
   if (old) {
     old.ownUrls.forEach((u) => URL.revokeObjectURL(u));
     // 목록에서 이미 지운 이미지의 URL은 이제 해제한다
@@ -295,17 +297,20 @@ async function extractPdf(file, notes = []) {
     const out = await extractTextFromFile(file, onProgress);
     const urls = await renderPdfPreview(file).catch(() => []); // 미리보기 실패는 추출 결과에 영향 없음
     const previews = urls.map((url) => ({ url, name: file.name }));
-    if (!applyExtracted(out.text, out.method === 'pdf-text' ? 'pdf' : 'ocr', previews, urls, out.uncertainAll ?? [])) {
+    const issues = buildIssues({ failed: out.failedPages ?? [], suspect: out.suspectPages ?? [], unit: 'pdf' });
+    if (!applyExtracted(out.text, out.method === 'pdf-text' ? 'pdf' : 'ocr', previews, urls, out.uncertainAll ?? [], issues)) {
       return showUploadStatus('확인·수정하던 추출 텍스트를 그대로 두었어요. 새로 추출한 텍스트로 바꾸려면 다시 추출해 주세요.', 'warn');
     }
     const what = out.method === 'pdf-text' ? `PDF ${out.pages}쪽에서 텍스트를 추출했어요.`
       : `PDF ${out.pages}쪽에서 텍스트를 추출했어요 (스캔된 ${out.ocrPages}쪽은 글자 인식).`;
     const msg = [what, reviewNote, ...notes];
     if (out.method !== 'pdf-text') msg.push('글자 인식 결과에는 오타나 빠진 글자가 있을 수 있어요.');
-    if (out.lowConfidence) msg.push('인식 정확도가 낮아 보여요. 숫자(금액·날짜·시간)를 특히 꼼꼼히 확인해 주세요.');
+    if (out.failedPages?.length) msg.push(`${out.failedPages.map((p) => `${p.page}쪽`).join(', ')}에서는 글자를 읽지 못했어요. 그 쪽을 복구하기 전에는 분석할 수 없어요.`);
+    if (out.suspectPages?.length) msg.push(`${out.suspectPages.map((p) => `${p.page}쪽`).join(', ')}은 일부만 인식됐을 수 있어요(자동 추정). 원본과 비교해 주세요.`);
+    else if (out.lowConfidence) msg.push('인식 정확도가 낮아 보여요. 숫자(금액·날짜·시간)를 특히 꼼꼼히 확인해 주세요.');
     if (out.uncertain?.length) msg.push(uncertainNote(out.uncertain));
     if (out.text.length > 20000) msg.push('추출한 텍스트가 2만 자를 넘어요. 필요한 부분만 남겨 주세요.');
-    finishExtraction(msg.join(' '), out.lowConfidence || out.uncertain?.length || notes.length ? 'warn' : 'done');
+    finishExtraction(msg.join(' '), out.lowConfidence || out.uncertain?.length || notes.length || issues.length ? 'warn' : 'done');
   } catch (err) {
     showUploadStatus(err?.code ? err.message : '파일에서 텍스트를 추출하지 못했어요. 내용을 직접 붙여넣어 주세요.', 'error');
   } finally {
@@ -328,14 +333,19 @@ extractBtn.addEventListener('click', async () => {
       return showUploadStatus('이미지에서 글자를 찾지 못했어요. 더 선명한 이미지로 바꾸거나 텍스트 직접 붙여넣기로 입력해 주세요.', 'error');
     }
     const previews = images.map((img) => ({ url: img.url, name: img.file.name }));
-    if (!applyExtracted(out.text, 'ocr', previews, [], out.uncertainAll ?? [])) return showUploadStatus('확인·수정하던 추출 텍스트를 그대로 두었어요. 새로 추출한 텍스트로 바꾸려면 다시 추출해 주세요.', 'warn');
+    const issues = buildIssues({
+      failed: out.failed,
+      suspect: out.review.filter((r) => r.quality === 'low').map((r) => ({ index: r.index, reason: r.partial ? 'partial' : 'low_confidence' })),
+      unit: 'image',
+    });
+    if (!applyExtracted(out.text, 'ocr', previews, [], out.uncertainAll ?? [], issues)) return showUploadStatus('확인·수정하던 추출 텍스트를 그대로 두었어요. 새로 추출한 텍스트로 바꾸려면 다시 추출해 주세요.', 'warn');
     const msg = [`이미지 ${images.length}장 중 ${out.okCount}장에서 글자를 인식해 순서대로 합쳤어요.`];
     if (out.failed.length) {
-      msg.push(`${out.failed.map((f) => `${f.index + 1}번째`).join(', ')} 이미지는 ${out.failed.length === 1 ? ITEM_FAIL_TEXT[out.failed[0].code] ?? '읽지 못했어요' : '읽지 못했어요'}. 그 부분은 직접 입력하거나 다른 이미지로 바꿔 주세요.`);
+      msg.push(`${out.failed.map((f) => `${f.index + 1}번째`).join(', ')} 이미지는 ${out.failed.length === 1 ? ITEM_FAIL_TEXT[out.failed[0].code] ?? '읽지 못했어요' : '읽지 못했어요'}. 그 부분을 복구하기 전에는 분석할 수 없어요. 직접 입력하거나 다른 이미지로 바꿔 다시 추출해 주세요.`);
     }
     msg.push(reviewNote, '글자 인식 결과에는 오타나 빠진 글자가 있을 수 있어요.');
     const low = out.review.filter((r) => r.quality === 'low');
-    if (low.length) msg.push(`${low.map((r) => `${r.index + 1}번째`).join(', ')} 이미지는 일부만 읽혔거나 인식이 불확실해요. 원본과 꼭 비교해 빠진 내용을 채워 주세요.`);
+    if (low.length) msg.push(`${low.map((r) => `${r.index + 1}번째`).join(', ')} 이미지는 일부만 인식됐을 수 있어요(자동 추정). 원본과 비교해 확인해 주세요.`);
     const uncertain = [...new Set(out.review.flatMap((r) => r.uncertain))].slice(0, 6);
     if (uncertain.length) msg.push(uncertainNote(uncertain));
     if (out.text.length > 20000) msg.push('추출한 텍스트가 2만 자를 넘어요. 필요한 부분만 남겨 주세요.');
@@ -367,15 +377,20 @@ function updateReviewState() {
   const v = reviewText.value;
   $('#review-chars').textContent = v.length.toLocaleString();
   $('#review-lines').textContent = String(v ? v.split('\n').length : 0);
-  reviewSubmit.disabled = !state.file || !checkText(v).ok || Boolean(state.inflight);
+  const blocking = reviewBlocking();
+  reviewSubmit.disabled = !state.file || !checkText(v).ok || Boolean(state.inflight) || blocking.length > 0;
   $('#review-restore').disabled = !state.file || v === state.file.original;
+  showMsg($('#review-blocked'), blocking.length ? `분석 전에 확인할 추출 문제 ${blocking.length}건을 먼저 처리해 주세요. 위의 '분석 전에 확인할 추출 문제'에서 처리할 수 있어요.` : '');
 }
+function textEdited() { return Boolean(state.file) && reviewText.value !== state.file.original; }
+function reviewBlocking() { return state.file ? blockingIssues(state.file.issues ?? [], { textEdited: textEdited() }) : []; }
 // 텍스트가 바뀔 때마다 저신뢰 구간의 위치·상태를 갱신한다
 function trackReviewText() {
   if (!state.file) return;
   state.file.tracker = applyEdit(state.file.tracker, state.file.lastText, reviewText.value);
   state.file.lastText = reviewText.value;
   renderOcrCheck();
+  renderExtractIssues();
 }
 reviewText.addEventListener('input', () => { reviewError.hidden = true; trackReviewText(); updateReviewState(); });
 
@@ -421,6 +436,89 @@ $('#ocr-check-list').addEventListener('click', (e) => {
   }
 });
 
+// ---------- S-03 분석 전에 확인할 추출 문제 (OCR 처리 정책 2·3) ----------
+// 추출 실패: 다시 추출(S-02)하거나 원본을 보고 직접 입력한 뒤 표시해야 분석할 수 있다.
+// 일부 누락 의심: 품질 추정일 뿐 실제 누락을 확정하지 않는다. 직접 보완하거나 원본과 비교해 범위를 확인했다고 표시해야 한다.
+const ISSUE_REASON_TEXT = {
+  partial: '인식한 줄 수가 이미지에서 찾은 글자 줄보다 적어요.',
+  low_confidence: '전체 글자 인식 신뢰도가 낮아요.',
+};
+const ISSUE_STATE_TEXT = {
+  manual_input: '원본을 보고 직접 입력함',
+  supplemented: '빠진 내용을 직접 보완함',
+  range_checked: '원본과 비교해 추출 범위를 확인함',
+};
+const ISSUE_REFUSED_TEXT = {
+  text_not_edited: '추출 텍스트가 처음 추출한 내용 그대로예요. 원본을 보고 내용을 직접 입력·보완한 뒤 눌러 주세요.',
+};
+let issueError = null; // { id, code }
+
+function issueItem(x) {
+  const resolved = isResolved(x, { textEdited: textEdited() });
+  const failed = x.kind === 'failed';
+  const title = failed ? `${x.label}: 글자를 읽지 못했어요` : `${x.label}: 일부가 빠졌을 수 있어요`;
+  const desc = failed
+    ? (x.unit === 'pdf'
+      ? '이 쪽의 내용은 지금 추출 텍스트에 없어요. 그대로는 분석할 수 없어요. 파일을 다시 올려 추출하거나, 원본을 보고 그 내용을 추출 텍스트에 직접 입력해 주세요.'
+      : '이 이미지의 내용은 지금 추출 텍스트에 없어요. 그대로는 분석할 수 없어요. 더 선명한 이미지로 바꿔 다시 추출하거나, 원본을 보고 그 내용을 추출 텍스트에 직접 입력해 주세요.')
+    : `${ISSUE_REASON_TEXT[x.reason] ?? ''} 자동으로 추정한 것이라 실제로 빠졌는지는 확정할 수 없어요. 원본과 추출 텍스트를 비교해 주세요.`;
+  const actions = [];
+  if (!resolved) {
+    if (state.file?.previews?.length) actions.push(el('button', { type: 'button', class: 'btn-text', 'data-issue-action': 'view' }, '원본 보기'));
+    if (failed) {
+      actions.push(el('a', { href: ROUTES.input, class: 'btn-text', 'data-issue-action': 'reextract' }, x.unit === 'pdf' ? '파일 다시 올려 추출하기' : '이미지 바꾸고 다시 추출하기'));
+      actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'manual_input' }, '원본을 보고 직접 입력했어요'));
+    } else {
+      actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'supplemented' }, '빠진 내용을 직접 보완했어요'));
+      actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'range_checked' }, '원본과 비교해 추출 범위를 확인했어요'));
+    }
+  } else {
+    actions.push(el('span', { class: 'issue-state' }, ISSUE_STATE_TEXT[x.resolution]));
+    actions.push(el('button', { type: 'button', class: 'btn-text', 'data-issue-action': 'undo' }, '표시 취소'));
+  }
+  return el('li', { class: `issue-item is-${x.kind}${resolved ? ' is-resolved' : ''}`, 'data-issue-id': x.id },
+    el('p', { class: 'issue-title' }, title, el('span', { class: 'issue-kind' }, resolved ? '처리함' : '처리 필요')),
+    el('p', { class: 'issue-desc' }, desc),
+    el('div', { class: 'issue-actions' }, ...actions),
+    issueError?.id === x.id ? el('p', { class: 'issue-error', role: 'alert' }, ISSUE_REFUSED_TEXT[issueError.code] ?? '처리하지 못했어요.') : null);
+}
+
+function renderExtractIssues() {
+  const issues = state.file?.issues ?? [];
+  const box = $('#extract-issues');
+  box.hidden = !issues.length;
+  if (!issues.length) return;
+  const open = reviewBlocking().length;
+  $('#extract-issues-count').textContent = open ? `${issues.length}건 중 ${open}건 처리 필요` : `${issues.length}건 모두 처리함`;
+  $('#extract-issues-list').replaceChildren(...issues.map(issueItem));
+}
+$('#extract-issues-list').addEventListener('click', (e) => {
+  const item = e.target.closest('[data-issue-id]');
+  if (!item || !state.file) return;
+  const id = item.dataset.issueId;
+  const resolveBtn = e.target.closest('button[data-issue-resolve]');
+  const action = e.target.closest('[data-issue-action]')?.dataset.issueAction;
+  issueError = null;
+  if (resolveBtn) {
+    const r = resolveIssue(state.file.issues, id, resolveBtn.dataset.issueResolve, { textEdited: textEdited() });
+    if (r.ok) state.file.issues = r.issues;
+    else issueError = { id, code: r.code };
+  } else if (action === 'undo') {
+    state.file.issues = unresolve(state.file.issues, id);
+  } else if (action === 'view') {
+    const issue = state.file.issues.find((x) => x.id === id);
+    preview.page = issue.position - 1;
+    renderPreview();
+    $('#rtab-source').click();
+    $('#review-source').scrollIntoView({ block: 'nearest' });
+    return;
+  } else {
+    return; // 다시 추출하기는 링크로 S-02에 간다 (추출 텍스트와 문제 목록은 새로 추출할 때까지 그대로)
+  }
+  renderExtractIssues();
+  updateReviewState();
+});
+
 $('#review-select').addEventListener('click', () => { reviewText.focus(); reviewText.select(); });
 $('#review-clear').addEventListener('click', () => {
   // 사용자가 고친 내용이 있으면 지우기 전에 묻는다 (처음 추출한 내용은 '원래 내용으로'로 되돌릴 수 있음)
@@ -438,7 +536,10 @@ $('#review-restore').addEventListener('click', () => {
   // 처음 추출한 상태로 되돌리면 불확실한 글자 표시도 처음 상태(모두 확인 필요)로 돌아간다
   state.file.tracker = createTracker(state.file.original, state.file.words);
   state.file.lastText = state.file.original;
+  // 직접 입력·보완했다는 표시도 다시 '처리 필요'로 (원본과 비교해 범위를 확인한 표시는 텍스트와 무관해 유지)
+  state.file.issues = resetTextDependent(state.file.issues ?? []);
   renderOcrCheck();
+  renderExtractIssues();
   updateReviewState();
 });
 
@@ -481,8 +582,10 @@ reviewSubmit.addEventListener('click', () => {
   const c = checkText(text);
   if (!c.ok) return showMsg(reviewError, c.code === 'too_long' ? '문서는 20,000자 이하로 줄여 주세요.' : '분석할 문서 내용을 입력해 주세요.');
   trackReviewText();
+  // 추출 실패·일부 누락 의심을 처리하지 않았으면 분석하지 않는다 (이 버튼은 어떤 문제도 처리한 것으로 보지 않음)
+  if (reviewBlocking().length) return updateReviewState();
   const lowConfidence = pendingRanges(state.file.tracker, text);
-  startAnalysis({ docType: docType(), text, inputSource: state.file.source, lowConfidence });
+  startAnalysis({ docType: docType(), text, inputSource: state.file.source, lowConfidence, extractNotes: resultNotes(state.file.issues ?? []) });
 });
 
 // ---------- S-04 분석 중 · S-07 오류 ----------
@@ -523,7 +626,7 @@ async function startAnalysis(payload, { replace = false } = {}) {
 
   // 점검 기준 v2.2 형식이 아닌 응답(예: 이전 버전 서버)은 결과로 보여 주지 않는다 (8개·10개 형식 혼용 방지)
   if (res?.ok && isV22(data)) {
-    result = { ...data, inputSource: payload.inputSource };
+    result = { ...data, inputSource: payload.inputSource, extractNotes: payload.extractNotes ?? [] };
     return go(ROUTES.result, true);
   }
   if (res?.ok) {
@@ -566,6 +669,7 @@ const NA_TEXT = {
 };
 const UNAVAILABLE_TEXT = {
   ocr_low_confidence: '근거에 글자 인식(OCR)이 불확실한 곳이 있어 확정하지 않았어요. 원본과 대조해 고치거나 확인한 뒤 다시 분석해 주세요. 문서에 적혀 있지 않다는 뜻이 아니에요.',
+  ocr_low_confidence_related: '이 항목과 관련된 내용 근처에 글자 인식(OCR)이 불확실한 곳이 있어 확정하지 않았어요. 원본과 대조해 고치거나 확인한 뒤 다시 분석해 주세요. 문서에 적혀 있지 않다는 뜻이 아니에요.',
   evidence_verification_failed: 'AI가 제시한 근거를 원문에서 확인하지 못해 확정하지 않았어요. 문서에 적혀 있지 않다는 뜻이 아니에요.',
 };
 const PROVISIONAL_TEXT = '이 상태는 점검 기준표에 정해진 규칙이 없어 잠정적으로 표시했어요.';
@@ -667,7 +771,7 @@ function renderResult() {
   // 파일에서 추출한 텍스트로 분석한 경우: 원본 파일이 아니라 추출·확인한 텍스트 기준임을 밝힌다.
   const sourceNote = $('#input-source-note');
   sourceNote.hidden = result.inputSource === 'paste';
-  sourceNote.textContent = EXTRACTED_NOTE[result.inputSource] ?? '';
+  sourceNote.textContent = [EXTRACTED_NOTE[result.inputSource] ?? '', ...(result.extractNotes ?? [])].filter(Boolean).join(' ');
   $('#result-notice').textContent = `${result.sourceGuide} ${result.notice}`;
   $('#result-count').textContent = `점검한 항목 ${result.counts.shown}개`;
   $('#result-tally').textContent = MAIN_ORDER.filter((s) => result.counts.byStatus[s] > 0)
@@ -808,6 +912,7 @@ const RENDER = {
   review: () => {
     $('#review-stale').hidden = state.file.source !== 'ocr' || state.file.imagesVersion === imagesVersion;
     renderOcrCheck();
+    renderExtractIssues();
     updateReviewState();
     renderPreview();
   },

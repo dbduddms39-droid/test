@@ -497,21 +497,37 @@ export async function extractTextFromFile(file, onProgress = () => {}) {
 
       let lowConfidence = false;
       const uncertain = [];
+      // 글자 인식에 실패한 쪽(failedPages)과 일부 누락이 의심되는 쪽(suspectPages)을 따로 알린다.
+      // 실패한 쪽은 빈 쪽으로 조용히 넘기지 않는다 (S-03에서 복구하기 전에는 분석하지 않음).
+      const failedPages = [];
+      const suspectPages = [];
       if (scanned.length) {
         worker = await createOcrWorker(onProgress);
         for (const [k, n] of scanned.entries()) {
           onProgress({ stage: 'ocr', page: k + 1, pages: scanned.length });
-          const prepared = await renderPdfPage(await doc.getPage(n));
-          const r = await recognize(worker, prepared);
+          let r;
+          try {
+            const prepared = await renderPdfPage(await doc.getPage(n));
+            r = await recognize(worker, prepared);
+          } catch (err) {
+            if (err?.code === 'library_failed') throw err;
+            pageTexts[n - 1] = '';
+            failedPages.push({ page: n, code: err?.code ?? 'extract_failed' });
+            continue;
+          }
           pageTexts[n - 1] = r.text;
-          if (hasText(r.text) && r.quality === 'low') lowConfidence = true;
-          if (hasText(r.text)) uncertain.push(...r.uncertainAll);
+          if (!hasText(r.text)) { failedPages.push({ page: n, code: 'no_text_found' }); continue; }
+          if (r.quality === 'low') {
+            lowConfidence = true;
+            suspectPages.push({ page: n, reason: r.partial ? 'partial' : 'low_confidence' });
+          }
+          uncertain.push(...r.uncertainAll);
         }
       }
       const text = joinPages(pageTexts);
       if (!hasText(text)) throw new UploadError('no_text_found');
       const method = !scanned.length ? 'pdf-text' : scanned.length === doc.numPages ? 'ocr' : 'mixed';
-      return { text, kind: 'pdf', method, pages: doc.numPages, ocrPages: scanned.length, lowConfidence, uncertain: [...new Set(uncertain)].slice(0, 6), uncertainAll: [...new Set(uncertain)] };
+      return { text, kind: 'pdf', method, pages: doc.numPages, ocrPages: scanned.length, lowConfidence, uncertain: [...new Set(uncertain)].slice(0, 6), uncertainAll: [...new Set(uncertain)], failedPages, suspectPages };
     } finally {
       await task.destroy(); // 문서와 pdf.js worker 자원 해제
     }

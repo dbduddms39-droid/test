@@ -99,3 +99,12 @@ test('이미지별 결과를 사용자가 정한 순서대로 합치고 실패�
   assert.equal(out.lowConfidence, true);
   assert.equal(combineImageResults([{ ok: false, code: 'no_text_found' }]).okCount, 0);
 });
+
+test('일부만 인식된 이미지는 확인 목록에 partial로 남김 (S-03 일부 누락 의심 안내에 사용)', () => {
+  const out = combineImageResults([
+    { ok: true, text: '첫 장', confidence: 90, quality: 'good' },
+    { ok: true, text: '둘째 장 일부', confidence: 85, quality: 'low', partial: true, uncertain: [] },
+    { ok: true, text: '셋째 장', confidence: 40, quality: 'low', partial: false, uncertain: [] },
+  ]);
+  assert.deepEqual(out.review.map((r) => [r.index, r.quality, r.partial]), [[1, 'low', true], [2, 'low', false]]);
+});

@@ -4,6 +4,7 @@ import {
   TOPICS, NOTES, MAIN_STATUS, SUB_STATUS, CRITERIA_VERSION, criterionById, SOURCE_LINKS, APPLICABILITY_LINKS,
 } from './criteria.js';
 import { verifyCalc } from './verify.js';
+import { CORE_PATTERN } from './core-pattern.js';
 
 // 명시적 부정(negated)의 세부 상태. 부정 표현을 공통 규칙으로 일반화하지 않고 세부기준마다 정한다.
 // - 07-a(수습 없음)·10-a(연차 없음): 기준표 3-3의 허용 분기 → 확인됨 (06의 '기간 정함 없음'은 term_type으로 처리)
@@ -108,6 +109,47 @@ function touchesLowConfidence(id, e, lines, ranges) {
   return quoteRanges.some((r) => overlaps(r, ranges));
 }
 
+// 저신뢰 구간 주변 문맥: 그 줄 안에서 구간을 낱말 경계까지 넓히고 앞뒤 낱말을 하나씩 더한다.
+function rangeContexts(r, lines) {
+  const out = [];
+  const isSpace = (ch) => /\s/.test(ch);
+  for (const seg of lines) {
+    if (seg.end <= r.start || seg.start >= r.end) continue;
+    const t = seg.text;
+    const back = (i) => { while (i > 0 && !isSpace(t[i - 1])) i -= 1; return i; };
+    const fwd = (i) => { while (i < t.length && !isSpace(t[i])) i += 1; return i; };
+    let a = back(Math.max(r.start, seg.start) - seg.start);
+    let b = fwd(Math.min(r.end, seg.end) - seg.start);
+    while (a > 0 && isSpace(t[a - 1])) a -= 1;
+    while (b < t.length && isSpace(t[b])) b += 1;
+    out.push(t.slice(back(a), fwd(b)));
+  }
+  return out;
+}
+
+// OCR 처리 정책 1 (확정): 확인하지 않은 저신뢰 구간이 핵심(C) 판단에 영향을 줄 수 있으면 그 주제를 '분석 확인 불가'로 둔다.
+// 핵심 근거 인용과 겹치는 구간은 세부기준 단위(7-2, touchesLowConfidence)로 처리한다. 여기서는 그 밖의 구간
+// (추가(D) 근거에만 걸리거나 어떤 근거에도 인용되지 않은 구간)을 본다.
+// 구간 주변 문맥에 그 주제의 핵심 판단 표현(금액·시간·장소·수습 등)이 보이면 독립성이 입증되지 않은 것으로 보고,
+// 그 주제의 핵심 세부기준을 확정하지 않는다. 같은 줄에 있다는 것만으로는 영향이 있다고 보지 않는다(문자 구간 기준).
+// OCR이 숫자를 비슷한 모양의 글자로 읽은 경우(4,0O0만원, 1l:00)도 핵심 표현으로 볼 수 있게 숫자 옆의 글자를 숫자로 바꿔 본다
+const asDigits = (t) => t.replace(/(?<=\d)[Oo]|[Oo](?=\d)/g, '0').replace(/(?<=\d)[Il|]|[Il|](?=\d)/g, '1').replace(/(?<=\d)S|S(?=\d)/g, '5');
+
+function coreAffectedTopics(entries, lines, ranges) {
+  const affected = new Map();
+  if (!ranges.length) return affected;
+  for (const t of TOPICS) {
+    const cRanges = t.criteria.filter((c) => c.role === 'C')
+      .flatMap((c) => (entries[c.id] && !entries[c.id].unavailable && entries[c.id].finding !== 'absent' ? entries[c.id].quotes : []))
+      .map((q) => quoteRange(q, lines)).filter(Boolean);
+    for (const r of ranges) {
+      if (cRanges.some(([a, b]) => r.start < b && a < r.end)) continue;
+      if (rangeContexts(r, lines).some((ctx) => CORE_PATTERN[t.id].test(ctx) || CORE_PATTERN[t.id].test(asDigits(ctx)))) { affected.set(t.id, r); break; }
+    }
+  }
+  return affected;
+}
+
 const linksOf = (keys) => keys.map((k) => SOURCE_LINKS[k]);
 
 // entries: 32개 세부기준 → 추출값 또는 { unavailable }
@@ -118,6 +160,7 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
   const flags = employmentFlags(entries);
   const diagnostics = [];
   const crit = {};
+  const ocrCore = coreAffectedTopics(entries, lines, lowRanges);
 
   for (const t of TOPICS) {
     for (const c of t.criteria) {
@@ -147,6 +190,14 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
       const provisional = e.finding === 'negated' ? NEGATION_STATUS[c.id]?.provisional ?? null : null;
       if (provisional) diagnostics.push({ id: c.id, diag: `provisional_negation:${provisional}` });
       crit[c.id] = { status: ruled.status, evidence: e.quotes, sourceValue: e.sourceValue, valueKind, derived, finding: e.finding, termType: e.termType, provisional };
+    }
+    if (ocrCore.has(t.id)) {
+      diagnostics.push({ id: t.id, diag: 'ocr_low_confidence_core_context' });
+      for (const c of t.criteria) {
+        if (c.role === 'C' && crit[c.id].status !== 'UNAVAILABLE') {
+          crit[c.id] = { status: 'UNAVAILABLE', evidence: [], reason: 'ocr_low_confidence_related', finding: crit[c.id].finding };
+        }
+      }
     }
   }
 

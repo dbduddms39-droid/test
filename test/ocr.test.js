@@ -125,7 +125,7 @@ test('여러 장 합치기: 순서 유지, 확인이 필요한 이미지를 따�
     { ok: false, code: 'no_text_found' },
   ]);
   assert.equal(out.text, '첫 장\n\n둘째 장\n\n셋째 장');
-  assert.deepEqual(out.review, [{ index: 1, quality: 'check', uncertain: ['202712.31'] }, { index: 2, quality: 'low', uncertain: [] }]);
+  assert.deepEqual(out.review, [{ index: 1, quality: 'check', partial: false, uncertain: ['202712.31'] }, { index: 2, quality: 'low', partial: false, uncertain: [] }]);
   assert.equal(out.lowConfidence, true);
   assert.deepEqual(out.failed, [{ index: 3, code: 'no_text_found' }]);
   assert.deepEqual(out.uncertainAll, ['202712.31']);
