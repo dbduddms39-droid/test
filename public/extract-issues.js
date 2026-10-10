@@ -12,8 +12,8 @@
 // 추출 실패는 쪽마다 따로 관리한다. '직접 입력'은 그 쪽의 입력 칸에 공백이 아닌 내용을 넣었을 때만 인정하고
 // (추출 텍스트의 다른 쪽을 고치거나 공백만 바꾼 것은 인정하지 않음), 그 내용은 그 쪽 자리에 넣어 분석한다.
 // 글자를 찾지 못한 쪽은 사용자가 원본에서 빈 쪽임을 확인하면 분석 대상에서 뺀다(빈 쪽 자체에는 결과를 만들지 않음).
-// '직접 보완'(일부 누락 의심)은 추출 텍스트가 실제로 바뀌었을 때만 받는다. 텍스트를 처음 추출한 내용으로 되돌리면
-// 직접 입력·보완 표시는 다시 '확인 필요'가 된다. 직접 입력한 텍스트도 원본 전체를 빠짐없이 옮겼다는 보장으로 보지 않는다(resultNotes).
+// '직접 보완'(일부 누락 의심)도 같은 방식: 그 쪽의 보완 칸에 넣은 내용만 인정하고, 그 쪽 텍스트 끝에 넣어 분석한다.
+// 텍스트를 처음 추출한 내용으로 되돌리면 직접 입력·보완 내용과 표시는 다시 '확인 필요'가 된다. 직접 입력한 텍스트도 원본 전체를 빠짐없이 옮겼다는 보장으로 보지 않는다(resultNotes).
 
 import { diffRegion } from './ocr-spans.js';
 
@@ -27,8 +27,9 @@ const hasContent = (t) => /\S/.test(t ?? '');
 // 파일 손상·쪽 그리기 실패(원본 확인이 어려운 경우)에는 주지 않는다. 시스템이 빈 쪽이라고 정하지는 않는다.
 const BLANK_CHECKABLE = new Set(['no_text_found']);
 
-// failed: [{ index(0부터) 또는 page(1부터), code, anchor }], suspect: [{ index 또는 page, reason: 'partial'|'low_confidence' }]
-//   anchor: 그 쪽 내용이 들어갈 추출 텍스트 위치 (앞쪽 텍스트 끝). 사용자가 직접 입력한 내용은 이 위치에 넣어 분석한다.
+// failed: [{ index(0부터) 또는 page(1부터), code, anchor }], suspect: [{ index 또는 page, reason: 'partial'|'low_confidence', anchor }]
+//   anchor: 사용자가 그 쪽에 대해 직접 입력·보완한 내용을 넣을 추출 텍스트 위치.
+//   추출 실패한 쪽은 앞쪽 텍스트 끝(그 쪽 자리), 일부 누락 의심 쪽은 그 쪽 텍스트 끝.
 // unit: 'image' | 'pdf', previewed(position): 그 쪽의 원본 미리보기가 있는가
 export function buildIssues({ failed = [], suspect = [], unit = 'image', previewed = () => true } = {}) {
   const label = (x) => (unit === 'pdf' ? `PDF ${x.page}쪽` : `${x.index + 1}번째 이미지`);
@@ -43,45 +44,49 @@ export function buildIssues({ failed = [], suspect = [], unit = 'image', preview
         anchor, originalAnchor: anchor, supplement: '', resolution: null,
       };
     }),
-    ...suspect.map((x) => ({ id: `suspect-${where(x)}`, kind: 'suspect', unit, label: label(x), position: where(x), reason: x.reason ?? 'low_confidence', resolution: null })),
+    ...suspect.map((x) => {
+      const anchor = Number.isInteger(x.anchor) ? x.anchor : null;
+      return {
+        id: `suspect-${where(x)}`, kind: 'suspect', unit, label: label(x), position: where(x), reason: x.reason ?? 'low_confidence',
+        anchor, originalAnchor: anchor, supplement: '', resolution: null,
+      };
+    }),
   ];
 }
 
 // 사용자가 문제 하나를 처리했다고 표시한다. 조건이 맞지 않으면 거부한다.
 // - manual_input(추출 실패): 그 쪽의 '직접 입력' 칸에 공백이 아닌 내용이 있어야 한다. 추출 텍스트의 다른 곳을 고친 것은 인정하지 않는다.
 // - blank_confirmed(추출 실패): 글자를 찾지 못한 쪽이고 원본 미리보기가 있을 때만.
-// - supplemented(일부 누락 의심): 추출 텍스트가 처음 추출한 내용과 달라야 한다.
-export function resolveIssue(issues, id, resolution, { textEdited = false } = {}) {
+// - supplemented(일부 누락 의심): 그 쪽의 '빠진 내용 직접 보완' 칸에 공백이 아닌 내용이 있어야 한다 (다른 쪽 수정은 인정하지 않음).
+export function resolveIssue(issues, id, resolution) {
   const issue = issues.find((x) => x.id === id);
   if (!issue) return { ok: false, code: 'unknown_issue', issues };
   if (!RESOLUTIONS[issue.kind].includes(resolution)) return { ok: false, code: 'resolution_not_allowed', issues };
   if (resolution === 'manual_input' && !hasContent(issue.supplement)) return { ok: false, code: 'no_page_input', issues };
   if (resolution === 'blank_confirmed' && !issue.canConfirmBlank) return { ok: false, code: 'blank_not_checkable', issues };
-  if (resolution === 'supplemented' && !textEdited) return { ok: false, code: 'text_not_edited', issues };
+  if (resolution === 'supplemented' && !hasContent(issue.supplement)) return { ok: false, code: 'no_page_input', issues };
   return { ok: true, issues: issues.map((x) => (x.id === id ? { ...x, resolution } : x)) };
 }
 
-// 추출 실패한 쪽의 '직접 입력' 칸 내용을 바꾼다 (표시는 그대로 두고, 처리 여부는 isResolved가 내용으로 다시 판단)
+// 그 쪽의 직접 입력·보완 칸 내용을 바꾼다 (표시는 그대로 두고, 처리 여부는 isResolved가 내용으로 다시 판단)
 export function setSupplement(issues, id, text) {
-  return issues.map((x) => (x.id === id && x.kind === 'failed' ? { ...x, supplement: String(text ?? '') } : x));
+  return issues.map((x) => (x.id === id ? { ...x, supplement: String(text ?? '') } : x));
 }
 
 export function unresolve(issues, id) {
   return issues.map((x) => (x.id === id ? { ...x, resolution: null } : x));
 }
 
-// 지금 상태로 처리된 문제인가. 직접 입력 표시는 그 쪽 입력 칸에 내용이 남아 있을 때만,
-// 직접 보완 표시는 추출 텍스트가 처음 추출한 내용과 다를 때만 유효하다.
-export function isResolved(issue, { textEdited = false } = {}) {
+// 지금 상태로 처리된 문제인가. 직접 입력·보완 표시는 그 쪽 칸에 공백이 아닌 내용이 남아 있을 때만 유효하다.
+export function isResolved(issue) {
   if (!issue.resolution) return false;
-  if (issue.resolution === 'manual_input') return hasContent(issue.supplement);
-  if (issue.resolution === 'supplemented') return textEdited;
+  if (issue.resolution === 'manual_input' || issue.resolution === 'supplemented') return hasContent(issue.supplement);
   return true;
 }
 
 // 분석을 막는 문제 목록 (비어 있어야 분석할 수 있음)
-export function blockingIssues(issues, opts = {}) {
-  return issues.filter((x) => !isResolved(x, opts));
+export function blockingIssues(issues) {
+  return issues.filter((x) => !isResolved(x));
 }
 
 // 처음 추출한 내용으로 되돌리면 직접 입력·보완한 내용과 표시를 지운다
@@ -89,7 +94,7 @@ export function blockingIssues(issues, opts = {}) {
 export function resetTextDependent(issues) {
   return issues.map((x) => {
     const reset = x.resolution === 'manual_input' || x.resolution === 'supplemented' ? { ...x, resolution: null } : x;
-    return x.kind === 'failed' ? { ...reset, supplement: '', anchor: x.originalAnchor } : reset;
+    return { ...reset, supplement: '', anchor: x.originalAnchor };
   });
 }
 
@@ -100,7 +105,7 @@ export function shiftAnchors(issues, before, after) {
   const { start: cs, oldEnd: ce, newEnd: ne } = diffRegion(before, after);
   const delta = ne - ce;
   return issues.map((x) => {
-    if (x.kind !== 'failed' || x.anchor == null) return x;
+    if (x.anchor == null) return x;
     const a = x.anchor < cs ? x.anchor : x.anchor >= ce ? x.anchor + delta : cs;
     return a === x.anchor ? x : { ...x, anchor: a };
   });
@@ -111,7 +116,7 @@ export function shiftAnchors(issues, before, after) {
 // 반환: { text, ranges, inserted: [{ id, start, end }] }
 export function assembleText(mainText, issues, ranges = []) {
   const inserts = issues
-    .filter((x) => x.kind === 'failed' && x.resolution === 'manual_input' && hasContent(x.supplement))
+    .filter((x) => (x.resolution === 'manual_input' || x.resolution === 'supplemented') && hasContent(x.supplement))
     .map((x) => ({ id: x.id, position: x.position, at: Math.min(Math.max(x.anchor ?? mainText.length, 0), mainText.length), body: x.supplement.trim() }))
     .sort((a, b) => a.at - b.at || a.position - b.position);
   let text = '';

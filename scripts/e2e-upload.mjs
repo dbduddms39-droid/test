@@ -395,8 +395,21 @@ try {
     const beforeGate = analyzeCount();
     await page.click('#review-submit', { force: true }).catch(() => {});
     check(`[${label}] 확인 전에는 분석 버튼으로 진행되지 않음`, (await page.isDisabled('#review-submit')) && analyzeCount() === beforeGate);
-    await page.click('#extract-issues-list .issue-item.is-suspect [data-issue-resolve=supplemented]');
-    check(`[${label}] 텍스트를 고치지 않으면 '직접 보완했어요' 거부`, await page.isVisible('#extract-issues-list .issue-error') && await page.isDisabled('#review-submit'));
+    // '빠진 내용 직접 보완'은 그 쪽의 보완 칸에 넣은 내용만 인정 (다른 이미지 텍스트 수정·공백은 불인정)
+    const sid = suspects.find((x) => x.title.includes('2번째 이미지')).id;
+    const firstLine = extracted.split('\n')[0];
+    await page.fill('#review-text', extracted.replace(firstLine, `${firstLine} (가상 확인)`)); // 1번째 이미지 텍스트만 수정
+    await page.click(`#extract-issues-list [data-issue-id="${sid}"] [data-issue-resolve=supplemented]`);
+    check(`[${label}] 다른 이미지 텍스트만 고치면 '직접 보완했어요' 거부`, await page.isVisible(`#extract-issues-list [data-issue-id="${sid}"] .issue-error`) && await page.isDisabled('#review-submit'));
+    await page.fill(`#extract-issues-list [data-issue-input="${sid}"]`, '  \n ');
+    await page.click(`#extract-issues-list [data-issue-id="${sid}"] [data-issue-resolve=supplemented]`);
+    check(`[${label}] 공백만 넣으면 거부`, await page.isVisible(`#extract-issues-list [data-issue-id="${sid}"] .issue-error`));
+    await page.fill(`#extract-issues-list [data-issue-input="${sid}"]`, '복리후생: 4대 보험 (가상 보완)');
+    await page.click(`#extract-issues-list [data-issue-id="${sid}"] [data-issue-resolve=supplemented]`);
+    const afterSupp = await issueList();
+    check(`[${label}] 그 이미지 보완 칸에 넣으면 그 이미지만 처리`, afterSupp.find((x) => x.id === sid).resolved && afterSupp.filter((x) => x.id !== sid).every((x) => !x.resolved), `${afterSupp.length}건`);
+    await page.click(`#extract-issues-list [data-issue-id="${sid}"] [data-issue-action=undo]`);
+    await page.click('#review-restore'); // 수정·보완 내용을 지우고 처음 추출한 내용으로 (이후 단계는 원래 텍스트 기준)
     for (const x of suspects) await page.click(`#extract-issues-list [data-issue-id="${x.id}"] [data-issue-resolve=range_checked]`);
     check(`[${label}] 원본과 비교해 범위를 확인했다고 표시하면 분석 가능`, !(await page.isDisabled('#review-submit')) && (await issueList()).every((x) => x.resolved));
     const submitAndCapture = async () => {

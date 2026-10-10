@@ -97,6 +97,17 @@ export function pageAnchors(pageTexts) {
   });
 }
 
+// joinPages로 합친 텍스트에서 각 쪽 텍스트가 끝나는 위치 (글자가 없는 쪽은 null). 일부 누락 의심 쪽의 보완 내용을 넣을 곳.
+export function pageEndAnchors(pageTexts) {
+  let offset = 0;
+  return pageTexts.map((raw) => {
+    const t = tidyText(raw ?? '');
+    if (!t) return null;
+    offset += (offset > 0 ? 2 : 0) + t.length;
+    return offset;
+  });
+}
+
 export function hasText(text) {
   return countChars(text) > 0;
 }
@@ -156,7 +167,7 @@ export function reviewOcr({ words = [], confidence = 0, lines = 0, inkLines = 0 
 // 이미지별 OCR 결과를 사용자가 정한 순서대로 하나의 문서로 합친다.
 // results: [{ ok: true, text, confidence, quality, uncertain } | { ok: false, code }] (목록 순서)
 // failed: 읽지 못한 이미지 [{ index, code, anchor(합친 텍스트에서 그 이미지 내용이 들어갈 위치) }]
-// review: 확인이 필요한 이미지 [{ index, quality, partial, uncertain }] (quality 'low'는 S-03에서 일부 누락 의심으로 다룬다)
+// review: 확인이 필요한 이미지 [{ index, quality, partial, uncertain, anchor(그 이미지 텍스트 끝) }] (quality 'low'는 S-03에서 일부 누락 의심으로 다룬다)
 export function combineImageResults(results) {
   const okTexts = [];
   const failed = [];
@@ -172,8 +183,11 @@ export function combineImageResults(results) {
       failed.push({ index, code: r.ok ? 'no_text_found' : r.code });
     }
   });
-  const anchors = pageAnchors(results.map((r) => (r.ok && hasText(r.text) ? r.text : '')));
+  const kept = results.map((r) => (r.ok && hasText(r.text) ? r.text : ''));
+  const anchors = pageAnchors(kept);
+  const ends = pageEndAnchors(kept);
   for (const f of failed) f.anchor = anchors[f.index];
+  for (const r of review) r.anchor = ends[r.index];
   return {
     text: joinPages(okTexts),
     okCount: okTexts.length,

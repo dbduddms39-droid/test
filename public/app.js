@@ -338,7 +338,7 @@ extractBtn.addEventListener('click', async () => {
     const previews = images.map((img) => ({ url: img.url, name: img.file.name }));
     const issues = buildIssues({
       failed: out.failed,
-      suspect: out.review.filter((r) => r.quality === 'low').map((r) => ({ index: r.index, reason: r.partial ? 'partial' : 'low_confidence' })),
+      suspect: out.review.filter((r) => r.quality === 'low').map((r) => ({ index: r.index, reason: r.partial ? 'partial' : 'low_confidence', anchor: r.anchor })),
       unit: 'image',
     });
     if (!applyExtracted(out.text, 'ocr', previews, [], out.uncertainAll ?? [], issues)) return showUploadStatus('확인·수정하던 추출 텍스트를 그대로 두었어요. 새로 추출한 텍스트로 바꾸려면 다시 추출해 주세요.', 'warn');
@@ -391,8 +391,7 @@ function updateReviewState() {
   if (unlocated.length) blockedMsg.push(`위치를 찾을 수 없는 불확실한 글자 ${unlocated.length}곳이 있어요. 어느 조건에 영향을 주는지 알 수 없어, '확인이 필요한 글자'에서 원본과 대조해 확인하기 전에는 분석할 수 없어요.`);
   showMsg($('#review-blocked'), blockedMsg.join(' '));
 }
-function textEdited() { return Boolean(state.file) && reviewText.value !== state.file.original; }
-function reviewBlocking() { return state.file ? blockingIssues(state.file.issues ?? [], { textEdited: textEdited() }) : []; }
+function reviewBlocking() { return state.file ? blockingIssues(state.file.issues ?? []) : []; }
 // 텍스트가 바뀔 때마다 저신뢰 구간의 위치·상태를 갱신한다
 function trackReviewText() {
   if (!state.file) return;
@@ -465,7 +464,6 @@ const ISSUE_STATE_TEXT = {
   blank_confirmed: '원본에서 빈 쪽임을 확인함 (분석에서 제외)',
 };
 const ISSUE_REFUSED_TEXT = {
-  text_not_edited: '추출 텍스트가 처음 추출한 내용 그대로예요. 원본을 보고 내용을 직접 입력·보완한 뒤 눌러 주세요.',
   no_page_input: '이 쪽의 입력 칸에 원본 내용을 입력한 뒤 눌러 주세요. 추출 텍스트의 다른 부분을 고치거나 공백만 넣은 것으로는 처리되지 않아요.',
   blank_not_checkable: '원본을 확인하기 어려운 경우라 빈 쪽으로 표시할 수 없어요.',
 };
@@ -476,21 +474,22 @@ const FAIL_CAUSE_TEXT = {
 let issueError = null; // { id, code }
 
 function issueItem(x) {
-  const resolved = isResolved(x, { textEdited: textEdited() });
+  const resolved = isResolved(x);
   const failed = x.kind === 'failed';
   const unitName = x.unit === 'pdf' ? '쪽' : '이미지';
   const blankName = x.unit === 'pdf' ? '페이지' : '이미지';
   const title = failed ? `${x.label}: ${FAIL_CAUSE_TEXT[x.code] ?? '글자를 읽지 못했어요'}` : `${x.label}: 일부가 빠졌을 수 있어요`;
   const desc = failed
     ? `이 ${unitName}의 내용은 지금 추출 텍스트에 없어요. 그대로는 분석할 수 없어요. ${x.unit === 'pdf' ? '파일을 다시 올려 추출하거나' : '더 선명한 이미지로 바꿔 다시 추출하거나'}, 원본을 보고 이 ${unitName}의 내용을 아래 칸에 직접 입력해 주세요. 추출 텍스트의 다른 부분을 고친 것으로는 복구한 것으로 보지 않아요.`
-    : `${ISSUE_REASON_TEXT[x.reason] ?? ''} 자동으로 추정한 것이라 실제로 빠졌는지는 확정할 수 없어요. 원본과 추출 텍스트를 비교해 주세요.`;
+    : `${ISSUE_REASON_TEXT[x.reason] ?? ''} 자동으로 추정한 것이라 실제로 빠졌는지는 확정할 수 없어요. 원본과 추출 텍스트를 비교해, 빠진 내용이 있으면 아래 칸에 보완해 주세요. 추출 텍스트의 다른 부분을 고친 것으로는 보완한 것으로 보지 않아요.`;
   const actions = [];
   let input = null;
   let blankNote = null;
-  if (failed && x.resolution !== 'blank_confirmed') {
+  // 쪽별 직접 입력(추출 실패)·직접 보완(일부 누락 의심) 칸. 원본과 비교해 범위만 확인했다면 칸은 쓰지 않아도 된다.
+  if (x.resolution !== 'blank_confirmed' && x.resolution !== 'range_checked') {
     const inputId = `issue-input-${x.id}`;
     input = el('div', { class: 'issue-input' },
-      el('label', { for: inputId }, `${x.label} 내용 직접 입력`),
+      el('label', { for: inputId }, failed ? `${x.label} 내용 직접 입력` : `${x.label}에서 빠진 내용 직접 보완`),
       el('textarea', { id: inputId, rows: '4', maxlength: '20000', 'data-issue-input': x.id }));
     input.querySelector('textarea').value = x.supplement ?? '';
   }
@@ -542,7 +541,7 @@ $('#extract-issues-list').addEventListener('click', (e) => {
   const action = e.target.closest('[data-issue-action]')?.dataset.issueAction;
   issueError = null;
   if (resolveBtn) {
-    const r = resolveIssue(state.file.issues, id, resolveBtn.dataset.issueResolve, { textEdited: textEdited() });
+    const r = resolveIssue(state.file.issues, id, resolveBtn.dataset.issueResolve);
     if (r.ok) state.file.issues = r.issues;
     else issueError = { id, code: r.code };
   } else if (action === 'undo') {
@@ -569,7 +568,7 @@ $('#extract-issues-list').addEventListener('input', (e) => {
   const issue = state.file.issues.find((x) => x.id === id);
   const item = e.target.closest('[data-issue-id]');
   if (issue.resolution && item) {
-    const resolved = isResolved(issue, { textEdited: textEdited() });
+    const resolved = isResolved(issue);
     item.classList.toggle('is-resolved', resolved);
     item.querySelector('.issue-kind').textContent = resolved ? '처리함' : '처리 필요 (입력 칸이 비었어요)';
   }

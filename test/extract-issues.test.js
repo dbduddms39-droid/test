@@ -6,7 +6,7 @@ import {
   buildIssues, resolveIssue, unresolve, blockingIssues, resetTextDependent, resultNotes, isResolved,
   setSupplement, shiftAnchors, assembleText,
 } from '../public/extract-issues.js';
-import { pageAnchors, joinPages } from '../public/upload-rules.js';
+import { pageAnchors, pageEndAnchors, joinPages } from '../public/upload-rules.js';
 
 const issues = () => buildIssues({
   failed: [{ index: 1, code: 'no_text_found', anchor: 3 }],
@@ -39,16 +39,16 @@ test('빈 쪽 위치: 합친 텍스트에서 앞쪽 텍스트가 끝나는 곳 (
 
 test('문제가 하나라도 처리되지 않으면 분석을 막는다 (분석 버튼은 어떤 문제도 처리하지 않음)', () => {
   const list = issues();
-  assert.equal(blockingIssues(list, { textEdited: true }).length, 2);
-  assert.ok(list.every((x) => !isResolved(x, { textEdited: true })));
+  assert.equal(blockingIssues(list, {}).length, 2);
+  assert.ok(list.every((x) => !isResolved(x, {})));
 });
 
 test('3쪽 PDF에서 2쪽 추출 실패 후 1쪽만 수정: 2쪽 복구로 인정하지 않음 (텍스트 수정·공백만 입력도 불인정)', () => {
   const { text, issues: list } = pdf3();
   const edited = text.replace('250', '260'); // 1쪽만 고침
   const moved = shiftAnchors(list, text, edited);
-  assert.equal(resolveIssue(moved, 'failed-2', 'manual_input', { textEdited: true }).code, 'no_page_input');
-  assert.equal(blockingIssues(moved, { textEdited: true }).length, 1);
+  assert.equal(resolveIssue(moved, 'failed-2', 'manual_input', {}).code, 'no_page_input');
+  assert.equal(blockingIssues(moved, {}).length, 1);
   assert.equal(manual(moved, 'failed-2', '   \n  ').code, 'no_page_input', '공백만으로는 복구되지 않음');
   assert.equal(resolveIssue(moved, 'failed-2', 'range_checked').code, 'resolution_not_allowed');
   const ok = manual(moved, 'failed-2', '2쪽: 근무시간 09:00~18:00');
@@ -114,15 +114,54 @@ test('문서 전체가 비면(나머지 텍스트를 모두 지우고 실패한 
   assert.equal(assembleText('   ', list).text.trim(), '');
 });
 
-test('일부 누락 의심: 직접 보완(텍스트 수정 필요) 또는 원본과 비교해 범위 확인을 명시적으로 표시해야 처리', () => {
+test('일부 누락 의심: 그 쪽 보완 칸에 넣은 내용 또는 원본과 비교한 범위 확인만 인정', () => {
   const list = issues();
-  assert.equal(resolveIssue(list, 'suspect-3', 'supplemented', { textEdited: false }).code, 'text_not_edited');
-  assert.equal(resolveIssue(list, 'suspect-3', 'manual_input', { textEdited: true }).code, 'resolution_not_allowed');
+  assert.equal(resolveIssue(list, 'suspect-3', 'supplemented').code, 'no_page_input');
+  assert.equal(resolveIssue(list, 'suspect-3', 'manual_input').code, 'resolution_not_allowed');
   assert.equal(resolveIssue(list, 'suspect-3', 'blank_confirmed').code, 'resolution_not_allowed');
-  const checked = resolveIssue(list, 'suspect-3', 'range_checked', { textEdited: false });
-  assert.equal(checked.ok, true);
-  assert.equal(isResolved(checked.issues.find((x) => x.id === 'suspect-3'), { textEdited: false }), true);
+  const checked = resolveIssue(list, 'suspect-3', 'range_checked');
+  assert.equal(checked.ok, true, '범위 확인 경로는 유지 (보완 칸을 쓰지 않아도 됨)');
+  assert.equal(isResolved(checked.issues.find((x) => x.id === 'suspect-3')), true);
   assert.equal(resolveIssue(list, 'nope', 'range_checked').code, 'unknown_issue');
+});
+
+// 3쪽 PDF에서 2쪽 일부 누락 의심: 2쪽 텍스트 끝이 보완 내용을 넣을 자리
+const S1 = '1쪽: 임금 월 250만원';
+const S2 = '2쪽: 근로시간 09:00~18:00';
+const S3 = '3쪽: 연차 15일';
+const suspect3 = () => {
+  const pages = [S1, S2, S3];
+  const ends = pageEndAnchors(pages);
+  return { text: joinPages(pages), issues: buildIssues({ suspect: [{ page: 2, reason: 'partial', anchor: ends[1] }, { page: 3, reason: 'low_confidence', anchor: ends[2] }], unit: 'pdf' }) };
+};
+
+test('일부 누락 의심: 다른 쪽(1쪽)만 고치거나 공백만 넣으면 2쪽 보완으로 보지 않음', () => {
+  const { text, issues: list } = suspect3();
+  const edited = text.replace('250', '260'); // 1쪽만 고침
+  const moved = shiftAnchors(list, text, edited);
+  assert.equal(resolveIssue(moved, 'suspect-2', 'supplemented').code, 'no_page_input');
+  assert.equal(resolveIssue(setSupplement(moved, 'suspect-2', ' \n\t'), 'suspect-2', 'supplemented').code, 'no_page_input', '공백만으로는 보완 아님');
+  assert.equal(blockingIssues(moved).length, 2);
+  const ok = resolveIssue(setSupplement(moved, 'suspect-2', '휴게: 12:00~13:00'), 'suspect-2', 'supplemented');
+  assert.equal(ok.ok, true);
+  assert.equal(blockingIssues(setSupplement(ok.issues, 'suspect-2', '   ')).length, 2, '보완 칸을 비우면 다시 처리 필요');
+});
+
+test('일부 누락 의심: 여러 쪽 중 한 쪽만 처리하면 아직 분석 불가, 보완 내용은 그 쪽 텍스트 끝에 넣음', () => {
+  const { text, issues: list } = suspect3();
+  let r = resolveIssue(setSupplement(list, 'suspect-2', '휴게: 12:00~13:00'), 'suspect-2', 'supplemented').issues;
+  assert.deepEqual(blockingIssues(r).map((x) => x.id), ['suspect-3']);
+  assert.equal(resolveIssue(r, 'suspect-3', 'supplemented').code, 'no_page_input', '2쪽에 넣은 보완 내용으로 3쪽이 처리되지 않음');
+  r = resolveIssue(r, 'suspect-3', 'range_checked').issues;
+  assert.equal(blockingIssues(r).length, 0);
+  const at = text.indexOf('15일');
+  const out = assembleText(text, r, [{ start: at, end: at + 3 }]);
+  assert.equal(out.text, `${S1}\n\n${S2}\n\n휴게: 12:00~13:00\n\n${S3}`);
+  assert.equal(out.text.slice(out.ranges[0].start, out.ranges[0].end), '15일');
+  // 2쪽 끝에 사용자가 글자를 이어 쓰면 보완 내용은 그 뒤로
+  const typed = text.replace(S2, `${S2} (주 5일)`);
+  const out2 = assembleText(typed, shiftAnchors(r, text, typed));
+  assert.equal(out2.text, `${S1}\n\n${S2} (주 5일)\n\n휴게: 12:00~13:00\n\n${S3}`);
 });
 
 test('처음 추출한 내용으로 되돌리면 직접 입력한 내용·표시와 위치를 되돌림 (범위 확인·빈 쪽 확인 표시는 유지)', () => {
@@ -150,7 +189,7 @@ test('위치 옮기기: 바뀐 범위 앞은 그대로, 그 자리에 글자를 
 test('결과 안내: 직접 입력·보완한 텍스트를 원본 전체 확보로 표현하지 않고, 누락을 확정된 사실로 쓰지 않음', () => {
   let list = buildIssues({ failed: [{ page: 2 }], suspect: [{ page: 3 }, { page: 4 }], unit: 'pdf' });
   list = manual(list, 'failed-2', '직접 입력').issues;
-  list = resolveIssue(list, 'suspect-3', 'supplemented', { textEdited: true }).issues;
+  list = resolveIssue(setSupplement(list, 'suspect-3', '보완'), 'suspect-3', 'supplemented').issues;
   list = resolveIssue(list, 'suspect-4', 'range_checked').issues;
   const notes = resultNotes(list);
   assert.equal(notes.length, 3);
