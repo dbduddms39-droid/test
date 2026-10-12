@@ -81,7 +81,7 @@ try {
   await page.fill('#doc-text', '   \n  ');
   check('공백만 있으면 분석 버튼 비활성', await page.isDisabled('#submit-btn'));
   await page.fill('#doc-text', '급여 300만원');
-  check('짧은 입력도 분석 버튼 활성 + 한계 안내', !(await page.isDisabled('#submit-btn')) && (await page.textContent('#submit-hint')).includes('관련 내용 찾지 못함'));
+  check('짧은 입력도 분석 버튼 활성 + 한계 안내', !(await page.isDisabled('#submit-btn')) && (await page.textContent('#submit-hint')).includes('문서에서 확인되지 않음'));
   await page.fill('#doc-text', sample.text);
   // 탭을 오가도 입력한 텍스트 유지
   await page.click('#tab-upload');

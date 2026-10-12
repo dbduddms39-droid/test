@@ -110,7 +110,7 @@ try {
     await page.goto(`${BASE}/#/input`);
     await page.reload();
     await page.waitForSelector('#view-input:not([hidden])');
-    await page.check(`input[name=docType][value=${docType}]`);
+    void docType; // 단독 확인은 근로계약서만이라 문서 유형을 고르지 않는다 (파일 내용과 무관하게 근로계약서로 분석)
     if (prefill) await page.fill('#doc-text', prefill);
     await page.click('#tab-upload');
     dialogAnswer = 'accept';
@@ -157,7 +157,7 @@ try {
     // 요청에는 문서 유형·확인한 텍스트, 그리고 (있다면) 확인되지 않은 OCR 저신뢰 구간의 위치만 들어간다
     const keysOk = Object.keys(body).every((k) => ['docType', 'text', 'lowConfidence'].includes(k));
     const rangesOk = !body.lowConfidence || body.lowConfidence.every((r) => Object.keys(r).length === 2 && r.start >= 0 && r.end > r.start && r.end <= edited.length);
-    check(`[${label}] 확인·수정한 텍스트만 분석 요청에 전달 (저신뢰 구간은 위치만)`, body.text === edited && body.docType === docType && keysOk && rangesOk, `저신뢰 구간 ${body.lowConfidence?.length ?? 0}개`);
+    check(`[${label}] 확인·수정한 텍스트만 분석 요청에 전달 (저신뢰 구간은 위치만)`, body.text === edited && body.docType === 'contract' && keysOk && rangesOk, `저신뢰 구간 ${body.lowConfidence?.length ?? 0}개`);
     const shownTopics = data.topics?.filter((t) => t.visible) ?? [];
     check(`[${label}] 분석 결과 (점검 기준 v2.2, 9개 또는 10개 주제)`, res.status() === 200 && data.version === 'v2.2' && data.topics?.length === 10 && [9, 10].includes(shownTopics.length) && (!REQUIRE_AI || data.mode === 'gemini'),
       `HTTP ${res.status()}${data.code ? ` ${data.code}` : ''}, mode=${data.mode}, 표시 ${shownTopics.length}개, 분석 확인 불가 ${shownTopics.filter((t) => t.status === 'MAIN_UNAVAILABLE').length}개`);

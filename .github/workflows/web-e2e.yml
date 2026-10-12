@@ -89,6 +89,10 @@ jobs:
         if: always()
         run: node scripts/e2e-screens.mjs
 
+      - name: Compare, contract check and question copy (local demo server, no API calls)
+        if: always()
+        run: node scripts/e2e-compare.mjs
+
       - name: OCR accuracy benchmark (fictional images, browser only, no API calls)
         if: always()
         env:

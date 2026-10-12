@@ -50,12 +50,13 @@ try {
     await p.route('**/api/analyze', async (route) => {
       const body = JSON.parse(route.request().postData());
       if (f.lowConfidence) body.lowConfidence = rangesOf(body.text, f.lowConfidence);
+      // 화면에서는 근로계약서만 단독 확인한다. 결과 화면 표시 확인용으로 픽스처의 문서 유형(채용공고·오퍼 포함)을 그대로 보낸다
+      body.docType = f.docType;
       const res = await route.fetch({ postData: JSON.stringify(body) });
       data = await res.json();
       await route.fulfill({ response: res });
     });
     await p.goto(`${BASE}/#/input`);
-    await p.check(`input[name=docType][value=${f.docType}]`);
     await p.fill('#doc-text', f.text);
     await p.click('#submit-btn');
     await p.waitForSelector('#view-result:not([hidden])');

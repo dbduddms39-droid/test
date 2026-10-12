@@ -32,7 +32,6 @@ try {
     await page.goto(BASE);
     await view('landing'); await shot('S01'); await noOverflow('S-01');
     await page.click('#landing-start'); await view('input');
-    await page.check('input[name=docType][value=offer]');
     await page.click('#example-btn'); await shot('S02');
     await noOverflow('S-02');
     let release; const gate = new Promise((r) => { release = r; });
@@ -80,7 +79,6 @@ try {
 
     // B) 사진 업로드 → S-03 → 분석
     await page.goto(`${BASE}/#/input`); await view('input');
-    await page.check('input[name=docType][value=job_posting]');
     await page.click('#tab-upload');
     await page.setInputFiles('#file-input', 'test/fixtures/upload/posting-ko.png');
     await page.click('#extract-btn');

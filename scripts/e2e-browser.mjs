@@ -1,4 +1,4 @@
-// 실제 브라우저로 사용자 흐름을 확인한다: S-01 → 문서 유형 선택 → 가상 채용공고 붙여넣기 → 분석 시작
+// 실제 브라우저로 사용자 흐름을 확인한다: S-01 → 근로계약서 확인하기 → 가상 근로계약서 붙여넣기 → 분석 시작
 // → 결과(점검 기준 v2.2: 9개 또는 10개 주제) 표시 → 세부기준별 원문 근거 확인 → '담당자에게 이렇게 물어보세요' 질문 복사.
 // 키 노출 여부도 함께 검사한다.
 //   DEMO_MODE=true node scripts/e2e-browser.mjs          (키 없이 흐름만 확인, 데모 결과)
@@ -17,9 +17,9 @@ const BASE = REMOTE ?? `http://127.0.0.1:${PORT}`;
 const OUT = 'e2e-artifacts';
 const REQUIRE_AI = process.env.E2E_REQUIRE_AI === 'true';
 const KEY = process.env.GEMINI_API_KEY || '';
-const sample = FIXTURES.find((f) => f.key === 'F02'); // 미확정 표현이 많은 가상 채용공고
+const sample = FIXTURES.find((f) => f.key === 'F03'); // 가상 기간제·단시간 근로계약서 (단독 확인은 근로계약서만)
 const UNIQUE_PHRASE = '라이트랩'; // 원문이 서버 로그에 남는지 확인용 (가상 문서의 일부)
-const missing = FIXTURES.find((f) => f.key === 'F04'); // 부정 표현·미정 항목이 있는 가상 오퍼
+const missing = FIXTURES.find((f) => f.key === 'F10'); // 근무 일정의 부정문·휴가 미부여가 있는 가상 근로계약서
 const ASK_STATUSES = ['MAIN_PARTIAL', 'MAIN_MISSING'];
 
 const checks = [];
@@ -64,13 +64,12 @@ try {
   check('S-01 → S-02 이동', page.url().endsWith('#/input'));
   await page.screenshot({ path: `${OUT}/01-input.png`, fullPage: true });
 
-  // 1) 문서 유형 선택
-  await page.check('input[name=docType][value=job_posting]');
-  check('문서 유형 선택 (채용공고)', await page.isChecked('input[value=job_posting]'));
+  // 1) 근로계약서 확인하기: 문서 유형을 고르지 않는다 (단독 확인은 근로계약서만)
+  check('근로계약서 확인하기: 문서 유형 선택 없음', !(await page.isVisible('input[name=docType]')) && (await page.textContent('#input-title')).includes('근로계약서'));
 
-  // 2) 가상 채용공고 붙여넣기
+  // 2) 가상 근로계약서 붙여넣기
   await page.fill('#doc-text', sample.text);
-  check('가상 채용공고 입력', (await page.inputValue('#doc-text')) === sample.text, `${sample.text.length}자`);
+  check('가상 근로계약서 입력', (await page.inputValue('#doc-text')) === sample.text, `${sample.text.length}자`);
 
   // 3) 분석 시작
   const responsePromise = page.waitForResponse((r) => r.url().endsWith('/api/analyze'), { timeout: 150_000 });
@@ -92,7 +91,9 @@ try {
   const rows = await page.$$eval('.item-row', (els) => els.map((e) => ({
     label: e.querySelector('.item-label').textContent, status: e.querySelector('.badge').textContent,
   })));
-  const rowsMatch = rows.length === visible.length && rows.every((r, k) => r.label === visible[k].label && r.status === visible[k].statusLabel);
+  // 근로계약서 확인 화면의 상위 상태 라벨 (판정 코드는 v2.2 그대로, 화면 라벨만 서비스 기획에 맞춤)
+  const SHOWN_LABEL = { MAIN_FOUND: '기재됨', MAIN_PARTIAL: '내용이 모호함', MAIN_MISSING: '문서에서 확인되지 않음', MAIN_UNAVAILABLE: '분석 확인 불가' };
+  const rowsMatch = rows.length === visible.length && rows.every((r, k) => r.label === visible[k].label && r.status === SHOWN_LABEL[visible[k].status]);
   check('화면 항목 = 표시 대상 항목', rowsMatch, `표시 ${rows.length}개`);
   check('화면에 점검한 항목 수 표시', (await page.textContent('#result-count')) === `점검한 항목 ${visible.length}개`);
   for (const t of data.topics) console.log(`      ${t.visible ? '표시' : '숨김'}  ${t.id} ${t.label}: ${t.statusLabel ?? '-'}`);
@@ -139,16 +140,15 @@ try {
     await page.waitForSelector('#view-result:not([hidden])');
   }
 
-  // 6) 부정 표현·미정 항목이 있는 가상 오퍼로 다시 분석 → 질문 복사
+  // 6) 부정 표현이 있는 가상 근로계약서로 다시 분석 → 질문 복사
   await page.goto(`${BASE}/#/input`);
   await page.waitForSelector('#view-input:not([hidden])');
-  await page.check(`input[name=docType][value=${missing.docType}]`);
   await page.fill('#doc-text', missing.text);
   const res2Promise = page.waitForResponse((r) => r.url().endsWith('/api/analyze'), { timeout: 150_000 });
   await page.click('#submit-btn');
   const res2 = await res2Promise;
   const data2 = await res2.json();
-  check('두 번째 분석 API 응답 (부정 표현이 있는 오퍼)', res2.status() === 200, `HTTP ${res2.status()}${data2.code ? `, ${data2.code}` : ''}`);
+  check('두 번째 분석 API 응답 (부정 표현이 있는 근로계약서)', res2.status() === 200, `HTTP ${res2.status()}${data2.code ? `, ${data2.code}` : ''}`);
   if (res2.status() !== 200) throw new Error('second analysis failed');
   await page.waitForSelector('#view-result:not([hidden])', { timeout: 10_000 });
   const visible2 = data2.topics.filter((t) => t.visible);
@@ -174,7 +174,7 @@ try {
     await page.waitForSelector('#view-result:not([hidden])');
   }
   check('세부기준 상태·근거·안내가 API 결과와 같고 근거는 입력 원문 그대로', detailProblems.length === 0, detailProblems.slice(0, 5).join(', '));
-  check('질문 영역은 일부 내용만 기재됨·관련 내용 찾지 못함 주제에만 표시', askMismatch.length === 0, askMismatch.join(', '));
+  check('질문 영역은 내용이 모호함·문서에서 확인되지 않음 주제에만 표시', askMismatch.length === 0, askMismatch.join(', '));
   check('질문 복사 → 클립보드에 같은 문장 + 완료 안내', Boolean(copied?.ok), copied ? copied.label : '질문 영역이 있는 주제 없음');
   check('복사한 질문에 숫자(금액·날짜) 없음', Boolean(copied?.noDigits));
   check('브라우저 스크립트 오류 없음', pageErrors.length === 0, pageErrors.length ? `${pageErrors.length}건` : '');
