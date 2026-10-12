@@ -175,6 +175,61 @@ test('확인 질문: 분석 불가·세부항목의 새 기재·동일 조건에
   assert.deepEqual(qs, []);
 });
 
+test('수습기간과 수습 중 급여 모두 질문 대상이면 하나로 결합하고 다른 주제는 유지한다', () => {
+  const qs = buildCompareQuestions(comparison([
+    { id: '07', label: '수습기간', facets: [
+      fct('07-a', '수습 적용', 'added', side('MISSING'), side('CONFIRMED', '수습 3개월')),
+      fct('07-b', '수습 기간', 'added', side('MISSING'), side('CONFIRMED', '3개월')),
+    ] },
+    { id: '08', label: '수습기간 중 급여', facets: [
+      fct('08-a', '수습 중 지급 기준', 'added', side('MISSING'), side('CONFIRMED', '정규 급여의 90%')),
+    ] },
+    { id: '01', label: '급여', facets: [
+      fct('01-a', '급여 금액', 'changed', side('CONFIRMED', '3,600만원'), side('CONFIRMED', '3,200만원')),
+    ] },
+  ]));
+  assert.equal(qs.length, 2);
+  const combined = qs.find((x) => x.id === 'q-07-08');
+  assert.deepEqual(combined.itemIds, ['07', '08']);
+  assert.match(combined.text, /수습 3개월/);
+  assert.match(combined.text, /정규 급여의 90%/);
+  assert.equal((combined.text.match(/안녕하세요/g) ?? []).length, 1);
+  assert.equal((combined.text.match(/감사합니다/g) ?? []).length, 1);
+  assert.ok(qs.some((x) => x.itemId === '01'));
+});
+
+test('수습 관련 질문 한쪽만 필요하면 원래 질문을 유지한다', () => {
+  const qs = buildCompareQuestions(comparison([
+    { id: '07', label: '수습기간', facets: [fct('07-a', '수습 적용', 'same', side('CONFIRMED', '3개월'), side('CONFIRMED', '3개월'))] },
+    { id: '08', label: '수습기간 중 급여', facets: [fct('08-a', '수습 중 지급 기준', 'added', side('MISSING'), side('PARTIAL', '별도 협의'))] },
+  ]));
+  assert.deepEqual(qs.map((x) => x.itemId), ['08']);
+  assert.match(qs[0].text, /별도 협의/);
+});
+
+test('수습 적용 미확인이고 수습 급여도 양쪽 미기재면 급여 질문은 제외한다', () => {
+  const qs = buildCompareQuestions(comparison([
+    { id: '07', label: '수습기간', facets: [fct('07-a', '수습 적용', 'both_missing', side('MISSING'), side('MISSING'))] },
+    { id: '08', label: '수습기간 중 급여', facets: [fct('08-a', '수습 중 지급 기준', 'both_missing', side('MISSING'), side('MISSING'))] },
+  ]));
+  assert.deepEqual(qs.map((x) => x.itemId), ['07']);
+});
+
+test('계약서 단독도 두 수습 질문이 필요한 경우에만 결합한다', () => {
+  const qs = buildContractQuestions({ docType: 'contract', topics: [
+    { id: '07', label: '수습기간', visible: true, status: 'MAIN_PARTIAL' },
+    { id: '08', label: '수습기간 중 급여', visible: true, status: 'MAIN_PARTIAL' },
+  ] });
+  assert.equal(qs.length, 1);
+  assert.equal(qs[0].id, 'q-07-08');
+  assert.match(qs[0].text, /수습 적용 여부와 기간, 수습 중 급여 지급 기준/);
+  const onlyOne = buildContractQuestions({ docType: 'contract', topics: [
+    { id: '07', label: '수습기간', visible: true, status: 'MAIN_PARTIAL' },
+    { id: '08', label: '수습기간 중 급여', visible: false, status: null },
+  ] });
+  assert.deepEqual(onlyOne.map((x) => x.itemId), ['07']);
+});
+
 test('질문 중복 제거: 같은 문장은 하나만 (공백 차이 무시), 한 항목은 질문 하나로 묶음', () => {
   assert.equal(dedupeQuestions([{ text: '급여를 알려 주세요.' }, { text: ' 급여를  알려 주세요. ' }, { text: '' }]).length, 1);
   const same = fct('02-a', '소정근로시간', 'changed', side('CONFIRMED', '주 40시간'), side('CONFIRMED', '주 45시간'));
