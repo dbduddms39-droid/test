@@ -251,6 +251,8 @@ textarea:focus { outline: none; border-color: var(--ink); }
 .hero-title { font-size: 40px; line-height: 1.15; letter-spacing: -0.03em; font-weight: 700; margin: 0 0 var(--space-md); }
 @media (min-width: 768px) { .hero-title { font-size: 56px; } }
 .hero .lead { font-size: 17px; max-width: 30em; }
+.hero-lead-line { display: block; white-space: nowrap; }
+@media (max-width: 399px) { .hero .hero-lead { font-size: 15px; } }
 .hero-mark { background: linear-gradient(transparent 58%, var(--mark) 58%); border: 0; padding: 0; }
 .hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-lg); margin-top: var(--space-lg); }
 
