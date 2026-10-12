@@ -43,6 +43,7 @@ export function buildQuestion(topic, docType) {
 // ---------- 확인 질문 목록 (결과 화면 '회사에 확인할 질문') ----------
 // 질문은 템플릿으로만 만든다 (AI가 쓰지 않음). 사용자는 고치거나 골라서 직접 회사에 보낸다.
 // 문서에서 이미 명확하게 확인되는 조건(동일, 뒤 문서에 구체적으로 새로 적힘)에는 질문하지 않는다.
+// 예외: 계약기간·수습기간·수습 중 급여가 앞 문서에 없다가 뒤 문서에 새로 적힌 경우에는 확정 여부를 묻는다(NEW_CONDITION_ITEMS).
 
 // 한글 받침에 맞춘 조사 ('급여 금액이', '지급일이', '근무장소가')
 export function josa(word, pair) {
@@ -90,15 +91,36 @@ function compareSentence(f, L, isCoreFacet, item) {
     case 'both_missing':
       return isCoreFacet ? `두 문서 모두에서 ${item.label}에 관한 내용을 찾지 못했습니다. ${TOPIC_ASK[item.id]?.ask ?? ''}`.trim() : null;
     default:
-      return null; // 동일·새로 추가·해당 없음·분석 확인 불가(분석 문제이지 문서 내용이 아님)
+      return null; // 동일·새로 추가(계약기간·수습은 newConditionSentence에서 따로)·해당 없음·분석 확인 불가(분석 문제이지 문서 내용이 아님)
   }
+}
+
+// 앞 문서에는 없고 뒤 문서에 구체적으로 새로 적힌 조건 중, 회사에 확정 여부를 확인할 가치가 큰 항목
+// (계약기간·수습기간·수습 중 급여). 비교 상태(새로 추가된 조건, 간략한 오퍼에 없어 비교 불가)는 그대로 두고 질문만 만든다.
+export const NEW_CONDITION_ITEMS = new Set(['06', '07', '08']);
+
+// 앞 문서(A)에 없던 조건이 뒤 문서(B)에 구체적으로(확인됨) 적힌 세부 항목들 → 한 문장.
+// 미기재를 조건 변경·법률 문제로 표현하지 않고, B에 적힌 원문 조건을 그대로 보여 주며 확정 여부만 묻는다.
+function newConditionSentence(item, L) {
+  const added = item.facets.filter((f) => (f.state === 'added' || f.state === 'not_comparable')
+    && f.a.status === 'MISSING' && f.b.status === 'CONFIRMED');
+  if (!added.length) return null;
+  const parts = added.map((f) => ({ label: f.label, value: clip(f.b.value ?? f.b.evidence?.[0]?.text) })).filter((x) => x.value);
+  if (!parts.length) return null;
+  // 같은 원문 줄을 근거로 한 세부 항목은 한 번만 보여 준다
+  const values = [...new Set(parts.map((x) => x.value))];
+  const shown = values.length === 1 ? values[0] : parts.map((x) => `${x.label}: ${x.value}`).join(' / ');
+  return `${L.A}에서는 ${item.label}에 관한 내용을 찾지 못했고, ${L.B}에는 다음과 같이 적혀 있습니다(${shown}). 이 조건으로 확정된 것인지, 따로 정해질 내용이 있는지 확인 부탁드립니다.`;
 }
 
 // comparison: /api/compare 결과. 반환: [{ id, itemId, label, text }] (항목마다 하나, 중복 제거)
 export function buildCompareQuestions(comparison) {
   const L = { A: comparison.docs[0].docTypeLabel, B: comparison.docs[1].docTypeLabel };
   const out = comparison.items.map((item) => {
-    const sentences = [...new Set(item.facets.map((f, i) => compareSentence(f, L, i === 0, item)).filter(Boolean))];
+    const sentences = [...new Set([
+      ...item.facets.map((f, i) => compareSentence(f, L, i === 0, item)),
+      NEW_CONDITION_ITEMS.has(item.id) ? newConditionSentence(item, L) : null,
+    ].filter(Boolean))];
     if (!sentences.length) return null;
     return { id: `q-${item.id}`, itemId: item.id, label: item.label, text: `안녕하세요. ${item.label} 관련해 여쭤봅니다. ${sentences.join(' ')} 감사합니다.` };
   }).filter(Boolean);

@@ -83,3 +83,33 @@ test('근로계약서 단독 질문: 일부 기재·미기재 주제만, 기재�
   assert.deepEqual(qs.map((q) => q.itemId), ['02', '03']);
   assert.ok(qs.every((q) => q.text.startsWith('안녕하세요. 근로계약서에서')));
 });
+
+test('새로 적힌 계약기간·수습기간·수습 중 급여: 앞 문서에 없고 뒤 문서에 구체적으로 적히면 두 문서 유형과 원문 조건을 넣어 확정 여부를 질문', () => {
+  const qs = buildCompareQuestions(comparison([
+    { id: '06', label: '계약기간', facets: [fct('06-a', '기간의 정함', 'added', side('MISSING'), side('CONFIRMED', '기간의 정함이 없음')), fct('06-b', '시작일·종료일', 'not_applicable', side('MISSING'), side('NOT_APPLICABLE'))] },
+    { id: '07', label: '수습기간', facets: [fct('07-a', '수습 적용', 'added', side('MISSING'), side('CONFIRMED', '입사일부터 3개월')), fct('07-b', '수습 기간', 'added', side('MISSING'), side('CONFIRMED', '3개월'))] },
+    { id: '08', label: '수습기간 중 급여', facets: [fct('08-a', '수습 중 지급 기준', 'added', side('MISSING'), side('CONFIRMED', '정규 급여의 90%'))] },
+  ]));
+  assert.deepEqual(qs.map((q) => q.itemId), ['06', '07', '08']);
+  assert.equal(qs[0].text, '안녕하세요. 계약기간 관련해 여쭤봅니다. 채용공고에서는 계약기간에 관한 내용을 찾지 못했고, 근로계약서에는 다음과 같이 적혀 있습니다(기간의 정함이 없음). 이 조건으로 확정된 것인지, 따로 정해질 내용이 있는지 확인 부탁드립니다. 감사합니다.');
+  assert.match(qs[1].text, /\(수습 적용: 입사일부터 3개월 \/ 수습 기간: 3개월\)/, '한 항목의 여러 세부 조건은 질문 하나로');
+  assert.equal(qs[1].text.match(/찾지 못했고/g).length, 1);
+  assert.match(qs[2].text, /채용공고에서는 수습기간 중 급여에 관한 내용을 찾지 못했고, 근로계약서에는 다음과 같이 적혀 있습니다\(정규 급여의 90%\)/);
+  for (const q of qs) assert.doesNotMatch(q.text, /변경되|바뀌|삭제|위반|불법|위법/, '미기재를 변경·법률 문제로 단정하지 않음');
+});
+
+test('새로 적힌 조건 질문의 범위: 간략한 오퍼에 없던 경우도 질문, 다른 항목·모호한 조건·해당 없음·같은 원문 반복은 질문하지 않음', () => {
+  const offerFirst = { docs: [{ docTypeLabel: '오퍼·합격 안내' }, { docTypeLabel: '근로계약서' }], items: [
+    { id: '07', label: '수습기간', facets: [fct('07-a', '수습 적용', 'not_comparable', side('MISSING'), side('CONFIRMED', '수습 3개월')), fct('07-b', '수습 기간', 'not_comparable', side('MISSING'), side('CONFIRMED', '수습 3개월'))] },
+    { id: '03', label: '근무장소 및 근무형태', facets: [fct('03-a', '근무장소', 'not_comparable', side('MISSING'), side('CONFIRMED', '서울 마포구'))] },
+    { id: '01', label: '급여 및 지급 조건', facets: [fct('01-f', '지급일', 'added', side('MISSING'), side('CONFIRMED', '매월 25일'))] },
+    { id: '08', label: '수습기간 중 급여', facets: [fct('08-a', '수습 중 지급 기준', 'added', side('MISSING'), side('UNCLEAR', '추후 협의'))] },
+    { id: '06', label: '계약기간', facets: [fct('06-a', '기간의 정함', 'same', side('CONFIRMED', '정규직'), side('CONFIRMED', '정규직')), fct('06-b', '시작일·종료일', 'not_applicable', side('MISSING'), side('NOT_APPLICABLE'))] },
+  ] };
+  const qs = buildCompareQuestions(offerFirst);
+  assert.deepEqual(qs.map((q) => q.itemId), ['07'], '간략한 오퍼에 없던 수습만 질문 (근무장소·지급일·모호한 수습 중 급여·동일한 계약기간은 질문하지 않음)');
+  assert.match(qs[0].text, /오퍼·합격 안내에서는 수습기간에 관한 내용을 찾지 못했고, 근로계약서에는 다음과 같이 적혀 있습니다\(수습 3개월\)\./, '같은 원문이면 한 번만');
+  // 앞 문서에도 구체적으로 같은 조건이 있으면 반복 질문하지 않음
+  const same = buildCompareQuestions(comparison([{ id: '07', label: '수습기간', facets: [fct('07-b', '수습 기간', 'same', side('CONFIRMED', '3개월'), side('CONFIRMED', '3개월'))] }]));
+  assert.deepEqual(same, []);
+});

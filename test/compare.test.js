@@ -213,3 +213,16 @@ test('출퇴근 시각에서 휴게 시각은 빼고 비교, 보조 항목이 �
   assert.equal(facet(c, '02-b').b.value, null, '원문 기재값이 없으면 값을 만들지 않고 인용 줄만');
   assert.equal(facet(c, '02-b').b.evidence[0].text, '근로시간: 09:00~18:00 (휴게 12:00~13:00)');
 });
+
+test('비교 결과 → 확인 질문: 뒤 문서에 새로 적힌 수습 중 급여는 질문(비교 상태는 새로 추가 그대로), 같은 수습기간은 질문하지 않음', async () => {
+  const { buildCompareQuestions } = await import('../public/questions.js');
+  const c = compareDocuments([await doc('job_posting', POSTING, POSTING_SPECS), await doc('contract', CONTRACT, CONTRACT_SPECS)]);
+  assert.equal(facet(c, '08-a').state, 'added', '비교 판정은 바꾸지 않음');
+  assert.equal(item(c, '07').state, 'same');
+  const qs = buildCompareQuestions(c);
+  const q08 = qs.find((q) => q.itemId === '08');
+  assert.ok(q08, '수습 중 급여 질문');
+  assert.match(q08.text, /채용공고에서는 수습기간 중 급여에 관한 내용을 찾지 못했고, 근로계약서에는 다음과 같이 적혀 있습니다\(90%\)/);
+  assert.ok(!qs.some((q) => q.itemId === '07'), '두 문서에 같은 수습기간은 묻지 않음');
+  assert.ok(!qs.some((q) => q.itemId === '01' && /지급일/.test(q.text)), '우선 대상이 아닌 새 조건(지급일)은 기존처럼 묻지 않음');
+});

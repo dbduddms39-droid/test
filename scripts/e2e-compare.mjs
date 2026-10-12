@@ -70,6 +70,16 @@ try {
   check('법률·신뢰도·적합성 판단 안 함 안내', (await page.textContent('#compare-notice')).includes('입사 적합성'));
   const qCount = await page.$$eval('#compare-question-list .q-text', (els) => els.length);
   check('확인 질문 생성', qCount > 0, `${qCount}개`);
+  // 앞 문서(채용공고)에 없고 뒤 문서(근로계약서)에 새로 적힌 계약기간·수습 중 급여: 비교 상태는 그대로, 확정 여부 질문
+  const qLabels = await page.$$eval('#compare-question-list .q-label', (els) => els.map((e) => e.textContent));
+  const qTexts = await page.$$eval('#compare-question-list .q-text', (els) => els.map((e) => e.value));
+  const newQ = qTexts.filter((t) => t.includes('채용공고에서는') && t.includes('근로계약서에는 다음과 같이 적혀 있습니다'));
+  check('새로 적힌 계약기간·수습 중 급여 질문 (두 문서 유형·원문 조건 포함)', qLabels.includes('계약기간') && qLabels.includes('수습기간 중 급여') && newQ.length === 2
+    && newQ.some((t) => t.includes('기간의 정함이 없음')) && newQ.some((t) => t.includes('90%')), qLabels.join(', '));
+  check('새로 적힌 조건도 비교 상태는 그대로(새로 추가된 조건), 변경·위반으로 표현하지 않음',
+    items.find((x) => x.title === '계약기간')?.state === '새로 추가된 조건' && items.find((x) => x.title === '수습기간 중 급여')?.state === '새로 추가된 조건'
+    && newQ.every((t) => !/(변경되|바뀌|삭제|위반)/.test(t)));
+  check('같은 조건(수습기간 동일)은 다시 묻지 않음', !qLabels.includes('수습기간'));
   await page.fill('#compare-question-list-0', '수정한 질문입니다 (가상)');
   await page.click('#compare-question-list button[data-copy="compare-question-list-0"]');
   const copied = await page.evaluate(() => navigator.clipboard.readText());
