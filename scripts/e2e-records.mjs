@@ -123,9 +123,9 @@ try {
   check('T01 채용공고 하나로 결과·기록 도달', Boolean(rec1));
   check('T01 저장을 확인한 뒤에만 \'저장했어요\' 표시', (await text('#save-status')).includes('저장했어요'));
   check('T01 회사명이 분명하면 기록 이름으로 제안', (await text('#record-title')) === MARK);
-  const order = await page.evaluate(() => ['now-title', 'conditions-title', 'docs-title', 'actions-title'].map((id) => document.getElementById(id).getBoundingClientRect().top));
-  check('결과 화면 순서: 지금 확인할 내용 → 주요 근로조건 → 등록된 안내 → 필요할 때 하기', order.every((v, i) => i === 0 || v > order[i - 1]), order.map(Math.round).join(' < '));
-  check('T01 공고에서 찾지 못한 항목을 우선 질문으로 쏟아내지 않음', (await page.$$('#now-list > li')).length <= 3 && !(await text('#now-list')).includes('휴일'));
+  const order = await page.evaluate(() => ['now-title', 'conditions-title', 'details-title', 'actions-title'].map((id) => document.getElementById(id).getBoundingClientRect().top));
+  check('결과 화면 순서: 입사 전 확인할 내용 → 핵심 조건 요약 → 상세 확인(접힘) → 필요할 때 하기', order.every((v, i) => i === 0 || v > order[i - 1]), order.map(Math.round).join(' < '));
+  check('T01 공고에서 찾지 못한 항목을 우선 질문으로 쏟아내지 않음', (await page.$$('#summary-groups .sum-item')).length <= 3 && !(await text('#summary-groups')).includes('휴일'));
   check('T01 문제없음·안전 같은 단정 표현 없음', !/(문제\s*없|안전한)/.test(await text('#view-record')));
   check('390px 가로 넘침 없음 (기록 화면)', await noHScroll());
   await page.screenshot({ path: `${OUT}/s04-posting-390.png`, fullPage: true });
@@ -139,8 +139,8 @@ try {
   check('T05 자료 2건이 한 기록에', (await page.$$('#doc-list > li')).length === 2);
   const wageRow = page.locator('#condition-list [data-item="01"]');
   check('T05 급여: 서로 다른 안내가 있어요', (await wageRow.locator('.badge-relation').textContent()) === '서로 다른 안내가 있어요');
-  const nowText = await text('#now-list');
-  check('T05 지금 확인할 내용에 두 출처·원문을 함께', nowText.includes('연봉: 3,400만원') && nowText.includes('연봉: 3,600만원') && nowText.includes('채용공고') && nowText.includes('오퍼·합격 안내'));
+  const nowText = await text('#summary-groups');
+  check('T05 지금 확인할 내용에 두 출처·원문을 함께', nowText.includes('3,400만원') && nowText.includes('3,600만원') && nowText.includes('채용공고') && nowText.includes('오퍼·합격 안내'));
   check('T05 \'변경됨\'으로 단정하지 않음', !/변경됐|변경되었|조건이 변경/.test(await text('#view-record')));
   const stored = (await idbRecords()).find((r) => r.id === rec1);
   check('T05 이전 자료(공고) 텍스트·근거가 그대로 저장돼 있음', stored.documents[0].confirmedText === POSTING_3400 && JSON.stringify(stored.documents[0].analysis).includes('3,400만원'));
@@ -180,7 +180,7 @@ try {
   await register('offer', OFFER_3600_SHORT, { add: true });
   const wage2 = await page.locator('#condition-list [data-item="01"] .badge-relation').textContent();
   check('T06 공고에 없던 급여가 오퍼에 처음: \'이번 안내에 새롭게 적혔어요\'', wage2 === '이번 안내에 새롭게 적혔어요', wage2);
-  check('T06 급여를 서로 다른 안내·변경으로 표시하지 않음', !(await text('#now-list')).includes('3,600만원이 자료마다'));
+  check('T06 급여를 서로 다른 안내·변경으로 표시하지 않음', !(await text('#summary-groups')).includes('서로 다르게 안내된 조건'));
   const list2 = await idbRecords();
   check('T11 두 기록의 자료가 섞이지 않음', list2.find((r) => r.id === rec1).documents.length === 2 && list2.find((r) => r.id === rec2).documents.length === 2
     && !list2.find((r) => r.id === rec2).documents.some((d) => d.confirmedText.includes('데이터 품질')));
@@ -198,7 +198,7 @@ try {
   await page.goto(`${BASE}/#/new`);
   await register('contract', CONTRACT);
   const rec4 = await recordId();
-  const condText = await text('#condition-list');
+  const condText = await text('#all-condition-list');
   check('T03 계약서 하나로 결과·저장', Boolean(rec4) && (await text('#save-status')).includes('저장했어요'));
   check('T03 계약서는 기재 상태 라벨(기재됨 등)로', condText.includes('기재됨'));
   check('T15 수습 없음이면 수습 중 급여 항목·질문 없음', !(await page.$('#condition-list [data-item="08"]')) && !(await text('#view-record')).includes('수습 중 급여에 관한'));
@@ -207,7 +207,7 @@ try {
   // ---- T02 짧은 오퍼 하나 ----
   await page.goto(`${BASE}/#/new`);
   await register('offer', OFFER_3600);
-  check('T02 오퍼 하나로 결과 도달, 우선 질문 3건 이하', Boolean(await recordId()) && (await page.$$('#now-list > li')).length <= 3);
+  check('T02 오퍼 하나로 결과 도달, 우선 질문 3건 이하', Boolean(await recordId()) && (await page.$$('[data-group="needs"] .sum-item')).length <= 3);
 
   // ---- S06 목록 ----
   await page.goto(`${BASE}/#/records`);
@@ -228,7 +228,7 @@ try {
   check('T10 브라우저를 닫았다 다시 열어도 기록 5개', (await page.$$('#record-list > li')).length === 5);
   await page.goto(`${BASE}/#/records/${rec1}`);
   await waitView('record');
-  check('T10 다시 연 기록의 자료·원문 유지', (await page.$$('#doc-list > li')).length === 2 && (await text('#now-list')).includes('연봉: 3,400만원'));
+  check('T10 다시 연 기록의 자료·원문 유지', (await page.$$('#doc-list > li')).length === 2 && (await text('#summary-groups')).includes('3,400만원'));
   check('1440px 가로 넘침 없음 (기록 화면)', await noHScroll());
   await page.screenshot({ path: `${OUT}/s04-two-docs-1440.png`, fullPage: true });
 
@@ -283,7 +283,7 @@ try {
   check('T08 근거 검증 실패: 재분석 안내 표시', await page.isVisible('#reanalyze-box'));
   check('T08 원문에 없는 인용을 보여 주지 않음', !(await text('#view-record')).includes('9,999'));
   check('T08 \'찾지 못함\'이 아니라 \'분석 확인 불가\'', (await page.locator('#condition-list [data-item="01"]').textContent()).includes('분석 확인 불가'));
-  check('T08 분석 확인 불가로 회사 질문을 만들지 않음', !(await text('#now-list')).includes('급여') && !(await text('#more-list')).includes('급여 관련'));
+  check('T08 분석 확인 불가로 회사 질문을 만들지 않음', !((await page.$('[data-group="needs"]')) && (await text('[data-group="needs"]')).includes('급여')) && !(await text('#more-list')).includes('급여'));
   aiMode = 'normal';
   await page.click('button[data-reanalyze]');
   await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'));

@@ -170,7 +170,7 @@ try {
       check(`[${label}] 원문 근거가 확인한 텍스트의 해당 줄에 그대로 있음`, allEvidence.every((e) => data.lines[e.line - 1]?.text.includes(e.text) && lines.some((l) => l.includes(e.text))), `${allEvidence.length}개`);
       const first = shownTopics.find((t) => t.criteria.some((c) => c.evidence.length));
       if (first) {
-        await page.click(`#condition-list [data-item="${first.id}"] a.btn-text`);
+        await page.goto(`${page.url().replace(/#.*/, '')}#/records/${page.url().match(/rec_\w+/)[0]}/item/${first.id}`);
         await page.waitForSelector('#view-item:not([hidden])');
         const shown = await page.$$eval('#item .evidence-text', (els) => els.map((e) => e.textContent));
         const panelTitle = await page.textContent('#item .doc-block .memo-title');
@@ -370,7 +370,7 @@ try {
     await page.click('#review-submit');
     const sent = JSON.parse((await reqP).postData());
     await page.waitForSelector('#view-record:not([hidden])', { timeout: 30_000 });
-    const cards = await page.$$eval('#condition-list > li', (els) => els.length);
+    const cards = await page.$$eval('#all-condition-list > li', (els) => els.length);
     const note = await page.textContent('#doc-list .input-source-note');
     check(`[${label}] 분석 요청은 1쪽·3쪽 텍스트 그대로 (빈 쪽에 넣은 내용 없음)`, sent.text === extracted);
     check(`[${label}] 결과: 점검 항목 카드만 있고 빈 쪽용 결과는 없음, 안내에 제외한 쪽 표시`, cards >= 9 && cards <= 10 && note.includes('PDF 2쪽은') && note.includes('분석에서 제외'), `${cards}개, ${note.slice(-70)}`);

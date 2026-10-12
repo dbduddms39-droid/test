@@ -100,7 +100,8 @@ test('2) 채용공고 ↔ 근로계약서: 표현은 달라도 같은 조건(연
   assert.equal(facet(c, '03-a').state, 'same');
   assert.equal(facet(c, '04-a').state, 'same');
   assert.equal(facet(c, '05-a').state, 'same');
-  assert.equal(facet(c, '06-a').state, 'same');
+  // 공고의 '고용형태: 정규직'은 계약기간의 근거가 아니다 (검증에서 근거 제외) → 계약서에만 기간의 정함 없음이 적힘
+  assert.equal(facet(c, '06-a').state, 'added');
   assert.equal(facet(c, '01-f').state, 'added');
   assert.equal(facet(c, '02-a').state, 'changed');
   assert.match(facet(c, '02-a').note, /주 40시간 → 주 45시간 \(5시간 늘었어요\)/);

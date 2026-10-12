@@ -42,10 +42,10 @@ try {
     await page.click('#submit-btn'); await view('analyzing'); await shot('analyzing'); await noOverflow('분석 중');
     release(); await view('record'); await page.unroute('**/api/analyze');
     await page.waitForTimeout(300); await shot('S04'); await noOverflow('S04'); await codesHidden('S04');
-    const rows = await page.$$eval('#condition-list .condition', (e) => e.length);
-    check(`[${tag}] S04: 주요 근로조건 항목·상태 표시`, rows >= 4, `${rows}개`);
+    const rows = await page.$$eval('#condition-list .ccard', (e) => e.length);
+    check(`[${tag}] S04: 핵심 조건 요약 카드`, rows >= 4, `${rows}개`);
     check(`[${tag}] S04: 데모 결과 안내·저장 표시`, (await page.textContent('#analysis-source')).includes('데모') && (await page.textContent('#save-status')).includes('저장했어요'));
-    await page.click('#condition-list .condition a.btn-text'); await view('item'); await page.waitForTimeout(300);
+    await page.click('#condition-list .ccard a.btn-text'); await view('item'); await page.waitForTimeout(300);
     await shot('S05'); await noOverflow('S05'); await codesHidden('S05');
     const chips = await page.$$eval('#item .evidence-chip', (e) => e.map((x) => x.textContent));
     check(`[${tag}] S05: 원문 인용 칩`, chips.length > 0, chips[0]?.slice(0, 40));

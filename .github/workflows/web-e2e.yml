@@ -93,6 +93,10 @@ jobs:
         if: always()
         run: node scripts/e2e-records.mjs
 
+      - name: QA scenario posting → offer → contract (mock AI in-process, no API calls)
+        if: always()
+        run: node scripts/e2e-qa.mjs
+
       - name: OCR accuracy benchmark (fictional images, browser only, no API calls)
         if: always()
         env:

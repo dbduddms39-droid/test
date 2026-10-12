@@ -1,5 +1,5 @@
 import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-rules.js';
-import { copyText } from './questions.js';
+import { copyText, josa } from './questions.js';
 import { el, statusBadge, CONTRACT_STATUS_LABEL, sourcePanelLines } from './components.js';
 import { ROUTES, checkText, editRouteFor, inputRouteFor, resolveRoute, classifyAnalyzeFailure, formatDateTime } from './flow.js';
 import { createTracker, applyEdit, confirmSpan, pendingRanges, unlocatedPending, summary as ocrSummary } from './ocr-spans.js';
@@ -7,7 +7,7 @@ import {
   buildIssues, resolveIssue, unresolve, blockingIssues, resetTextDependent, resultNotes, isResolved, setSupplement, shiftAnchors, assembleText,
 } from './extract-issues.js';
 import { createStore, suggestAlias, StoreError, DEFAULT_ALIAS, NOTE_MAX, newId } from './store.js';
-import { buildFollowUps } from './followups.js';
+import { buildFollowUps, BOUNDARY_TEXT } from './followups.js';
 import { DOC_TYPE_LABEL, RELATION_LABEL } from './relate.js';
 
 // 일단확인 클라이언트 (PRD v3.1: 자료 한 건으로 시작 → 지금 확인할 내용 → 입사 건별 기록 → 새 안내 추가).
@@ -915,7 +915,11 @@ const PROVISIONAL_TEXT = '이 상태는 점검 기준표에 정해진 규칙이 
 const labelsOf = (list) => list.map((c) => c.label).join(', ');
 
 function criterionText(c) {
-  if (c.status === 'UNAVAILABLE') return UNAVAILABLE_TEXT[c.basis] ?? UNAVAILABLE_TEXT.evidence_verification_failed;
+  if (c.status === 'UNAVAILABLE') {
+    const base = UNAVAILABLE_TEXT[c.basis] ?? UNAVAILABLE_TEXT.evidence_verification_failed;
+    return c.unavailableCodes?.length ? `${base} (원인: ${unavailableCause(c.unavailableCodes)})` : base;
+  }
+  if (c.status === 'PARTIAL' && BOUNDARY_TEXT[c.boundary]) return `관련 내용은 있지만 ${BOUNDARY_TEXT[c.boundary]}.`;
   if (c.status === 'NOT_APPLICABLE') return NA_TEXT[c.basis] ?? '문서에 적힌 내용 때문에 이 기준은 해당하지 않아요.';
   if (c.basis === 'negated') return c.status === 'CONFIRMED'
     ? '적용·부여하지 않는다고 적혀 있어요. 적힌 내용만 확인했고 법적 효력은 판단하지 않아요.'
@@ -1002,31 +1006,68 @@ const clipText = (t, n = 80) => {
 };
 // 문서 유형별 상위 상태 라벨: 근로계약서는 기재 상태를, 채용공고·오퍼는 적힌 사실 중심으로 (판정 규칙은 v2.2 그대로)
 const BRIEF_STATUS_LABEL = {
-  MAIN_FOUND: '적혀 있어요', MAIN_PARTIAL: '일부만 적혀 있거나 정해지지 않았어요', MAIN_MISSING: '이 자료에서는 확인되지 않아요', MAIN_UNAVAILABLE: '분석 확인 불가',
+  MAIN_FOUND: '적혀 있어요', MAIN_PARTIAL: '일부만 확인돼요', MAIN_MISSING: '이 자료에서는 확인되지 않아요', MAIN_UNAVAILABLE: '분석 확인 불가',
 };
 const statusLabelFor = (docType, status) => (docType === 'contract' ? CONTRACT_STATUS_LABEL : BRIEF_STATUS_LABEL)[status];
 const ITEM_IDS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'];
+const CARD_IDS = new Set(['01', '02', '03', '04', '05', '06', '07', '08']); // 핵심 조건 요약 카드 (휴일·연차는 전체 목록에서)
 const topicOf = (doc, id) => doc.analysis?.topics?.find((t) => t.id === id) ?? null;
 const itemLabel = (record, id) => record.documents.map((d) => topicOf(d, id)?.label).find(Boolean) ?? id;
 const visibleIn = (record, id) => record.documents.some((d) => topicOf(d, id)?.visible);
-// 항목의 기재값: 핵심 세부기준의 원문 기재값(검증된 것만). 없으면 null (화면은 인용 줄을 보여 줌)
-function topicValue(t) {
-  const vals = [...new Set(t.criteria.filter((c) => c.role === 'C' && c.sourceValue && c.status !== 'UNAVAILABLE' && c.status !== 'NOT_APPLICABLE').map((c) => c.sourceValue))];
-  return vals.length ? vals.join(' · ') : null;
-}
 const firstEvidence = (t) => (t.criteria.find((c) => c.required && c.evidence.length) ?? t.criteria.find((c) => c.evidence.length))?.evidence[0] ?? null;
 const notesFor = (record, id) => (record.notes ?? []).filter((n) => n.conditionKey === id);
 
+// '분석 확인 불가'의 원인 (검증 실패 코드 → 사용자 설명). 예전에 저장된 기록에는 코드가 없을 수 있다.
+const UNAVAILABLE_CODE_TEXT = {
+  source_value_not_in_quote: 'AI가 정리한 값이 인용한 원문 안에 글자 그대로 있지 않았어요',
+  quote_not_in_line: 'AI가 제시한 인용 구절이 원문과 글자 그대로 일치하지 않았어요',
+  unknown_line: 'AI가 없는 줄을 근거로 제시했어요',
+  empty_quote: 'AI가 빈 근거를 제시했어요',
+  conflict_needs_two: 'AI 응답 형식이 맞지 않았어요',
+  no_quotes: 'AI가 근거 없이 응답했어요',
+  absent_with_quotes: 'AI 응답 형식이 맞지 않았어요',
+  missing_criterion: 'AI 응답에서 이 항목이 빠졌어요',
+  ocr_low_confidence: '근거에 글자 인식(OCR)이 불확실한 곳이 있어요',
+  ocr_low_confidence_related: '관련 내용 근처에 글자 인식(OCR)이 불확실한 곳이 있어요',
+};
+function unavailableCause(codes = []) {
+  const list = codes.map((c) => (c.startsWith('ai_call_failed') ? 'AI 응답을 받지 못했어요' : UNAVAILABLE_CODE_TEXT[c])).filter(Boolean);
+  return list.length ? [...new Set(list)].join(', ') : '근거를 원문에서 확인하지 못했어요';
+}
+
+// 상태 설명: '일부만 적혔어요'로 뭉뚱그리지 않고 무엇이 적혀 있고 무엇이 빠졌는지 말한다
+function topicExplain(t) {
+  if (!t?.visible) return null;
+  if (t.status === 'MAIN_FOUND') return null;
+  if (t.status === 'MAIN_MISSING') return '관련 내용을 찾지 못했어요.';
+  const req = t.criteria.filter((c) => c.required && c.status !== 'CONFIRMED' && c.status !== 'NOT_APPLICABLE');
+  if (t.status === 'MAIN_UNAVAILABLE') {
+    const codes = req.filter((c) => c.status === 'UNAVAILABLE').flatMap((c) => [c.unavailableReason, ...(c.unavailableCodes ?? [])]);
+    return `분석 확인 불가: ${unavailableCause(codes)}. 적혀 있지 않다는 뜻이 아니에요.`;
+  }
+  const written = t.criteria.filter((c) => c.status === 'CONFIRMED' && c.evidence.length).map((c) => c.label);
+  const parts = req.map((c) => {
+    // 예전 기록에는 이유 코드(boundary)가 없다: 근무시간 숫자 문제는 같은 설명으로
+    const boundary = c.boundary ?? (c.id === '02-a' && c.status === 'PARTIAL' && !c.basis ? 'hours_not_quoted' : null);
+    if (boundary && BOUNDARY_TEXT[boundary]) return BOUNDARY_TEXT[boundary];
+    if (c.basis === 'conflict') return `${c.label}에 서로 다른 값이 함께 적혀 있어요`;
+    if (c.basis === 'undecided') return `${josa(c.label, '이/가')} 정해지지 않았다고 적혀 있어요`;
+    if (c.status === 'MISSING') return `${josa(c.label, '을/를')} 찾지 못했어요`;
+    return `${josa(c.label, '이/가')} 구체적으로 적혀 있지 않아요`;
+  });
+  return `${written.length ? `${josa(written.join('·'), '은/는')} 적혀 있어요. ` : ''}${parts.join('. ')}.`;
+}
+
+const RELATION_KIND = { same: 'found', different_stated: 'review', newly_stated: 'found', newly_specified: 'found', not_mentioned_later: 'missing', incomparable: 'review', unavailable: 'unavailable' };
 function relationBadge(relation) {
   if (!relation) return null;
-  const kind = { same: 'found', different_stated: 'review', newly_stated: 'found', not_mentioned_later: 'missing', incomparable: 'review', unavailable: 'unavailable' }[relation];
-  return el('span', { class: `badge badge-${kind} badge-relation`, 'data-relation': relation }, RELATION_LABEL[relation]);
+  return el('span', { class: `badge badge-${RELATION_KIND[relation]} badge-relation`, 'data-relation': relation }, RELATION_LABEL[relation]);
 }
 
 let qSeq = 0;
 function questionBox(text, label = '회사에 확인할 때 쓸 질문') {
   const id = `q-${qSeq += 1}`;
-  const ta = el('textarea', { id, class: 'q-text', rows: '4' });
+  const ta = el('textarea', { id, class: 'q-text', rows: '3' });
   ta.value = text;
   return el('div', { class: 'question' },
     el('label', { class: 'q-label', for: id }, `${label} (고쳐 쓸 수 있어요)`),
@@ -1035,19 +1076,23 @@ function questionBox(text, label = '회사에 확인할 때 쓸 질문') {
       el('button', { type: 'button', class: 'icon-btn', 'data-copy': id }, '질문 복사'),
       el('span', { class: 'q-status muted small', role: 'status', 'aria-live': 'polite' })));
 }
+// 대표 질문 + (접힌) 추가 질문
+function questionBlock(f) {
+  if (!f?.question) return null;
+  return el('div', { class: 'q-block' },
+    questionBox(f.question),
+    f.extraQuestions?.length ? el('details', { class: 'extra-q' },
+      el('summary', {}, `추가 질문 ${f.extraQuestions.length}개 (선택)`),
+      f.extraQuestions.map((q) => questionBox(q, '추가 질문'))) : null);
+}
 
+// 더 확인할 수 있는 질문 (접힌 상세 영역)
 function followupCard(f, record, saved) {
   return el('li', { class: `followup is-${f.tier}`, 'data-followup': f.key, 'data-kind': f.kind },
-    el('div', { class: 'followup-head' },
-      el('h3', { class: 'followup-label' }, f.label),
-      el('span', { class: 'tier-tag' }, f.tier === 'primary' ? '우선 확인' : '추가 확인')),
-    el('ul', { class: 'followup-reasons' }, f.reasons.map((r) => el('li', {}, r))),
-    f.sources.length ? el('div', { class: 'followup-sources' }, f.sources.map((s) => el('div', { class: 'followup-source' },
-      el('p', { class: 'src-doc' }, s.docLabel),
-      s.quotes.length ? el('ul', { class: 'src-quotes' }, s.quotes.slice(0, 3).map((q) => el('li', {}, el('q', {}, q))))
-        : el('p', { class: 'muted small' }, '이 자료에서는 관련 원문을 찾지 못했어요.')))) : null,
-    f.question ? questionBox(f.question) : null,
-    saved ? el('a', { href: ROUTES.item(record.id, f.topicIds[0]), class: 'btn-text' }, '원문·자료별 내용 자세히 보기 →') : null);
+    el('div', { class: 'followup-head' }, el('h3', { class: 'followup-label' }, f.label)),
+    el('p', { class: 'followup-reason small' }, f.reasons[0]),
+    questionBlock(f),
+    saved ? el('a', { href: ROUTES.item(record.id, f.topicIds[0]), class: 'btn-text' }, '자세히 보기 →') : null);
 }
 
 // ---------- S04 입사조건 기록 ----------
@@ -1060,11 +1105,51 @@ function unsavedRecord() {
   return { id: null, alias: u.alias ?? DEFAULT_ALIAS, documents: [doc], notes: [], updatedAt: doc.registeredAt };
 }
 
+// 핵심 조건 카드의 자료별 값: 대표 세부 항목의 짧은 값(검증된 원문만) + 휴게·지급일 같은 보조 값 하나
+const CARD_EXTRA = { '02': '02-c', '01': '01-f' };
+function cardValue(relItem, docId) {
+  const side = (f) => f?.sides.find((s) => s.docId === docId);
+  // 근무시간은 출퇴근 시각을 먼저 (주 N시간 인용·계산 줄보다 읽기 쉬움)
+  const facets = relItem.id === '02' ? [...relItem.facets].sort((x, y) => (y.id === '02-b') - (x.id === '02-b')) : relItem.facets;
+  const sides = facets.map(side);
+  const main = sides.find((s) => s?.display && s.concrete) ?? sides.find((s) => s?.display) ?? null;
+  const extraFacet = relItem.facets.find((f) => f.id === CARD_EXTRA[relItem.id]);
+  const extra = extraFacet && side(extraFacet)?.display && side(extraFacet) !== main ? `${extraFacet.id === '02-c' ? '휴게' : extraFacet.label} ${side(extraFacet).display}` : null;
+  return main ? { text: [main.display, extra].filter(Boolean).join(' · '), vague: !main.concrete } : null;
+}
+// 카드 아래 한 줄: 자료 사이 관계가 있으면 그 이유, 없으면 (마지막 자료의) 기재 상태 설명
+function cardInsight(record, relItem, labels, fus) {
+  const multi = record.documents.length > 1;
+  const rel = relItem.relation;
+  if (multi && rel) {
+    const f = relItem.facets.find((x) => x.relation === rel) ?? relItem.facets[0];
+    if (rel === 'different_stated') return `자료마다 ${josa(f.label, '이/가')} 다르게 안내되었어요.`;
+    if (rel === 'newly_specified') return fus.summary.specified.find((x) => x.topicId === relItem.id)?.line ?? f.notes.at(-1);
+    if (rel === 'newly_stated') { const first = f.sides.find((s) => s.kind === 'present'); return first ? `${labels[first.docId]}에 처음 적혔어요. 바뀐 것으로 보지 않아요.` : null; }
+    if (rel === 'same') return '등록한 자료에 같은 내용으로 적혀 있어요.';
+    if (rel === 'not_mentioned_later') return `${labels[record.documents.at(-1).id]}에는 적혀 있지 않아요. 없어지거나 바뀐 것으로 보지 않아요.`;
+    if (rel === 'unavailable') return '일부 자료의 근거를 확인하지 못해 비교하지 않았어요. 적혀 있지 않다는 뜻이 아니에요.';
+    return f.notes[0] ?? '표기 방식이 달라 같은 조건인지 자동으로 판단하지 않았어요.';
+  }
+  const last = [...record.documents].reverse().map((d) => topicOf(d, relItem.id)).find((t) => t?.visible);
+  return topicExplain(last);
+}
+
+function summaryGroup(key, title, items, render) {
+  if (!items.length) return null;
+  return el('div', { class: `sum-group is-${key}`, 'data-group': key },
+    el('h3', { class: 'sum-title' }, title, el('span', { class: 'sum-count' }, `${items.length}`)),
+    el('ul', { class: 'sum-list' }, items.map(render)));
+}
+
 function renderRecord(record, { unsaved = false } = {}) {
   const saved = !unsaved;
   const fus = buildFollowUps(record);
   const labels = fus.relation.labels;
   const multi = record.documents.length > 1;
+  const allFus = [...fus.primary, ...fus.more];
+  const fuOf = (topicId) => allFus.find((x) => x.topicIds.includes(topicId));
+  const detailLink = (topicId) => (saved ? el('a', { href: ROUTES.item(record.id, topicId), class: 'btn-text sum-more' }, '자세히 →') : null);
 
   // 저장 상태: 실제 저장을 확인했을 때만 '저장했어요'
   const status = $('#save-status');
@@ -1105,61 +1190,94 @@ function renderRecord(record, { unsaved = false } = {}) {
   const source = $('#analysis-source');
   source.textContent = demo
     ? '데모 결과가 포함돼 있어요. AI 분석이 아니라 개발용 키워드 규칙으로 만든 결과라서 실제 판단에 쓰면 안 돼요.'
-    : 'AI가 찾은 내용을 서버가 원문과 대조해 실제로 적힌 문구인지 확인한 뒤, 점검 기준에 따라 정리했어요. 문구가 원문에 있다는 것만 확인했으니, AI의 해석이 맞는지는 원문과 함께 확인해 주세요.';
+    : 'AI가 찾은 내용을 서버가 원문과 대조해 실제로 적힌 문구인지 확인한 뒤 정리했어요. 해석이 맞는지는 원문과 함께 확인해 주세요.';
   source.classList.toggle('analysis-source-demo', demo);
 
-  // 1. 지금 확인할 내용
-  $('#now-list').replaceChildren(...fus.primary.map((f) => followupCard(f, record, saved)));
-  $('#now-empty').hidden = fus.primary.length > 0;
+  // A. 입사 전 확인할 내용: 서로 다르게 안내됨 / 새롭게 구체화됨 / 여전히 확인 필요 / 분석 확인 불가
+  const sum = fus.summary;
+  const withQuestion = (x) => el('li', { class: 'sum-item', 'data-topic': x.topicId },
+    el('p', { class: 'sum-head' }, el('strong', {}, x.label), detailLink(x.topicId)),
+    x.line ? el('p', { class: 'sum-line' }, x.line) : null,
+    fuOf(x.topicId)?.question ? el('details', { class: 'sum-q' }, el('summary', {}, '질문 보기·복사'), questionBlock(fuOf(x.topicId))) : null);
+  const unavailableDocs = [...new Set(fus.reanalyze.map((x) => x.docId))];
+  const groups = [
+    summaryGroup('different', '서로 다르게 안내된 조건', sum.different, withQuestion),
+    summaryGroup('specified', '새롭게 구체화된 조건', sum.specified, withQuestion),
+    summaryGroup('needs', '여전히 확인이 필요한 조건', sum.needsCheck, withQuestion),
+    sum.unavailable.length ? el('div', { class: 'sum-group is-unavailable', 'data-group': 'unavailable', id: 'reanalyze-box' },
+      el('h3', { class: 'sum-title' }, '분석 확인 불가', el('span', { class: 'sum-count' }, `${sum.unavailable.length}`)),
+      el('p', { class: 'small' }, '근거를 원문에서 확인하지 못해 확정하지 않은 항목이에요. 적혀 있지 않다는 뜻이 아니어서 회사 질문을 만들지 않았어요. 같은 텍스트로 다시 분석할 수 있어요.'),
+      el('ul', { class: 'sum-list' }, sum.unavailable.map((x) => el('li', { class: 'sum-item', 'data-topic': x.topicId },
+        el('p', { class: 'sum-head' }, el('strong', {}, x.label), detailLink(x.topicId)),
+        el('p', { class: 'sum-line' }, `${unavailableCause(x.codes)}.`)))),
+      saved ? el('div', { class: 'reanalyze' }, unavailableDocs.map((docId) => el('button', { type: 'button', class: 'icon-btn', 'data-reanalyze': docId }, `${labels[docId]} 같은 텍스트로 다시 분석하기`)),
+        el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null) : null,
+  ].filter(Boolean);
+  $('#summary-groups').replaceChildren(...groups);
+  $('#now-empty').hidden = groups.length > 0;
   $('#now-empty').textContent = fus.more.length
-    ? '지금 바로 확인할 내용은 없어요. 필요하면 아래 \'추가로 확인할 내용\'을 살펴보세요.'
-    : '이번 자료에서 별도로 제안할 확인 사항이 없어요. 아래 주요 근로조건과 원문을 함께 확인해 주세요.';
-  $('#more-box').hidden = !fus.more.length;
-  $('#more-count').textContent = `${fus.more.length}건`;
-  $('#more-list').replaceChildren(...fus.more.map((f) => followupCard(f, record, saved)));
-  $('#reanalyze-box').hidden = !fus.reanalyze.length;
-  $('#reanalyze-list').replaceChildren(...fus.reanalyze.map((x) => el('li', {}, `${x.docLabel} · ${x.label}`)));
+    ? '지금 바로 확인할 내용은 없어요. 필요하면 아래 \'상세 확인\'의 추가 질문을 살펴보세요.'
+    : '이번 자료에서 별도로 제안할 확인 사항이 없어요. 아래 핵심 조건과 원문을 함께 확인해 주세요.';
 
-  // 2. 주요 근로조건
+  // B. 핵심 조건 요약 카드 (값은 검증된 원문만, 원문 근거·세부 판정은 '자세히 보기'에서)
   const hasContract = record.documents.some((d) => d.docType === 'contract');
-  $('#conditions-help').textContent = [
-    hasContract ? '근로계약서는 주요 항목마다 기재 상태(기재됨·내용이 모호함·문서에서 확인되지 않음·분석 확인 불가)를 보여 드려요.' : null,
-    record.documents.some((d) => d.docType !== 'contract') ? '채용공고·오퍼 안내는 적힌 내용을 중심으로 정리해요. 짧은 안내에 없는 조건을 문제로 보지 않아요.' : null,
-    multi ? '자료가 여러 건이면 항목마다 자료 사이 관계를 함께 보여 드려요. 관계는 적힌 문구의 차이이며 회사가 조건을 바꿨다는 판단이 아니에요.' : null,
-  ].filter(Boolean).join(' ');
-  const rows = [];
-  const missingOnly = [];
+  $('#conditions-help').textContent = multi
+    ? '항목마다 자료별 값과 자료 사이 관계를 보여 드려요. 관계는 적힌 문구의 차이이며 회사가 조건을 바꿨다는 판단이 아니에요.'
+    : '항목마다 문서에 적힌 값을 보여 드려요. 원문 근거와 세부 판정은 \'자세히 보기\'에서 확인할 수 있어요.';
+  const cards = [];
+  const restIds = [];
   for (const id of ITEM_IDS) {
     if (!visibleIn(record, id)) continue;
     const per = record.documents.map((d) => ({ d, t: topicOf(d, id) })).filter((x) => x.t?.visible);
-    // 계약서가 없고 모든 자료에서 찾지 못한 항목은 한 줄로만 (결함처럼 보이지 않게)
-    if (!hasContract && per.every((x) => x.t.status === 'MAIN_MISSING')) { missingOnly.push(itemLabel(record, id)); continue; }
-    const rel = fus.relation.items.find((i) => i.id === id);
+    const anyWritten = per.some((x) => x.t.status !== 'MAIN_MISSING');
+    if (!CARD_IDS.has(id) || (!anyWritten && !hasContract)) { restIds.push(id); continue; }
+    const relItem = fus.relation.items.find((i) => i.id === id);
     const memo = notesFor(record, id).length;
-    rows.push(el('li', { class: 'condition', 'data-item': id },
-      el('div', { class: 'condition-head' },
+    cards.push(el('li', { class: 'ccard', 'data-item': id },
+      el('div', { class: 'ccard-head' },
         el('h3', {}, itemLabel(record, id)),
-        multi ? relationBadge(rel?.relation) : null,
+        multi ? relationBadge(relItem?.relation) : null,
         memo ? el('span', { class: 'memo-flag' }, '내가 기록한 답변 있음') : null),
+      el('ul', { class: 'ccard-docs' }, per.map(({ d, t }) => {
+        const v = t.status === 'MAIN_UNAVAILABLE' ? null : cardValue(relItem, d.id);
+        return el('li', { class: 'ccard-doc' },
+          el('span', { class: 'cd-doc' }, labels[d.id]),
+          v ? el('span', { class: `cd-value${v.vague ? ' is-vague' : ''}` }, v.text) : null,
+          !v || t.status !== 'MAIN_FOUND' ? statusBadge(t.status, statusLabelFor(d.docType, t.status)) : null);
+      })),
+      (() => { const line = cardInsight(record, relItem, labels, fus); return line ? el('p', { class: 'ccard-insight' }, line) : null; })(),
+      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-text' }, '자세히 보기 →') : null));
+  }
+  $('#condition-list').replaceChildren(...cards);
+
+  // C. 상세 확인 (접힘): 추가 질문 / 전체 근로조건 목록 / 등록 자료와 원문
+  const shownInSummary = new Set([...sum.different, ...sum.specified, ...sum.needsCheck].map((x) => x.topicId));
+  const extraFus = allFus.filter((f) => !f.topicIds.some((t) => shownInSummary.has(t)));
+  $('#more-box').hidden = !extraFus.length;
+  $('#more-count').textContent = `${extraFus.length}건`;
+  $('#more-list').replaceChildren(...extraFus.map((f) => followupCard(f, record, saved)));
+  $('#more-box').open = false;
+
+  const allRows = ITEM_IDS.filter((id) => visibleIn(record, id)).map((id) => {
+    const per = record.documents.map((d) => ({ d, t: topicOf(d, id) })).filter((x) => x.t?.visible);
+    return el('li', { class: 'condition', 'data-item': id },
+      el('div', { class: 'condition-head' }, el('h3', {}, itemLabel(record, id))),
       el('ul', { class: 'condition-docs' }, per.map(({ d, t }) => {
-        const value = t.status === 'MAIN_UNAVAILABLE' ? null : topicValue(t);
         const ev = t.status === 'MAIN_UNAVAILABLE' ? null : firstEvidence(t);
         return el('li', { class: 'condition-doc' },
           el('span', { class: 'cd-doc' }, labels[d.id]),
           statusBadge(t.status, statusLabelFor(d.docType, t.status)),
-          value ? el('span', { class: 'cd-value' }, value) : null,
           ev ? el('q', { class: 'cd-quote' }, clipText(ev.text)) : null,
-          t.status === 'MAIN_UNAVAILABLE' ? el('span', { class: 'muted small' }, '근거를 확인하지 못해 확정하지 않았어요. 적혀 있지 않다는 뜻이 아니에요.') : null);
+          (() => { const x = topicExplain(t); return x ? el('span', { class: 'cd-explain small' }, x) : null; })());
       })),
-      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-text' }, '자세히 보기 →') : null));
-  }
-  $('#condition-list').replaceChildren(...rows);
-  $('#conditions-missing').hidden = !missingOnly.length;
-  $('#conditions-missing').textContent = missingOnly.length ? `등록한 자료에서 찾지 못한 항목: ${missingOnly.join(', ')}. 짧은 안내에는 빠질 수 있어요.` : '';
+      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-text' }, '자세히 보기 →') : null);
+  });
+  $('#all-condition-list').replaceChildren(...allRows);
+  $('#all-count').textContent = `${allRows.length}개 항목${restIds.length ? ` · 요약에 없는 항목 ${restIds.length}개 포함` : ''}`;
+  $('#all-conditions').open = false;
 
-  // 3. 등록된 안내 자료
+  $('#docs-count').textContent = `${record.documents.length}건`;
   $('#doc-list').replaceChildren(...record.documents.map((d, i) => {
-    const unavailable = (d.analysis?.topics ?? []).filter((t) => t.visible && t.status === 'MAIN_UNAVAILABLE');
     const pendingDoc = unsaved && i === record.documents.length - 1;
     return el('li', { class: 'doc-entry', 'data-doc': d.id },
       el('p', { class: 'doc-entry-head' }, el('span', { class: 'mono-index' }, `자료 ${i + 1}`), el('strong', {}, labels[d.id]), pendingDoc ? el('span', { class: 'tag' }, '저장 안 됨') : null),
@@ -1171,17 +1289,14 @@ function renderRecord(record, { unsaved = false } = {}) {
       d.inputSource !== 'paste' ? el('p', { class: 'small input-source-note' }, [EXTRACTED_NOTE[d.inputSource] ?? '', ...(d.extractNotes ?? [])].join(' ')) : null,
       el('details', { class: 'doc-text' },
         el('summary', {}, `확인한 텍스트 보기 (${d.analysis?.lines?.length ?? 0}줄)`),
-        sourcePanelLines(d.analysis?.lines ?? [], new Map())),
-      unavailable.length && saved ? el('div', { class: 'reanalyze' },
-        el('p', { class: 'small' }, `분석 확인 불가 항목 ${unavailable.length}개(${unavailable.map((t) => t.label).join(', ')})가 있어요. 확인한 텍스트는 그대로 두고 다시 분석할 수 있어요.`),
-        el('button', { type: 'button', class: 'icon-btn', 'data-reanalyze': d.id }, '같은 텍스트로 다시 분석하기'),
-        el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null);
+        sourcePanelLines(d.analysis?.lines ?? [], new Map())));
   }));
+  $('#docs-box').open = unsaved; // 저장하지 못한 결과는 자료를 바로 볼 수 있게
 
-  // 4. 필요할 때 하기
+  // D. 필요할 때 하기
   $('#view-record .record-actions').hidden = unsaved;
   if (saved) $('#add-doc').setAttribute('href', ROUTES.add(record.id));
-  $('#copy-all-questions').hidden = ![...fus.primary, ...fus.more].some((f) => f.question);
+  $('#copy-all-questions').hidden = !allFus.some((f) => f.question);
   $('#actions-status').textContent = '';
   $('#record-notice').textContent = `${record.documents[0]?.analysis?.notice ?? ''} 이 기록은 이 브라우저에만 저장돼요. 다른 기기에서는 보이지 않아요.`;
 }
@@ -1245,7 +1360,8 @@ $('#rename-form').addEventListener('submit', async (e) => {
   }
 });
 $('#copy-all-questions').addEventListener('click', async () => {
-  const texts = [...document.querySelectorAll('#view-record .q-text')].map((t) => t.value.trim()).filter(Boolean);
+  // 항목마다 대표 질문만 (추가 질문은 각자 복사)
+  const texts = [...new Set([...document.querySelectorAll('#view-record .q-block > .question .q-text')].map((t) => t.value.trim()).filter(Boolean))];
   const ok = texts.length > 0 && await copyText(texts.join('\n\n'));
   $('#actions-status').textContent = ok ? `질문 ${texts.length}개를 복사했어요. 필요한 것만 골라 직접 보내 주세요.` : '복사하지 못했어요. 질문을 직접 선택해 복사해 주세요.';
 });
@@ -1290,7 +1406,7 @@ function renderItem(record, itemId) {
   const fuSec = f ? el('section', { class: 'item-followup' },
     el('h2', {}, f.tier === 'primary' ? '지금 확인할 내용' : '추가로 확인할 내용'),
     el('ul', { class: 'followup-reasons' }, f.reasons.map((r) => el('li', {}, r))),
-    f.question ? questionBox(f.question) : null) : null;
+    questionBlock(f)) : null;
   const reSec = fus.reanalyze.some((x) => x.topicId === itemId) ? el('p', { class: 'note note-hold' },
     '분석 확인 불가: 근거를 원문에서 확인하지 못했거나 글자 인식이 불확실해 확정하지 않았어요. 적혀 있지 않다는 뜻이 아니에요. 기록 화면의 \'등록된 안내 자료\'에서 같은 텍스트로 다시 분석할 수 있어요.') : null;
 

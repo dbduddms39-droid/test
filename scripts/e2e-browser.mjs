@@ -91,7 +91,7 @@ try {
   const visible = data.topics.filter((t) => t.visible);
   check('표시 항목 수 9개 또는 10개, 08 미표시면 상태 없음', [9, 10].includes(visible.length) && visible.length === data.counts.shown
     && data.topics.filter((t) => !t.visible).every((t) => t.id === '08' && t.status === null), `표시 ${visible.length}개`);
-  const rows = await page.$$eval('#condition-list .condition', (els) => els.map((e) => ({
+  const rows = await page.$$eval('#all-condition-list .condition', (els) => els.map((e) => ({
     id: e.dataset.item, status: e.querySelector('.condition-doc .badge').textContent,
   })));
   // 근로계약서의 상위 상태 라벨 (판정 코드는 v2.2 그대로, 화면 라벨만 서비스 기획에 맞춤)
@@ -130,7 +130,7 @@ try {
     if (notes.length !== expected) detailProblems.push(`${t.id} 안내 수`);
   };
   const openItem = async (t) => {
-    await page.click(`#condition-list [data-item="${t.id}"] a.btn-text`);
+    await page.goto(`${page.url().replace(/#.*/, '')}#/records/${page.url().match(/rec_\w+/)[0]}/item/${t.id}`);
     await page.waitForSelector('#view-item:not([hidden])');
   };
 

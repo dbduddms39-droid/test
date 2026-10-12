@@ -742,3 +742,41 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .records-empty { padding: var(--space-lg) 0; }
 .storage-note { margin-top: var(--space-xl); padding: 12px 14px; background: var(--wash); border-left: 2px solid var(--annot); font-size: 13px; }
 .storage-note p { margin: 0 0 6px; }
+
+/* ---------- QA 개선: S04 요약 → 핵심 카드 → 접힌 상세 ---------- */
+.summary-groups { display: grid; gap: var(--space-md); margin-top: var(--space-md); }
+.sum-group { padding: 10px 14px; border-left: 3px solid var(--rule); background: var(--desk); min-width: 0; }
+.sum-group.is-different { border-left-color: var(--annot); }
+.sum-group.is-specified { border-left-color: var(--ink); }
+.sum-group.is-needs { border-left-color: var(--ink-3); }
+.sum-group.is-unavailable { border-left: 1px dashed var(--ink-3); }
+.sum-title { margin: 0 0 6px; font-size: 15px; display: flex; gap: 8px; align-items: baseline; }
+.sum-count { font: 500 12px/18px var(--font-mono); color: var(--ink-2); border: 1px solid var(--rule); padding: 0 6px; border-radius: var(--radius); }
+.sum-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sum-item { min-width: 0; }
+.sum-item p { margin: 0; }
+.sum-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.sum-more { font-size: 13px; }
+.sum-line { font-size: 14px; color: var(--ink); word-break: break-word; }
+.sum-q { margin-top: 4px; }
+.sum-q > summary, .extra-q > summary { cursor: pointer; font-size: 13px; color: var(--annot); }
+.q-block { display: grid; gap: 6px; margin-top: 6px; }
+.extra-q { margin-top: 2px; }
+.extra-q .question { margin-top: 6px; }
+.now-empty { margin: var(--space-md) 0 0; color: var(--ink-2); }
+
+.condition-cards { list-style: none; margin: var(--space-md) 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: var(--space-md); }
+.ccard { padding: 12px 14px; border: 1px solid var(--rule-soft); background: var(--paper); display: grid; gap: 6px; align-content: start; min-width: 0; }
+.ccard-head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.ccard-head h3 { margin: 0; font-size: 15px; }
+.ccard-docs { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.ccard-doc { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; font-size: 14px; min-width: 0; }
+.ccard-doc .cd-value { font-weight: 600; word-break: break-word; }
+.cd-value.is-vague { font-weight: 400; color: var(--ink-2); }
+.ccard-insight { margin: 0; font-size: 13px; color: var(--ink-2); }
+.cd-explain { flex-basis: 100%; color: var(--ink-2); }
+.details-section .fold { border-top: 1px solid var(--rule-soft); padding: 10px 0; }
+.details-section .fold:first-of-type { border-top: 0; }
+.details-section .fold > summary { cursor: pointer; font-weight: 600; }
+.fold-count { font-weight: 400; color: var(--ink-2); font-size: 13px; margin-left: 4px; }
+.followup-reason { margin: 0; color: var(--ink-2); }

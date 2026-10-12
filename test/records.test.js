@@ -117,8 +117,7 @@ test('T05 공고 3,400만원 → 오퍼 3,600만원: 서로 다른 안내, 두 �
   assert.equal(q.length, 1, '급여 질문은 하나');
   assert.equal(q[0].kind, 'different_stated');
   assert.deepEqual(q[0].sources.map((s) => s.docLabel), ['채용공고', '오퍼·합격 안내']);
-  assert.match(q[0].question, /채용공고: 3,400만원/);
-  assert.match(q[0].question, /오퍼·합격 안내: 3,600만원/);
+  assert.equal(q[0].question, '채용공고에는 급여가 3,400만원, 오퍼·합격 안내에는 3,600만원으로 기재되어 있습니다. 실제 적용되는 급여를 확인 부탁드립니다.');
   assert.doesNotMatch(q[0].question, /변경/);
   // 이전 자료의 값은 그대로 (덮어쓰지 않음)
   assert.equal(posting.analysis.criteria['01-a'].sourceValue, '3,400만원');

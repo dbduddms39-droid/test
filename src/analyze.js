@@ -75,7 +75,8 @@ export async function analyzeDocument({ text, docType, ai, log = () => {}, lowCo
 
   const final = { ...first };
   const { held, independentD } = planHolds(first, segments);
-  for (const id of independentD) final[id] = { unavailable: true, reason: 'evidence_verification_failed' };
+  // codes: 검증에 실패한 이유 코드만 남긴다 (인용 원문은 남기지 않음). 화면에서 '분석 확인 불가'의 원인을 설명하는 데 쓴다.
+  for (const id of independentD) final[id] = { unavailable: true, reason: 'evidence_verification_failed', codes: [...new Set(first[id].errors)] };
 
   // 보류한 상위 항목만 1회 재분석. 다른 항목의 검증된 결과는 그대로 둔다.
   let retryErrors = {};
@@ -84,7 +85,7 @@ export async function analyzeDocument({ text, docType, ai, log = () => {}, lowCo
     const second = await callAndVerify(ai, { docType, segments, criterionIds: ids, feedback: errorsOf(first, ids) });
     for (const id of ids) {
       // 재분석까지 실패한 세부기준은 '분석 확인 불가'. 허위 구절은 버린다.
-      final[id] = failed(second[id]) ? { unavailable: true, reason: 'evidence_verification_failed' } : second[id];
+      final[id] = failed(second[id]) ? { unavailable: true, reason: 'evidence_verification_failed', codes: [...new Set(second[id].errors)] } : second[id];
     }
     retryErrors = errorsOf(second, ids);
   }

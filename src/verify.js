@@ -22,6 +22,11 @@ const WORKDAY = /(주\s*\d+(?:\.\d+)?\s*일|월\s*[~\-∼]\s*금|월요일부터
 const HOLIDAY_WORD = /(휴일|휴무|쉬|주휴|공휴|휴가)/;
 export const isWorkdayOnly = (text) => WORKDAY.test(text) && !HOLIDAY_WORD.test(text);
 
+// 계약기간(06)의 근거에는 기간에 관한 표현이 있어야 한다. '정규직'·'고용형태: 정규직'처럼 고용형태만 말하는 문구로
+// 계약기간을 정하지 않는다 (기준표 05-a 출처 주석: 계약기간 등 별도 주제와 혼동 금지).
+const TERM_WORD = /(계약\s*기간|근로\s*기간|기간의\s*정함|기간을\s*정|기간\s*(제|만료)|계약직|종료|만료|갱신|재계약|존속|\d{4}\s*[.년\-/]|\d+\s*(개월|년)|부터|까지|~)/;
+export const isNotTermEvidence = (text) => !TERM_WORD.test(text);
+
 const toMinutes = (hhmm) => {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm).trim());
   if (!m) return null;
@@ -124,6 +129,7 @@ function verifyEntry(id, c, segments) {
   };
   drop(isCatchAll, 'catch_all');
   if (id.startsWith('09-')) drop(isWorkdayOnly, 'workday_not_holiday');
+  if (id.startsWith('06-')) drop(isNotTermEvidence, 'employment_type_not_term');
 
   out.finding = c.finding;
   out.quotes = quotes;

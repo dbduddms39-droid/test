@@ -71,10 +71,10 @@ try {
   const d = await open(1440, 900);
   const { data: r5, rec: rec5 } = await analyze(d, 'F05');
   const visible5 = r5.topics.filter((t) => t.visible);
-  const rows5 = await d.$$eval('#condition-list .condition', (els) => els.map((e) => e.dataset.item));
+  const rows5 = await d.$$eval('#all-condition-list .condition', (els) => els.map((e) => e.dataset.item));
   check('근로계약서: 표시 항목 10개(08 표시) 모두 기재 상태로', visible5.length === 10 && sameSet(rows5, visible5.map((t) => t.id)));
   const t03 = r5.topics.find((t) => t.id === '03');
-  const row03 = await d.textContent('#condition-list [data-item="03"]');
+  const row03 = await d.textContent('#all-condition-list [data-item="03"]');
   check('분석 확인 불가를 미기재로 표시하지 않음 (S04)', t03.status === 'MAIN_UNAVAILABLE' && row03.includes('분석 확인 불가') && !row03.includes('확인되지 않') && row03.includes('적혀 있지 않다는 뜻이 아니에요'));
   check('분석 확인 불가는 재분석 안내 (회사 질문 아님)', await d.isVisible('#reanalyze-box'));
   await d.screenshot({ path: `${OUT}/S04-desktop.png`, fullPage: true });
@@ -127,7 +127,7 @@ try {
 
   // 4) 수습 미정 문서: 08 미표시, 07에 보류 안내
   const { data: r2, rec: rec2 } = await analyze(d, 'F02');
-  const rows2 = await d.$$eval('#condition-list .condition', (els) => els.map((e) => e.dataset.item));
+  const rows2 = await d.$$eval('#all-condition-list .condition', (els) => els.map((e) => e.dataset.item));
   check('수습 미정 문서: 08 미표시 (표시 대상 9개)', !rows2.includes('08') && r2.counts.shown === 9);
   await d.goto(`${BASE}/#/records/${rec2}/item/07`);
   await d.waitForSelector('#view-item:not([hidden])');

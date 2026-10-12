@@ -166,7 +166,7 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
     for (const c of t.criteria) {
       const e = entries[c.id];
       if (!e || e.unavailable) {
-        crit[c.id] = { status: 'UNAVAILABLE', evidence: [], reason: e?.reason ?? 'missing', finding: null };
+        crit[c.id] = { status: 'UNAVAILABLE', evidence: [], reason: e?.reason ?? 'missing', codes: e?.codes ?? [], finding: null };
         continue;
       }
       // 7-2: 확인되지 않은 OCR 저신뢰 구간이 이 세부기준의 판단 근거와 겹치면 확정하지 않는다
@@ -176,11 +176,13 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
       }
       let status = subStatus(c.id, e);
       let derived = null;
+      let calcDiag = null;
       let valueKind = e.sourceValue ? 'quoted' : null;
       if (c.id === '02-a' && e.valueKind === 'calculated') {
         const calc = verifyCalc(e.calc, [...e.quotes, ...(entries['02-b']?.quotes ?? []), ...(entries['02-c']?.quotes ?? []), ...(entries['02-d']?.quotes ?? [])].map((q) => q.text));
         if (calc.ok) { derived = calc.derived; valueKind = 'calculated'; } else {
           diagnostics.push({ id: c.id, diag: calc.reason });
+          calcDiag = calc.reason;
           if (status === 'CONFIRMED') status = 'PARTIAL'; // 검증되지 않은 계산으로 확정하지 않음
         }
       } else if (c.id === '02-a' && status === 'CONFIRMED') valueKind = 'quoted';
@@ -189,7 +191,8 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
       if (e.excluded?.length) diagnostics.push({ id: c.id, diag: 'excluded_quotes', reasons: e.excluded.map((x) => x.reason) });
       const provisional = e.finding === 'negated' ? NEGATION_STATUS[c.id]?.provisional ?? null : null;
       if (provisional) diagnostics.push({ id: c.id, diag: `provisional_negation:${provisional}` });
-      crit[c.id] = { status: ruled.status, evidence: e.quotes, sourceValue: e.sourceValue, valueKind, derived, finding: e.finding, termType: e.termType, provisional };
+      // boundary: 기준표 경계 규칙으로 상태가 낮아진 이유 (화면 설명용, 판정에는 쓰지 않음)
+      crit[c.id] = { status: ruled.status, evidence: e.quotes, sourceValue: e.sourceValue, valueKind, derived, finding: e.finding, termType: e.termType, provisional, boundary: ruled.diag ?? calcDiag };
     }
     if (ocrCore.has(t.id)) {
       diagnostics.push({ id: t.id, diag: 'ocr_low_confidence_core_context' });
@@ -241,6 +244,8 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
         valueKind: r.status === 'UNAVAILABLE' ? null : r.valueKind ?? null,
         derived: r.status === 'UNAVAILABLE' ? null : r.derived ?? null,
         unavailableReason: r.status === 'UNAVAILABLE' ? r.reason ?? null : null,
+        unavailableCodes: r.status === 'UNAVAILABLE' ? r.codes ?? [] : [],
+        boundary: r.status === 'UNAVAILABLE' ? null : r.boundary ?? null,
         basis,
         provisional: r.status === 'UNAVAILABLE' ? null : r.provisional ?? null,
         sources: sourceCodes(c, flags),
@@ -289,6 +294,8 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
     termType: r.status === 'CONFIRMED' ? r.termType ?? null : null,
     derived: r.status === 'UNAVAILABLE' ? null : r.derived ?? null,
     reason: r.status === 'UNAVAILABLE' ? r.reason ?? null : r.naReason ?? null,
+    codes: r.status === 'UNAVAILABLE' ? r.codes ?? [] : [],
+    boundary: r.status === 'UNAVAILABLE' ? null : r.boundary ?? null,
   }]));
   return { version: CRITERIA_VERSION, topics, counts: { shown: shown.length, byStatus }, diagnostics, criteria };
 }

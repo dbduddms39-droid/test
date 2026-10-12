@@ -126,7 +126,7 @@ export function formatWon(v) {
 // 급여 산정 단위. 서로 다른 단위가 함께 보이면 특정하지 않는다.
 const PAY_UNITS = [
   ['annual', '연봉', /(연봉|연\s*급여|연간\s*(급여|보수|임금)|연\s*\d|년\s*\d[\d,]*\s*(만|원))/],
-  ['monthly', '월급', /(월급|월\s*(급여|보수|임금)|월\s*\d[\d,.]*\s*(만|천|원))/],
+  ['monthly', '월급', /(월급|월\s*(급여|보수|임금|지급\s*기준|기준\s*금?액)|월\s*\d[\d,.]*\s*(만|천|원))/],
   ['hourly', '시급', /(시급|시간급|시간당)/],
   ['daily', '일급', /(일급|일당)/],
   ['weekly', '주급', /주급/],
@@ -135,6 +135,25 @@ export function payUnit(text) {
   const hits = PAY_UNITS.filter(([, , re]) => re.test(text));
   return hits.length === 1 ? { key: hits[0][0], label: hits[0][1] } : null;
 }
+// 줄(구절)마다 '산정 단위 + 금액'이 하나씩 적힌 경우의 짝: '연봉 36,000,000원(세전)' / '월 지급 기준액 3,000,000원(세전)'.
+// 단위가 다른 금액을 서로 환산하지 않고, 같은 단위끼리만 비교하는 데 쓴다. 한 줄에 단위나 금액이 둘 이상이면 짝을 만들지 않는다.
+export function moneyByUnit(lines) {
+  const pairs = [];
+  for (const line of lines) {
+    for (const part of String(line ?? '').split(/[\n;]|,\s(?=\D)|\/(?=\s*\D)/)) {
+      const u = payUnit(part);
+      const amounts = [...new Set(parseAmounts(part))];
+      if (u && amounts.length === 1) pairs.push({ key: u.key, label: u.label, value: amounts[0] });
+    }
+  }
+  const byKey = {};
+  for (const p of pairs) (byKey[p.key] ??= { label: p.label, values: new Set() }).values.add(p.value);
+  return Object.fromEntries(Object.entries(byKey).map(([k, v]) => [k, { label: v.label, values: [...v.values] }]));
+}
+const evidenceLines = (doc, ids) => ids.flatMap((id) => {
+  const c = doc.criteria?.[id];
+  return c && c.status !== 'UNAVAILABLE' ? (c.evidence ?? []).map((q) => q.text) : [];
+});
 const taxBasis = (text) => {
   const pre = /세전/.test(text); const post = /세후|실수령/.test(text);
   return pre && !post ? 'pre' : post && !pre ? 'post' : null;
@@ -207,9 +226,27 @@ export function parsePeriod(text) {
   return [...new Set(durs)].length === 1 ? { kind: 'months', value: durs[0] } : null;
 }
 // 수습 기간: '3개월', '90일', '12주'
+// 날짜('2026년 11월 1일', '2026.11.01')는 기간 길이로 읽지 않는다
+const DATE_RE = /(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})\s*일?/g;
 export function parseDuration(text) {
-  const out = [...String(text ?? '').matchAll(/(\d+)\s*(개월|주|일)/g)].map((m) => ({ n: Number(m[1]), unit: m[2] }));
+  const t = String(text ?? '').replace(DATE_RE, ' ');
+  const out = [...t.matchAll(/(\d+)\s*(개월|주|일)/g)].map((m) => ({ n: Number(m[1]), unit: m[2] }));
   return single(out);
+}
+// 날짜 범위(시작·종료일) 하나
+export function parseDateRange(text) {
+  const d = [...new Set([...String(text ?? '').matchAll(DATE_RE)].map((m) => Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))))].map((t) => new Date(t));
+  return d.length === 2 && d[1] > d[0] ? { start: d[0], end: d[1] } : null;
+}
+const ymd = (d) => `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}.${String(d.getUTCDate()).padStart(2, '0')}`;
+// 시작일부터 n개월 뒤 하루 전이 종료일이면 그 날짜 범위는 n개월이다 (예: 11.1~1.31 = 3개월). 아니면 null
+export function monthsOfRange(r) {
+  for (let n = 1; n <= 36; n += 1) {
+    const e = new Date(Date.UTC(r.start.getUTCFullYear(), r.start.getUTCMonth() + n, r.start.getUTCDate() - 1));
+    if (e.getTime() === r.end.getTime()) return n;
+    if (e > r.end) return null;
+  }
+  return null;
 }
 const percents = (text) => [...String(text ?? '').matchAll(/(\d+(?:\.\d+)?)\s*%/g)].map((m) => Number(m[1]));
 
@@ -222,8 +259,23 @@ function compareConcrete(kind, a, b, docA, docB, L) {
   switch (kind) {
     case 'money': {
       const va = single(parseAmounts(a.text)); const vb = single(parseAmounts(b.text));
-      if (va == null || vb == null) return UNCLEAR('금액을 하나로 특정할 수 없어 직접 비교하지 않았어요.');
       const ua = payUnit(ctxText(docA, ['01-a', '01-b'])); const ub = payUnit(ctxText(docB, ['01-a', '01-b']));
+      // 한 자료에 연봉과 월 지급액이 함께 적혀 금액·단위를 하나로 특정할 수 없으면, 같은 단위로 적힌 금액끼리만 비교한다 (환산 없음)
+      if (va == null || vb == null || !ua || !ub) {
+        const pa = moneyByUnit(evidenceLines(docA, ['01-a', '01-b'])); const pb = moneyByUnit(evidenceLines(docB, ['01-a', '01-b']));
+        const common = Object.keys(pa).filter((k) => pb[k] && pa[k].values.length === 1 && pb[k].values.length === 1);
+        if (common.length) {
+          const ta = taxBasis(ctxText(docA, ['01-a', '01-g'])); const tb = taxBasis(ctxText(docB, ['01-a', '01-g']));
+          if (ta && tb && ta !== tb) return UNCLEAR('세전·세후 기준이 달라 직접 비교하지 않았어요.');
+          const extra = (p, other, who) => Object.keys(p).filter((k) => !other[k]).map((k) => `${who}에는 ${p[k].label} ${p[k].values.map(formatWon).join('·')}도 적혀 있어요`);
+          const others = [...extra(pa, pb, L.A), ...extra(pb, pa, L.B)];
+          const tail = others.length ? ` (${others.join(', ')}. 서로 환산하지 않았어요.)` : '';
+          const diffs = common.filter((k) => pa[k].values[0] !== pb[k].values[0]);
+          if (!diffs.length) return SAME(`${common.map((k) => `${pa[k].label} ${formatWon(pa[k].values[0])}`).join(', ')}로 같아요.${tail}`);
+          return CHANGED(`${diffs.map((k) => `${pa[k].label} ${formatWon(pa[k].values[0])} → ${formatWon(pb[k].values[0])}`).join(', ')}${tail}`);
+        }
+      }
+      if (va == null || vb == null) return UNCLEAR('금액을 하나로 특정할 수 없어 직접 비교하지 않았어요.');
       if (!ua || !ub) return UNCLEAR('산정 단위(연봉·월급·시급 등)를 하나로 확인할 수 없어 직접 비교하지 않았어요.');
       if (ua.key !== ub.key) return UNCLEAR(`산정 단위가 달라요(${L.A}: ${ua.label}, ${L.B}: ${ub.label}). 단위를 바꿔 계산하지 않았어요.`);
       const ta = taxBasis(ctxText(docA, ['01-a', '01-g'])); const tb = taxBasis(ctxText(docB, ['01-a', '01-g']));
@@ -250,6 +302,9 @@ function compareConcrete(kind, a, b, docA, docB, L) {
     case 'break': {
       const ma = single(parseBreakMinutes(a.text)); const mb = single(parseBreakMinutes(b.text));
       if (ma == null || mb == null) return UNCLEAR('휴게시간을 하나로 특정할 수 없어 직접 비교하지 않았어요.');
+      // 길이가 같아도 휴게 시각이 다르게 적혔으면 다른 안내로 본다
+      const ra = parseTimeRanges(a.text); const rb = parseTimeRanges(b.text);
+      if (ra.length === 1 && rb.length === 1 && ra[0] !== rb[0]) return CHANGED(`휴게 시각 ${ra[0]} → ${rb[0]} (길이는 ${ma === mb ? `${ma}분으로 같아요` : `${ma}분 → ${mb}분`})`);
       return ma === mb ? SAME(`${ma}분으로 같아요.`) : CHANGED(`${ma}분 → ${mb}분`);
     }
     case 'payday': {
@@ -286,9 +341,23 @@ function compareConcrete(kind, a, b, docA, docB, L) {
       return va === vb ? SAME(`${lab[va]}으로 같아요.`) : CHANGED(`${lab[va]} → ${lab[vb]}`);
     }
     case 'duration': {
-      const da = parseDuration(a.text); const db = parseDuration(b.text);
-      if (!da || !db || da.unit !== db.unit) return UNCLEAR('수습 기간을 같은 단위로 읽을 수 없어 직접 비교하지 않았어요.');
-      return da.n === db.n ? SAME(`${da.n}${da.unit}로 같아요.`) : CHANGED(`${da.n}${da.unit} → ${db.n}${db.unit}`);
+      // 기간 길이(3개월)와 적용 날짜(시작·종료일)를 나눠 읽는다
+      const ta = [a.text, ...a.evidence.map((e) => e.text)].join('\n'); const tb = [b.text, ...b.evidence.map((e) => e.text)].join('\n');
+      const da = parseDuration(ta); const db = parseDuration(tb);
+      const ra = parseDateRange(ta); const rb = parseDateRange(tb);
+      const ma = ra ? monthsOfRange(ra) : null; const mb = rb ? monthsOfRange(rb) : null;
+      // 한 자료 안에서 날짜 범위와 기간 길이가 서로 맞지 않으면 비교하지 않고 알린다
+      for (const [d, r, m, who] of [[da, ra, ma, L.A], [db, rb, mb, L.B]]) {
+        if (d && r && d.unit === '개월' && m !== d.n) return UNCLEAR(`${who}에 적힌 날짜(${ymd(r.start)}~${ymd(r.end)})와 기간(${d.n}${d.unit})이 서로 맞는지 확인이 필요해요.`);
+      }
+      const dateNote = [[ra, L.A], [rb, L.B]].filter(([r]) => r).map(([r, who]) => `${who}에는 적용 날짜(${ymd(r.start)}~${ymd(r.end)})도 적혀 있어요`).join(', ');
+      const tail = dateNote ? ` (${dateNote}.)` : '';
+      if (da && db && da.unit === db.unit) return da.n === db.n ? SAME(`${da.n}${da.unit}로 같아요.${tail}`) : CHANGED(`${da.n}${da.unit} → ${db.n}${db.unit}`);
+      if (ra && rb) return ymd(ra.start) === ymd(rb.start) && ymd(ra.end) === ymd(rb.end) ? SAME(`${ymd(ra.start)}~${ymd(ra.end)}로 같아요.`) : CHANGED(`${ymd(ra.start)}~${ymd(ra.end)} → ${ymd(rb.start)}~${ymd(rb.end)}`);
+      // 한쪽은 길이만, 다른 쪽은 날짜만: 날짜 범위가 정확히 n개월이면 공통점을 알리되 같은 조건으로 확정하지는 않는다
+      const [dLen, r, rm, lenWho, dateWho] = da && rb ? [da, rb, mb, L.A, L.B] : db && ra ? [db, ra, ma, L.B, L.A] : [];
+      if (dLen && dLen.unit === '개월' && rm === dLen.n) return UNCLEAR(`${lenWho}에는 기간(${dLen.n}개월)만, ${dateWho}에는 날짜(${ymd(r.start)}~${ymd(r.end)})만 적혀 있어요. 날짜 범위는 ${rm}개월에 해당하지만, 적용 시작일은 따로 확인해 주세요.`);
+      return UNCLEAR('수습 기간을 같은 단위로 읽을 수 없어 직접 비교하지 않았어요.');
     }
     case 'probationPay': {
       const pa = single(percents(a.text)); const pb = single(percents(b.text));
