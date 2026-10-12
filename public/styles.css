@@ -293,15 +293,22 @@ textarea:focus { outline: none; border-color: var(--ink); }
 @media (min-width: 900px) { .band > .mono-meta + h2 { font-size: 24px; line-height: 32px; } }
 .band > h2 + .muted { margin: 0; font-size: 14px; }
 
-/* 확인 순서: 인쇄물처럼 위 굵은 선과 칸 나눔 */
-.steps { list-style: none; margin: 0; padding: 0; display: grid; border: 1px solid var(--rule); border-top: 2px solid var(--ink); background: var(--paper); box-shadow: var(--paper-edge); }
-@media (min-width: 768px) { .steps { grid-template-columns: repeat(3, 1fr); } }
-.steps li { padding: var(--space-lg); }
-.steps li + li { border-top: 1px solid var(--rule); }
-@media (min-width: 768px) { .steps li + li { border-top: 0; border-left: 1px solid var(--rule); } }
-.step-index { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 var(--space-md); font-size: 13px; color: var(--ink-2); }
-.steps h3 { margin: 0 0 var(--space-sm); font-size: 18px; }
+/* 이용 방법: 스크롤 없이 흐름을 읽는 3단계 카드. 마지막 단계는 실제 결과물을 강조 */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+.steps li { min-width: 0; position: relative; padding: 22px 20px 24px; border: 1px solid var(--rule); border-top: 2px solid var(--ink); background: var(--paper); box-shadow: var(--paper-edge); }
+@media (min-width: 768px) {
+  .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+  .steps li:not(:last-child)::after { content: '→'; position: absolute; top: 50%; right: -20px; transform: translate(50%, -50%); z-index: 1; padding: 3px 0; color: var(--annot); background: var(--wash); font-size: 18px; line-height: 1; }
+}
+.steps .step-index { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; color: var(--ink-2); }
+.step-number { display: inline-flex; width: 40px; height: 40px; flex: none; justify-content: center; align-items: center; border: 1px solid var(--rule); border-radius: 50%; background: var(--desk); color: var(--ink); font: 600 19px/1 var(--font-mono); }
+.step-kicker { min-width: 0; font: 500 11px/1.5 var(--font-mono); letter-spacing: 0.02em; color: var(--ink-2); }
+.steps h3 { margin: 0 0 10px; font-size: 18px; line-height: 1.45; }
 .steps p { margin: 0; font-size: 14px; }
+.steps .step-outcome { border-top-color: var(--annot); }
+.step-outcome .step-number { color: var(--paper); background: var(--annot); border-color: var(--annot); }
+.step-outcome h3 mark { padding: 0; border: 0; background: linear-gradient(transparent 60%, var(--mark) 60%); }
+.step-outcome-note { display: block; width: fit-content; max-width: 100%; margin-top: 18px; padding-top: 8px; border-top: 1px solid var(--rule); color: var(--annot); font-size: 12px; line-height: 1.5; font-weight: 600; }
 .principle { margin: var(--space-md) 0 0; padding: 10px 14px; background: var(--paper); border: 1px solid var(--rule); border-left: 2px solid var(--annot); font-size: 14px; }
 
 /* 점검 주제 */
