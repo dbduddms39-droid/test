@@ -735,5 +735,19 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .optional-question button:disabled { opacity: .55; cursor: default; }
 @media(max-width:420px) { .optional-question { align-items: flex-start; } .optional-question button { padding: 8px; } }
 
-/* 두 번째 기능은 장황한 소개 대신 한 줄로 안내 */
-.hero-contract-note { margin: 12px 0 0; font-size: 13px; color: var(--ink-2); }
+/* 두 진입 경로를 같은 위계의 선택 카드로 보여준다 (기존 교정지 스타일 유지). */
+.view-landing .hero-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr)); gap: 10px; align-items: stretch; }
+.hero-choice { display: flex; flex-direction: column; justify-content: center; gap: 7px; min-height: 92px; padding: 17px 18px; border: 1px solid var(--ink); border-radius: var(--radius); text-decoration: none; }
+.hero-choice-title { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 16px; line-height: 1.4; font-weight: 700; }
+.hero-choice-title span { flex: none; }
+.hero-choice-desc { display: block; font-size: 14px; line-height: 1.45; font-weight: 400; }
+.hero-choice-primary { color: var(--paper); background: var(--ink); }
+.hero-choice-primary .hero-choice-desc { color: var(--paper); opacity: .92; }
+.hero-choice-primary:hover { background: var(--ink-hover); }
+.hero-choice-contract { color: var(--ink); background: var(--paper); box-shadow: var(--paper-edge); }
+.hero-choice-contract .hero-choice-desc { color: var(--ink-2); }
+.hero-choice-contract:hover { background: var(--desk); }
+.hero-choice:focus-visible { outline: 3px solid var(--annot); outline-offset: 3px; }
+@media (max-width: 420px) {
+  .hero-choice { min-height: 78px; padding: 12px 15px; }
+}
