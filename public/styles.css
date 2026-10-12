@@ -655,3 +655,26 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .criteria-method p { color: var(--ink-2); font-size: 13px; line-height: 1.7; margin: var(--space-sm) 0 0; }
 .cmp-note strong { color: var(--annot); font-weight: 600; }
 @media (max-width: 767px) { .criteria-examples { grid-template-columns: 1fr; } }
+
+
+/* 메인 페이지: 구분한 이유에서 실제 확인 질문으로 이어지는 가상 결과 예시 */
+.sample-docs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.sample-doc { min-width: 0; border: 1px solid var(--rule-soft); padding: 12px; background: var(--desk); }
+.sample-doc-label { margin: 0 0 8px; font-size: 12px; color: var(--ink-2); }
+.sample-pay { margin: 0; font-size: 15px; color: var(--ink); line-height: 1.55; }
+.sample-pay strong { font-weight: 700; }
+.sample-pay mark { font-weight: 700; border-bottom: 1px solid var(--annot); }
+.sample-verdict { padding: 13px 2px 12px; border-bottom: 1px solid var(--rule-soft); }
+.sample-verdict .mono-meta { margin: 0 0 4px; }
+.sample-verdict p:last-child { margin: 0; font-size: 13px; }
+.sample-question { margin-top: 16px; padding: 14px 16px; background: var(--wash); border-left: 3px solid var(--annot); }
+.sample-question-label { margin: 0 0 8px; font-weight: 700; font-size: 14px; color: var(--ink); }
+.sample-question-text { margin: 0; line-height: 1.7; font-size: 15px; color: var(--ink); }
+.sample-question-hint { margin: 9px 0 0; font-size: 12px; color: var(--ink-2); }
+.compare-result .compare-ask { margin: 10px 0 0; padding: 10px 12px; background: var(--wash); border-left: 2px solid var(--annot); font-weight: 500; }
+@media (max-width: 390px) {
+  .sample-docs { gap: 6px; }
+  .sample-doc { padding: 10px 8px; }
+  .sample-pay { font-size: 13px; }
+  .sample-question { padding: 12px; }
+}
