@@ -121,6 +121,60 @@ test('근로계약서 단독: 분석 불가나 해당 없음은 문서 미기재
   assert.equal(qs.length, 0);
 });
 
+test('확인 질문: 뒤 문서에 처음 등장한 핵심 조건이 추후 협의라면 구체적인 내용을 묻는다', () => {
+  const cs = comparison([
+    { id: '08', label: '수습기간 중 급여', facets: [
+      fct('08-a', '수습 중 지급 기준', 'added', side('MISSING'), side('UNCLEAR', '수습 중 급여: 별도 협의')),
+    ] },
+  ]);
+  const qs = buildCompareQuestions(cs);
+  assert.equal(qs.length, 1);
+  assert.match(qs[0].text, /별도 협의/);
+  assert.match(qs[0].text, /구체적인 수습 중 지급 기준을 알려 주실 수 있을까요/);
+  assert.doesNotMatch(qs[0].text, /실제로 적용되는지|삭제되었|위반/);
+
+  const offerToContract = { ...cs, docs: [{ docTypeLabel: '오퍼 안내' }, { docTypeLabel: '근로계약서' }] };
+  offerToContract.items[0].facets[0].state = 'not_comparable';
+  const q2 = buildCompareQuestions(offerToContract);
+  assert.equal(q2.length, 1);
+  assert.match(q2[0].text, /구체적인 수습 중 지급 기준/);
+});
+
+test('확인 질문: 앞 문서도 추후 협의였으면 그대로 적용되느냐고 묻지 않는다', () => {
+  const qs = buildCompareQuestions(comparison([
+    { id: '08', label: '수습기간 중 급여', facets: [
+      fct('08-a', '수습 중 지급 기준', 'missing_one', side('PARTIAL', '별도 협의'), side('MISSING')),
+    ] },
+  ]));
+  assert.equal(qs.length, 1);
+  assert.match(qs[0].text, /구체적으로 알려 주실 수 있을까요/);
+  assert.doesNotMatch(qs[0].text, /그대로 적용되는지/);
+
+  const offerVersion = { docs: [{ docTypeLabel: '채용공고' }, { docTypeLabel: '오퍼 안내' }], items: [
+    { id: '08', label: '수습기간 중 급여', facets: [
+      fct('08-a', '수습 중 지급 기준', 'not_comparable', side('UNCLEAR', '추후 협의'), side('MISSING')),
+    ] },
+  ] };
+  const q2 = buildCompareQuestions(offerVersion);
+  assert.equal(q2.length, 1);
+  assert.doesNotMatch(q2[0].text, /그대로 적용되는지/);
+});
+
+test('확인 질문: 분석 불가·세부항목의 새 기재·동일 조건에는 불필요한 질문을 만들지 않는다', () => {
+  const qs = buildCompareQuestions(comparison([
+    { id: '01', label: '급여 및 지급 조건', facets: [
+      fct('01-f', '지급일', 'added', side('MISSING'), side('PARTIAL', '별도 협의')),
+    ] },
+    { id: '08', label: '수습기간 중 급여', facets: [
+      fct('08-a', 'added', 'added', side('MISSING'), side('UNAVAILABLE')),
+    ] },
+    { id: '02', label: '근로시간', facets: [
+      fct('02-a', '소정근로시간', 'same', side('CONFIRMED', '주 40시간'), side('CONFIRMED', '주 40시간')),
+    ] },
+  ]));
+  assert.deepEqual(qs, []);
+});
+
 test('질문 중복 제거: 같은 문장은 하나만 (공백 차이 무시), 한 항목은 질문 하나로 묶음', () => {
   assert.equal(dedupeQuestions([{ text: '급여를 알려 주세요.' }, { text: ' 급여를  알려 주세요. ' }, { text: '' }]).length, 1);
   const same = fct('02-a', '소정근로시간', 'changed', side('CONFIRMED', '주 40시간'), side('CONFIRMED', '주 45시간'));

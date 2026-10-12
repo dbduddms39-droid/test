@@ -94,7 +94,12 @@ test('1) 채용공고 ↔ 오퍼 안내: 같은 금액은 동일, 간략한 오�
     assert.equal(facet(c, id).state, 'not_comparable', id);
     assert.doesNotMatch(facet(c, id).note, /삭제|폐지|없어졌/);
   }
-  assert.equal(facet(c, '08-a').state, 'added', '채용공고에는 없고 오퍼에 적힘 (모호한 표현이어도 한쪽에만 있음)');
+  assert.equal(facet(c, '08-a').state, 'added', '채용공고에는 없고 오퍼에 적힘 (구체적인 지급 기준 미확정)');
+  const { buildCompareQuestions } = await import('../public/questions.js');
+  const payQuestion = buildCompareQuestions(c).find((q) => q.itemId === '08');
+  assert.ok(payQuestion, '오퍼에 별도 협의로 나온 수습 급여는 확인 질문이 있어야 함');
+  assert.match(payQuestion.text, /구체적인 수습 중 지급 기준/);
+  assert.match(payQuestion.text, /별도 협의/);
   assert.ok(!c.items.some((i) => i.state === 'changed'), '확인되지 않은 것을 변경으로 보지 않음');
 });
 

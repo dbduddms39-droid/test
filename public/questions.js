@@ -73,7 +73,19 @@ export function dedupeQuestions(list) {
 // 새로 기재된 지급일·휴게시간 등 세부 정보는 결과에서 보여 주되, 이미 구체적으로 적혔다면 재질문하지 않는다.
 // 이는 법적 중요도 순위가 아니라 사용자에게 반복 질문을 줄이려는 제품 정책이다.
 const NEW_CORE_FACETS = new Set(['01-a', '02-a', '03-a', '04-a', '05-a', '06-a', '06-b', '07-a', '07-b', '08-a']);
-// A: 앞 단계 문서, B: 뒤 단계 문서. 같은 조건은 질문하지 않되, 새롭게 기재된 핵심 조건은 적용 여부를 확인한다.
+const INCOMPLETE_STATUSES = new Set(['PARTIAL', 'UNCLEAR']);
+
+// 처음 등장한 핵심 조건: 이미 구체적으로 기재됐다면 적용 여부, '별도 협의'라면 구체적인 내용을 질문한다.
+function newlyStatedCoreQuestion(f, L, b) {
+  if (!NEW_CORE_FACETS.has(f.id) || f.a.status !== 'MISSING' || !b) return null;
+  if (INCOMPLETE_STATUSES.has(f.b.status))
+    return `${L.A}에는 ${f.label}에 관한 내용이 없고 ${L.B}에는 ‘${b}’라고 적혀 있습니다. 구체적인 ${josa(f.label, '을/를')} 알려 주실 수 있을까요?`;
+  if (f.b.status === 'CONFIRMED')
+    return `${L.A}에서는 ${f.label}에 관한 내용을 찾지 못했지만 ${L.B}에는 ‘${b}’라고 적혀 있습니다. 이 조건이 실제로 적용되는지 확인 부탁드립니다.`;
+  return null; // 분석 확인 불가 등은 회사에 확인할 문제로 단정하지 않음
+}
+
+// A: 앞 단계 문서, B: 뒤 단계 문서. 같은 조건은 질문하지 않되, 새롭게 기재된 핵심 조건의 구체성을 확인한다.
 function compareSentence(f, L, isCoreFacet, item) {
   // 원문 기재값이 없으면 첫 인용 줄을 짧게 보여 준다 (문서에 없는 값을 만들지 않음)
   const a = clip(f.a.value ?? f.a.evidence?.[0]?.text); const b = clip(f.b.value ?? f.b.evidence?.[0]?.text);
@@ -82,18 +94,20 @@ function compareSentence(f, L, isCoreFacet, item) {
     case 'changed':
       return `${subj} 문서마다 다르게 적혀 있습니다(${L.A}: ${a || '해당 없음'} / ${L.B}: ${b || '해당 없음'}). 최종적으로 적용되는 ${josa(f.label, '을/를')} 확인 부탁드립니다.`;
     case 'missing_one':
+      if (INCOMPLETE_STATUSES.has(f.a.status) && a)
+        return `${L.A}에는 ${f.label}이 ‘${a}’라고 적혀 있지만 구체적으로 정해졌는지 확인하기 어렵고, ${L.B}에서는 관련 내용을 찾지 못했습니다. 현재 적용되는 ${josa(f.label, '을/를')} 구체적으로 알려 주실 수 있을까요?`;
       return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
     case 'added':
-      // 새로 기재된 내용은 변경이나 위반이라고 단정하지 않고, 실제 적용 여부만 확인한다.
-      return NEW_CORE_FACETS.has(f.id) && f.a.status === 'MISSING' && f.b.status === 'CONFIRMED' && b
-        ? `${L.A}에서는 ${f.label}에 관한 내용을 찾지 못했지만 ${L.B}에는 ‘${b}’라고 적혀 있습니다. 이 조건이 실제로 적용되는지 확인 부탁드립니다.`
-        : null;
+      // 새로 기재된 내용은 변경이나 위반이라고 단정하지 않는다. 세부 정보가 확정되지 않았으면 구체적으로 묻는다.
+      return newlyStatedCoreQuestion(f, L, b);
     case 'not_comparable':
-      // 간략한 오퍼의 미기재는 삭제·변경이 아니다. 어느 쪽에 기재됐는지 구분한다.
-      if (f.b.status === 'MISSING' && a) return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
-      if (NEW_CORE_FACETS.has(f.id) && f.a.status === 'MISSING' && f.b.status === 'CONFIRMED' && b)
-        return `${L.A}에서는 ${f.label}에 관한 내용을 찾지 못했지만 ${L.B}에는 ‘${b}’라고 적혀 있습니다. 이 조건이 실제로 적용되는지 확인 부탁드립니다.`;
-      return null;
+      // 간략한 오퍼에 없다는 이유만으로 조건이 삭제·변경됐다고 단정하지 않는다.
+      if (f.b.status === 'MISSING' && a) {
+        if (INCOMPLETE_STATUSES.has(f.a.status))
+          return `${L.A}에는 ${f.label}이 ‘${a}’라고 적혀 있지만 구체적으로 정해졌는지 확인하기 어렵고, ${L.B}에서는 관련 내용을 찾지 못했습니다. 현재 적용되는 ${josa(f.label, '을/를')} 구체적으로 알려 주실 수 있을까요?`;
+        return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
+      }
+      return newlyStatedCoreQuestion(f, L, b);
     case 'unclear':
       if (f.b.status === 'PARTIAL' || f.b.status === 'UNCLEAR') return `${L.B}의 ${subj} 구체적으로 정해지지 않은 것으로 보여 여쭤봅니다(${L.B}: ${b}). 구체적인 ${josa(f.label, '을/를')} 알려 주실 수 있을까요?`;
       if (f.a.status === 'CONFIRMED' && f.b.status === 'CONFIRMED') return `${subj} 문서마다 다르게 표현되어 있습니다(${L.A}: ${a} / ${L.B}: ${b}). 같은 조건인지 확인 부탁드립니다.`;
