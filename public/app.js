@@ -112,13 +112,6 @@ function initTabs(tabs, onSelect) {
   return select;
 }
 
-// ---------- S-01 시작 ----------
-$('#landing-how').addEventListener('click', () => {
-  const target = $('#landing-workflow');
-  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  target.focus({ preventScroll: true });
-});
-
 // ---------- S-02 문서 입력 ----------
 const textarea = $('#doc-text');
 const submitBtn = $('#submit-btn');
@@ -264,6 +257,8 @@ function applyMode(mode) {
   $('#input-lead').textContent = t.lead;
   submitBtn.textContent = t.submit;
   $('#compare-setup').hidden = mode !== 'compare';
+  $('#criteria-compare').hidden = mode !== 'compare';
+  $('#criteria-contract').hidden = mode !== 'contract';
   $('#method-index').textContent = mode === 'compare' ? '§ 02' : '§ 01';
   if (mode !== 'compare') { $('#method-title').textContent = '내용 전달 방식'; $('#slot-file').hidden = true; $('#paste-editor').hidden = false; }
   $('#mode-compare').toggleAttribute('aria-current', mode === 'compare');

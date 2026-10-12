@@ -695,3 +695,28 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .questions-shortcut button { flex: none; }
 .questions h2:focus { outline: none; }
 .questions h2:focus-visible { outline: 2px solid var(--annot); outline-offset: 4px; }
+
+
+/* 간소화한 시작 화면: 한 개 결과 예시 + 짧은 이용 방법 */
+.view-landing .hero { padding-bottom: 30px; gap: 30px; }
+@media (min-width: 900px) { .view-landing .hero { padding-bottom: 46px; gap: 46px; } }
+.view-landing #landing-workflow { padding-top: 32px; padding-bottom: 32px; }
+.view-landing #landing-workflow .band-head { margin-bottom: 18px; }
+.view-landing #landing-workflow .steps li { padding: 16px 18px 18px; }
+.view-landing #landing-workflow .steps .step-index { margin-bottom: 10px; }
+.view-landing #landing-workflow .steps h3 { font-size: 16px; margin-bottom: 6px; }
+.view-landing #landing-workflow .principle { margin-top: 18px; }
+.view-landing .hero-actions { gap: 10px; }
+
+/* 입력 화면: 기능별 점검 목록은 필요할 때만 열어본다 */
+.input-criteria { margin: 12px 0 22px; }
+.input-criteria details { border: 1px solid var(--rule-soft); background: var(--paper); }
+.input-criteria summary { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; cursor: pointer; list-style-position: inside; padding: 10px 14px; font-size: 14px; font-weight: 600; }
+.input-criteria summary::marker { color: var(--annot); }
+.input-criteria-count { color: var(--ink-2); font-size: 12px; font-weight: 400; }
+.input-criteria-body { padding: 0 14px 14px; border-top: 1px solid var(--rule-soft); }
+.input-criteria-body > .small { margin: 10px 0 6px; }
+.input-criteria-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; padding: 0 0 0 23px; margin: 10px 0; color: var(--ink); font-size: 13px; }
+.input-criteria-list li { padding-left: 2px; min-width: 0; }
+.input-criteria-list li::marker { color: var(--ink-3); }
+@media (max-width: 520px) { .input-criteria-list { grid-template-columns: minmax(0, 1fr); } }
