@@ -40,6 +40,79 @@ export function buildQuestion(topic, docType) {
   return `안녕하세요. ${lead} ${spec.ask} 감사합니다.`;
 }
 
+// ---------- 확인 질문 목록 (결과 화면 '회사에 확인할 질문') ----------
+// 질문은 템플릿으로만 만든다 (AI가 쓰지 않음). 사용자는 고치거나 골라서 직접 회사에 보낸다.
+// 문서에서 이미 명확하게 확인되는 조건(동일, 뒤 문서에 구체적으로 새로 적힘)에는 질문하지 않는다.
+
+// 한글 받침에 맞춘 조사 ('급여 금액이', '지급일이', '근무장소가')
+export function josa(word, pair) {
+  const [withBatchim, without] = pair.split('/');
+  const code = word.charCodeAt(word.length - 1) - 0xac00;
+  const has = code >= 0 && code <= 11171 ? code % 28 !== 0 : false;
+  return `${word}${has ? withBatchim : without}`;
+}
+const clip = (t, n = 60) => {
+  const s = String(t ?? '').replace(/\s+/g, ' ').trim();
+  return s.length > n ? `${s.slice(0, n)}…` : s;
+};
+const normalizeQ = (t) => t.replace(/\s+/g, ' ').trim();
+
+// 같은 내용의 질문을 하나로 (공백 차이 무시, 처음 나온 순서 유지)
+export function dedupeQuestions(list) {
+  const seen = new Set();
+  return list.filter((q) => {
+    const key = normalizeQ(q.text);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// 비교 결과의 세부 항목 하나 → 질문 문장 (질문이 필요 없으면 null)
+// A: 앞 단계 문서, B: 뒤 단계 문서. 뒤 문서가 실제로 적용될 조건에 더 가깝다고 보고, 뒤 문서가 명확하면 묻지 않는다.
+function compareSentence(f, L, isCoreFacet, item) {
+  const a = clip(f.a.value); const b = clip(f.b.value);
+  const subj = josa(f.label, '이/가');
+  switch (f.state) {
+    case 'changed':
+      return `${subj} 문서마다 다르게 적혀 있습니다(${L.A}: ${a || '해당 없음'} / ${L.B}: ${b || '해당 없음'}). 최종적으로 적용되는 ${josa(f.label, '을/를')} 확인 부탁드립니다.`;
+    case 'missing_one':
+      return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
+    case 'not_comparable':
+      // 간략한 오퍼에 없는 경우: 뒤 문서(B)가 비어 있을 때만 묻는다. 앞 문서만 비어 있고 뒤 문서에 적혀 있으면 묻지 않는다.
+      if (!f.b.value && f.a.value) return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
+      return null;
+    case 'unclear':
+      if (f.b.status === 'PARTIAL' || f.b.status === 'UNCLEAR') return `${L.B}의 ${subj} 구체적으로 정해지지 않은 것으로 보여 여쭤봅니다(${L.B}: ${b}). 구체적인 ${josa(f.label, '을/를')} 알려 주실 수 있을까요?`;
+      if (f.a.status === 'CONFIRMED' && f.b.status === 'CONFIRMED') return `${subj} 문서마다 다르게 표현되어 있습니다(${L.A}: ${a} / ${L.B}: ${b}). 같은 조건인지 확인 부탁드립니다.`;
+      return null; // 앞 문서만 모호하고 뒤 문서에 구체적으로 적힌 경우
+    case 'both_missing':
+      return isCoreFacet ? `두 문서 모두에서 ${item.label}에 관한 내용을 찾지 못했습니다. ${TOPIC_ASK[item.id]?.ask ?? ''}`.trim() : null;
+    default:
+      return null; // 동일·새로 추가·해당 없음·분석 확인 불가(분석 문제이지 문서 내용이 아님)
+  }
+}
+
+// comparison: /api/compare 결과. 반환: [{ id, itemId, label, text }] (항목마다 하나, 중복 제거)
+export function buildCompareQuestions(comparison) {
+  const L = { A: comparison.docs[0].docTypeLabel, B: comparison.docs[1].docTypeLabel };
+  const out = comparison.items.map((item) => {
+    const sentences = [...new Set(item.facets.map((f, i) => compareSentence(f, L, i === 0, item)).filter(Boolean))];
+    if (!sentences.length) return null;
+    return { id: `q-${item.id}`, itemId: item.id, label: item.label, text: `안녕하세요. ${item.label} 관련해 여쭤봅니다. ${sentences.join(' ')} 감사합니다.` };
+  }).filter(Boolean);
+  return dedupeQuestions(out);
+}
+
+// 근로계약서 단독 확인 결과 → 질문 목록 (기존 주제별 질문 템플릿을 그대로 쓰고 중복 제거)
+export function buildContractQuestions(result) {
+  const out = (result?.topics ?? []).map((t) => {
+    const text = buildQuestion(t, result.docType);
+    return text ? { id: `q-${t.id}`, itemId: t.id, label: t.label, text } : null;
+  }).filter(Boolean);
+  return dedupeQuestions(out);
+}
+
 // 클립보드 복사: Clipboard API를 먼저 쓰고, 안 되면 임시 입력란 선택 후 복사 명령을 쓴다.
 // 성공하면 true, 둘 다 실패하면 false (브라우저 전용)
 export async function copyText(text) {

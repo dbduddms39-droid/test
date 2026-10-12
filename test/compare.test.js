@@ -184,3 +184,13 @@ test('AI가 근거를 제시하지 못한 세부기준(분석 확인 불가)은 
   assert.deepEqual(f.b.evidence, [], '검증되지 않은 인용은 보여 주지 않음');
   assert.throws(() => compareDocuments([posting, posting]), /invalid pair/);
 });
+
+test('비교 결과 → 확인 질문: 엔진 결과로 바로 질문을 만들고, 동일한 조건은 묻지 않음', async () => {
+  const { buildCompareQuestions } = await import('../public/questions.js');
+  const c = compareDocuments([await doc('job_posting', POSTING, POSTING_SPECS), await doc('offer', OFFER, OFFER_SPECS)]);
+  const qs = buildCompareQuestions(c);
+  const ids = qs.map((q) => q.itemId);
+  assert.ok(!ids.includes('01'), '급여 금액이 같으면 묻지 않음');
+  assert.ok(ids.includes('03'), '오퍼에 없는 근무장소는 채용공고 조건이 그대로인지 질문');
+  assert.match(qs.find((q) => q.itemId === '03').text, /오퍼·합격 안내에서 근무장소에 관한 내용을 찾지 못했습니다\. 채용공고에 적힌 조건\(서울특별시 강남구 테헤란로 100\)/);
+});
