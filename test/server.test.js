@@ -114,3 +114,60 @@ test('OCR 저신뢰 구간: 올바른 범위만 받고, 잘못된 형식은 400 
     assert.equal((await post({ docType: 'offer', text, lowConfidence: bad })).status, 400, JSON.stringify(bad));
   }
 });
+
+// ---------- 2문서 비교 API ----------
+const postCompare = (body, url = base) => fetch(`${url}/api/compare`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+test('비교 API: 서로 다른 두 문서를 각각 분석해 항목별 비교와 양쪽 원문을 돌려주고, 원문을 로그에 남기지 않음', async () => {
+  const res = await postCompare({ documents: [
+    { docType: 'contract', text: '[가상] 근로계약서\n임금: 연봉 3,200만원 비교비밀ABC\n근무장소: 서울 마포구' },
+    { docType: 'job_posting', text: '[가상] 채용공고\n연봉 3,600만원\n근무지: 서울 마포구' },
+  ] });
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.version, 'compare-v1');
+  assert.equal(data.mode, 'demo');
+  assert.deepEqual(data.docs.map((d) => d.docType), ['job_posting', 'contract'], '앞 단계 문서가 A');
+  assert.equal(data.items.length, 8);
+  assert.ok(data.docs.every((d) => d.lines.length >= 2));
+  assert.ok(!logged.some((l) => l.includes('비교비밀ABC')), '원문을 로그에 남기지 않는다');
+});
+
+test('비교 API 입력 오류: 문서 수, 같은 유형, 빈 문서, 지원하지 않는 유형, 너무 긴 문서는 400', async () => {
+  const ok = { docType: 'offer', text: '연봉 3,600만원' };
+  assert.equal((await postCompare({ documents: [ok] })).status, 400);
+  assert.equal((await postCompare({ documents: [ok, { ...ok }] })).status, 400, '같은 유형끼리는 비교하지 않음');
+  const empty = await postCompare({ documents: [ok, { docType: 'contract', text: '  ' }] });
+  assert.equal(empty.status, 400);
+  assert.match((await empty.json()).error, /^문서 B: /);
+  assert.equal((await postCompare({ documents: [ok, { docType: 'resume', text: 'x' }] })).status, 400);
+  assert.equal((await postCompare({ documents: [ok, { docType: 'contract', text: 'a'.repeat(20001) }] })).status, 400);
+  assert.equal((await postCompare({ documents: [ok, { docType: 'contract', text: 'abc', lowConfidence: [{ start: 0, end: 9 }] }] })).status, 400);
+});
+
+test('비교 API: 한 문서라도 AI 분석에 실패하면 결과를 지어내지 않고 오류로 안내, 요청 제한은 분석 2회로 셈', async () => {
+  const failing = {
+    name: 'failing',
+    calls: 0,
+    async analyze() { this.calls += 1; if (this.calls >= 2) throw Object.assign(new Error('x'), { code: 'rate_limited', fatal: true }); return { criteria: [] }; },
+  };
+  const s = createServer({ ai: failing, limiter: createRateLimiter({ perIp: 100, globalPerMinute: 100 }) });
+  await new Promise((r) => s.listen(0, r));
+  const url = `http://localhost:${s.address().port}`;
+  try {
+    const res = await postCompare({ documents: [{ docType: 'offer', text: '연봉 3,600만원' }, { docType: 'contract', text: '연봉 3,200만원' }] }, url);
+    assert.equal(res.status, 429);
+    const data = await res.json();
+    assert.equal(data.code, 'rate_limited');
+    assert.equal(data.items, undefined, '부분 결과를 보내지 않음');
+  } finally { s.close(); }
+
+  const limited = createServer({ ai: createDemoAnalyzer(), limiter: createRateLimiter({ perIp: 3, globalPerMinute: 100 }) });
+  await new Promise((r) => limited.listen(0, r));
+  const lurl = `http://localhost:${limited.address().port}`;
+  try {
+    const body = { documents: [{ docType: 'offer', text: '연봉 3,600만원' }, { docType: 'contract', text: '연봉 3,200만원' }] };
+    assert.equal((await postCompare(body, lurl)).status, 200);
+    assert.equal((await postCompare(body, lurl)).status, 429, '두 번째 비교는 분석 4회째라 제한');
+  } finally { limited.close(); }
+});

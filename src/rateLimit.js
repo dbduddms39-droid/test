@@ -17,28 +17,28 @@ export function createRateLimiter({
 
   return {
     // 허용되면 { ok: true }, 아니면 { ok: false, scope, retryAfterSec }
-    check(ip) {
+    // cost: 이번 요청이 차지하는 분석 횟수 (2문서 비교는 문서마다 AI를 호출하므로 2)
+    check(ip, cost = 1) {
       const t = now();
       const recent = (ipHits.get(ip) ?? []).filter((x) => t - x < windowMs);
       minuteHits = minuteHits.filter((x) => t - x < 60_000);
       const today = new Date(t).toISOString().slice(0, 10);
       if (today !== day) { day = today; dayCount = 0; }
 
-      if (recent.length >= perIp) {
+      if (recent.length + cost > perIp) {
         ipHits.set(ip, recent);
         return { ok: false, scope: 'ip', retryAfterSec: Math.ceil((windowMs - (t - recent[0])) / 1000) };
       }
-      if (minuteHits.length >= globalPerMinute) {
+      if (minuteHits.length + cost > globalPerMinute) {
         return { ok: false, scope: 'global', retryAfterSec: Math.ceil((60_000 - (t - minuteHits[0])) / 1000) };
       }
-      if (dayCount >= globalPerDay) {
+      if (dayCount + cost > globalPerDay) {
         const tomorrow = Date.parse(`${today}T00:00:00Z`) + 86_400_000;
         return { ok: false, scope: 'daily', retryAfterSec: Math.ceil((tomorrow - t) / 1000) };
       }
-      recent.push(t);
+      for (let i = 0; i < cost; i += 1) { recent.push(t); minuteHits.push(t); }
       ipHits.set(ip, recent);
-      minuteHits.push(t);
-      dayCount += 1;
+      dayCount += cost;
       // 오래된 IP 기록 정리
       if (ipHits.size > 10_000) for (const [k, v] of ipHits) if (t - v[v.length - 1] >= windowMs) ipHits.delete(k);
       return { ok: true };

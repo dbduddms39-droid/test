@@ -280,7 +280,17 @@ export function evaluate(entries, { lowConfidence = [], lines = [] } = {}) {
 
   const shown = topics.filter((t) => t.visible);
   const byStatus = Object.fromEntries(Object.keys(MAIN_STATUS).map((s) => [s, shown.filter((t) => t.status === s).length]));
-  return { version: CRITERIA_VERSION, topics, counts: { shown: shown.length, byStatus }, diagnostics };
+  // 2문서 비교용: 표시 여부와 무관한 세부기준별 결과 (판정 규칙은 위와 같고, 화면용 주제 결과에는 영향 없음)
+  const criteria = Object.fromEntries(Object.entries(crit).map(([id, r]) => [id, {
+    status: r.status,
+    evidence: r.status === 'UNAVAILABLE' ? [] : r.evidence ?? [],
+    sourceValue: r.status === 'UNAVAILABLE' || r.status === 'NOT_APPLICABLE' ? null : r.sourceValue ?? null,
+    finding: r.status === 'UNAVAILABLE' ? null : r.finding ?? null,
+    termType: r.status === 'CONFIRMED' ? r.termType ?? null : null,
+    derived: r.status === 'UNAVAILABLE' ? null : r.derived ?? null,
+    reason: r.status === 'UNAVAILABLE' ? r.reason ?? null : r.naReason ?? null,
+  }]));
+  return { version: CRITERIA_VERSION, topics, counts: { shown: shown.length, byStatus }, diagnostics, criteria };
 }
 
 // 상위 항목 보류 판단에 쓰는 '필수 근거' 세부기준: 핵심(C)과 조건부 핵심(적용 여부를 아직 알 수 없으므로 모두 포함)

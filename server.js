@@ -1,4 +1,4 @@
-// 일단확인 MVP 서버: 정적 파일 제공 + POST /api/analyze
+// 일단확인 MVP 서버: 정적 파일 제공 + POST /api/analyze(근로계약서 등 단일 문서) + POST /api/compare(2문서 비교)
 // - 로컬: `node server.js` 로 직접 실행 (아래 맨 끝 블록)
 // - Vercel: 루트의 server.js를 Node 서버리스 함수로 import 해서 default export (req, res) 핸들러를 호출한다.
 //   public/ 정적 파일은 Vercel이 직접 제공한다.
@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzeDocument } from './src/analyze.js';
+import { compareDocuments, COMPARE_PAIRS } from './src/compare.js';
 import { DOC_TYPES } from './src/criteria.js';
 import { createGeminiAnalyzer } from './src/ai/gemini.js';
 import { createDemoAnalyzer } from './src/ai/demo.js';
@@ -44,6 +45,7 @@ export function createHandler({ ai, limiter = createRateLimiter(), trustProxy = 
   return async (req, res) => {
     try {
       if (req.method === 'POST' && req.url === '/api/analyze') return await handleAnalyze(req, res, { ai, limiter, trustProxy });
+      if (req.method === 'POST' && req.url === '/api/compare') return await handleCompare(req, res, { ai, limiter, trustProxy });
       if (req.method === 'GET' && req.url === '/api/config') return sendJson(res, 200, { mode: ai.name });
       if (req.method === 'GET') return await serveStatic(req, res);
       sendJson(res, 405, { error: '지원하지 않는 요청이에요.' });
@@ -76,11 +78,8 @@ async function handleAnalyze(req, res, { ai, limiter, trustProxy }) {
     return sendJson(res, err.code === 'too_large' ? 413 : 400, { error: err.code === 'too_large' ? '입력이 너무 길어요.' : '요청 형식이 올바르지 않아요.' });
   }
   const { docType, text, lowConfidence = [] } = body ?? {};
-  if (!DOC_TYPES[docType]) return sendJson(res, 400, { error: '문서 유형을 선택해 주세요.' });
-  if (typeof text !== 'string' || !text.trim()) return sendJson(res, 400, { error: '문서 내용을 붙여넣어 주세요.' });
-  if (text.length > MAX_TEXT_CHARS) return sendJson(res, 400, { error: `문서는 ${MAX_TEXT_CHARS.toLocaleString()}자 이하로 입력해 주세요.` });
-  // OCR 저신뢰 구간 (S-03에서 사용자가 수정하거나 원본과 대조해 확인하지 않은 구간). 위치만 받고 내용은 받지 않는다.
-  if (!validRanges(lowConfidence, text.length)) return sendJson(res, 400, { error: '요청 형식이 올바르지 않아요.' });
+  const invalid = validateDoc({ docType, text, lowConfidence });
+  if (invalid) return sendJson(res, 400, { error: invalid });
 
   const limit = limiter.check(clientIp(req, trustProxy));
   if (!limit.ok) {
@@ -100,19 +99,73 @@ async function handleAnalyze(req, res, { ai, limiter, trustProxy }) {
   sendJson(res, 200, { ...result, mode: ai.name });
 }
 
+// 문서 1개 입력 검사. 문제가 있으면 사용자 안내 문구, 없으면 null
+function validateDoc({ docType, text, lowConfidence = [] }, prefix = '') {
+  if (!DOC_TYPES[docType]) return `${prefix}문서 유형을 선택해 주세요.`;
+  if (typeof text !== 'string' || !text.trim()) return `${prefix}문서 내용을 입력해 주세요.`;
+  if (text.length > MAX_TEXT_CHARS) return `${prefix}문서는 ${MAX_TEXT_CHARS.toLocaleString()}자 이하로 입력해 주세요.`;
+  // OCR 저신뢰 구간 (S-03에서 사용자가 수정하거나 원본과 대조해 확인하지 않은 구간). 위치만 받고 내용은 받지 않는다.
+  if (!validRanges(lowConfidence, text.length)) return '요청 형식이 올바르지 않아요.';
+  return null;
+}
+
+// 2문서 비교: 서로 다른 두 문서 유형(채용공고·오퍼 안내·근로계약서 중 2개)을 각각 기존 분석으로 추출·검증한 뒤 규칙으로 비교한다.
+// 한 문서라도 AI 분석에 실패하면 비교 결과를 만들지 않고 오류로 안내한다 (부분 결과를 지어내지 않음).
+async function handleCompare(req, res, { ai, limiter, trustProxy }) {
+  let body;
+  try {
+    body = JSON.parse(await readBody(req, MAX_BODY_BYTES * 2));
+  } catch (err) {
+    return sendJson(res, err.code === 'too_large' ? 413 : 400, { error: err.code === 'too_large' ? '입력이 너무 길어요.' : '요청 형식이 올바르지 않아요.' });
+  }
+  const docs = body?.documents;
+  if (!Array.isArray(docs) || docs.length !== 2) return sendJson(res, 400, { error: '비교할 문서 두 개를 입력해 주세요.' });
+  for (const [i, d] of docs.entries()) {
+    const invalid = validateDoc(d ?? {}, `문서 ${i ? 'B' : 'A'}: `);
+    if (invalid) return sendJson(res, 400, { error: invalid });
+  }
+  const pair = [docs[0].docType, docs[1].docType];
+  if (!COMPARE_PAIRS.some(([x, y]) => (pair[0] === x && pair[1] === y) || (pair[0] === y && pair[1] === x))) {
+    return sendJson(res, 400, { error: '서로 다른 두 종류의 문서를 선택해 주세요.' });
+  }
+
+  const limit = limiter.check(clientIp(req, trustProxy), 2);
+  if (!limit.ok) {
+    log({ event: 'rate_limited', scope: limit.scope });
+    res.setHeader('Retry-After', String(limit.retryAfterSec));
+    return sendJson(res, 429, { error: RATE_LIMIT_MESSAGES[limit.scope], code: `rate_limited_${limit.scope}` });
+  }
+
+  const analyzed = [];
+  try {
+    // 무료 등급 분당 한도를 고려해 한 문서씩 차례로 분석한다
+    for (const d of docs) {
+      const result = await analyzeDocument({ text: d.text, docType: d.docType, ai, log, lowConfidence: d.lowConfidence ?? [], withCriteria: true });
+      analyzed.push({ docType: d.docType, result });
+    }
+  } catch (err) {
+    const known = AI_ERROR_RESPONSES[err.code];
+    if (!known) throw err;
+    return sendJson(res, known[0], { error: known[1], code: err.code });
+  }
+  const comparison = compareDocuments(analyzed);
+  log({ event: 'compare_done', pair: comparison.docs.map((d) => d.docType), states: comparison.summary.counts });
+  sendJson(res, 200, { ...comparison, mode: ai.name });
+}
+
 const MAX_RANGES = 300;
 function validRanges(ranges, length) {
   return Array.isArray(ranges) && ranges.length <= MAX_RANGES && ranges.every((r) => r && Number.isInteger(r.start) && Number.isInteger(r.end)
     && r.start >= 0 && r.end > r.start && r.end <= length && Object.keys(r).length === 2);
 }
 
-function readBody(req) {
+function readBody(req, maxBytes = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY_BYTES) { reject(Object.assign(new Error('too large'), { code: 'too_large' })); req.destroy(); return; }
+      if (size > maxBytes) { reject(Object.assign(new Error('too large'), { code: 'too_large' })); req.destroy(); return; }
       chunks.push(c);
     });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));

@@ -61,7 +61,8 @@ export function planHolds(entries, segments) {
 const errorsOf = (entries, ids) => Object.fromEntries(ids.filter((id) => failed(entries[id])).map((id) => [id, entries[id].errors]));
 
 // lowConfidence: 입력 텍스트 기준 OCR 저신뢰 문자 구간 [{ start, end }] (S-03에서 사용자가 수정하거나 원본과 대조해 확인하지 않은 구간)
-export async function analyzeDocument({ text, docType, ai, log = () => {}, lowConfidence = [] }) {
+// withCriteria: 2문서 비교(src/compare.js)에 쓰는 세부기준별 결과를 함께 돌려준다 (단일 문서 응답에는 넣지 않음)
+export async function analyzeDocument({ text, docType, ai, log = () => {}, lowConfidence = [], withCriteria = false }) {
   const segments = segmentText(text);
   let first;
   try {
@@ -115,6 +116,7 @@ export async function analyzeDocument({ text, docType, ai, log = () => {}, lowCo
     topics: result.topics,
     lines: segments.map((s) => ({ id: s.id, text: s.text })),
     notice: RESULT_NOTICE,
+    ...(withCriteria ? { criteria: result.criteria } : {}),
   };
 }
 
