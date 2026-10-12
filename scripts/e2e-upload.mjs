@@ -107,10 +107,10 @@ try {
   // S-02를 새로 열고(메모리 상태 초기화) 문서 유형을 고른 뒤 '사진·PDF 업로드' 탭으로 바꾼다.
   // prefill은 '텍스트 직접 붙여넣기' 입력란에 미리 넣어 두는 내용 (파일 추출이 이 내용을 건드리지 않는지 확인용)
   const fresh = async (docType = 'job_posting', prefill = '') => {
-    await page.goto(`${BASE}/#/input`);
+    await page.goto(`${BASE}/#/new`);
     await page.reload();
     await page.waitForSelector('#view-input:not([hidden])');
-    void docType; // 단독 확인은 근로계약서만이라 문서 유형을 고르지 않는다 (파일 내용과 무관하게 근로계약서로 분석)
+    await page.check(`input[name="doc-type"][value="${docType}"]`);
     if (prefill) await page.fill('#doc-text', prefill);
     await page.click('#tab-upload');
     dialogAnswer = 'accept';
@@ -155,36 +155,33 @@ try {
     const res = await resPromise;
     const data = await res.json();
     // 요청에는 문서 유형·확인한 텍스트, 그리고 (있다면) 확인되지 않은 OCR 저신뢰 구간의 위치만 들어간다
-    const keysOk = Object.keys(body).every((k) => ['docType', 'text', 'lowConfidence'].includes(k));
+    const keysOk = Object.keys(body).every((k) => ['docType', 'text', 'lowConfidence', 'includeCriteria'].includes(k));
     const rangesOk = !body.lowConfidence || body.lowConfidence.every((r) => Object.keys(r).length === 2 && r.start >= 0 && r.end > r.start && r.end <= edited.length);
-    check(`[${label}] 확인·수정한 텍스트만 분석 요청에 전달 (저신뢰 구간은 위치만)`, body.text === edited && body.docType === 'contract' && keysOk && rangesOk, `저신뢰 구간 ${body.lowConfidence?.length ?? 0}개`);
+    check(`[${label}] 확인·수정한 텍스트만 분석 요청에 전달 (저신뢰 구간은 위치만)`, body.text === edited && body.docType === docType && body.includeCriteria === true && keysOk && rangesOk, `저신뢰 구간 ${body.lowConfidence?.length ?? 0}개`);
     const shownTopics = data.topics?.filter((t) => t.visible) ?? [];
     check(`[${label}] 분석 결과 (점검 기준 v2.2, 9개 또는 10개 주제)`, res.status() === 200 && data.version === 'v2.2' && data.topics?.length === 10 && [9, 10].includes(shownTopics.length) && (!REQUIRE_AI || data.mode === 'gemini'),
       `HTTP ${res.status()}${data.code ? ` ${data.code}` : ''}, mode=${data.mode}, 표시 ${shownTopics.length}개, 분석 확인 불가 ${shownTopics.filter((t) => t.status === 'MAIN_UNAVAILABLE').length}개`);
     if (res.status() === 200) {
-      await page.waitForSelector('#view-result:not([hidden])');
-      const note = await page.isVisible('#input-source-note') ? await page.textContent('#input-source-note') : '';
-      check(`[${label}] 결과 화면에 '추출·확인한 텍스트 기준' 안내`, note.includes('확인·수정한 텍스트 기준'));
+      await page.waitForSelector('#view-record:not([hidden])');
+      const note = await page.textContent('#doc-list .input-source-note').catch(() => '');
+      check(`[${label}] 기록 화면에 '추출·확인한 텍스트' 안내`, note.includes('확인·수정한 텍스트'));
       const lines = edited.split('\n');
       const allEvidence = shownTopics.flatMap((t) => t.criteria.flatMap((c) => c.evidence));
       check(`[${label}] 원문 근거가 확인한 텍스트의 해당 줄에 그대로 있음`, allEvidence.every((e) => data.lines[e.line - 1]?.text.includes(e.text) && lines.some((l) => l.includes(e.text))), `${allEvidence.length}개`);
       const first = shownTopics.find((t) => t.criteria.some((c) => c.evidence.length));
       if (first) {
-        await page.click(`.item-row >> text=${first.label}`);
-        await page.waitForSelector('#view-detail:not([hidden])');
-        const shown = await page.$$eval('.evidence-text', (els) => els.map((e) => e.textContent));
-        const panelTitle = await page.textContent('#detail .doc-panel h2');
-        const memo = await page.textContent('#detail .doc-memo');
-        check(`[${label}] 상세 화면: 추출·확인한 텍스트 기준 근거 (${first.label})`, panelTitle === '추출·확인한 텍스트' && memo.includes('원본 파일과 다를 수 있어요') && shown.length > 0 && shown.every((t) => edited.includes(t)), `${shown.length}개`);
-        check(`[${label}] 상세의 '원문 수정하고 다시 분석하기'는 파일 경로라 S-03으로`, (await page.getAttribute('#detail-edit', 'href')) === '#/review');
+        await page.click(`#condition-list [data-item="${first.id}"] a.btn-text`);
+        await page.waitForSelector('#view-item:not([hidden])');
+        const shown = await page.$$eval('#item .evidence-text', (els) => els.map((e) => e.textContent));
+        const panelTitle = await page.textContent('#item .doc-block .memo-title');
+        check(`[${label}] 상세 화면: 추출·확인한 텍스트 기준 근거 (${first.label})`, panelTitle.includes('추출·확인한 텍스트') && shown.length > 0 && shown.every((t) => edited.includes(t)), `${shown.length}개`);
         await page.screenshot({ path: `${OUT}/${label}-detail.png`, fullPage: true });
         await page.goBack();
-        await page.waitForSelector('#view-result:not([hidden])');
+        await page.waitForSelector('#view-record:not([hidden])');
       }
-      // 결과 화면의 '다시 입력' → 파일 추출 경로이므로 S-03으로, 수정한 텍스트가 그대로
-      await page.click('#result-back');
-      await page.waitForSelector('#view-review:not([hidden])');
-      check(`[${label}] 결과 → '다시 입력'은 S-03으로, 수정한 텍스트 유지`, (await reviewValue()) === edited);
+      // 저장된 기록의 확인 텍스트는 수정본 그대로
+      const savedText = await page.textContent('#doc-list .doc-text');
+      check(`[${label}] 기록에 저장된 확인 텍스트는 수정본`, savedText.includes('문의: 인사팀 (가상 예시)'));
     }
     await sleep(REQUIRE_AI ? 16_000 : 0); // 서버 분당 요청 제한(기본 4회)과 무료 한도 여유
   }
@@ -263,7 +260,7 @@ try {
     check(`[${label}] 복구 전에는 분석 버튼 비활성·안내 표시`, (await page.isDisabled('#review-submit')) && (await page.isVisible('#review-blocked')));
     await page.click('#review-submit', { force: true }).catch(() => {});
     check(`[${label}] 버튼을 눌러도 분석 요청 없음`, analyzeCount() === before && (await page.isVisible('#view-review')));
-    check(`[${label}] '이미지 바꾸고 다시 추출하기'는 S-02로 연결`, (await page.getAttribute('#extract-issues-list [data-issue-action=reextract]', 'href')) === '#/input');
+    check(`[${label}] '이미지 바꾸고 다시 추출하기'는 S-02로 연결`, (await page.getAttribute('#extract-issues-list [data-issue-action=reextract]', 'href')) === '#/new');
     // 파일 손상(3번째)에는 빈 이미지 확인 선택지를 주지 않고, 글자를 찾지 못한 2번째에만 준다
     const blankBtn = async (id) => (await page.$$(`#extract-issues-list [data-issue-id="${id}"] [data-issue-resolve=blank_confirmed]`)).length;
     check(`[${label}] 빈 이미지 확인은 글자를 찾지 못한 장에만 (손상 파일 제외)`, (await blankBtn('failed-2')) === 1 && (await blankBtn('failed-3')) === 0
@@ -281,18 +278,18 @@ try {
     await page.fill('#extract-issues-list [data-issue-input="failed-3"]', '[3번째 이미지 직접 입력] 지원방법: 이메일 (가상 예시)');
     await page.click('#extract-issues-list [data-issue-id="failed-3"] [data-issue-resolve=manual_input]');
     check(`[${label}] 각 장을 모두 복구하면 분석 가능`, !(await page.isDisabled('#review-submit')) && !(await page.isVisible('#review-blocked')));
+    // 요청 내용만 확인하려고 이번 분석은 실패(503)로 돌려 S03 상태를 그대로 둔다 (저장되면 입력이 비워짐)
+    await page.route('**/api/analyze', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '가상 오류', code: 'missing_key' }) }));
     const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
     await page.click('#review-submit');
     const sent = JSON.parse((await reqP).postData());
-    await page.waitForSelector('#view-result:not([hidden])', { timeout: 30_000 });
-    const note = await page.textContent('#input-source-note');
+    await page.waitForSelector('#view-error:not([hidden])', { timeout: 30_000 });
+    await page.unroute('**/api/analyze');
     const i1 = sent.text.indexOf('250'), i2 = sent.text.indexOf('[2번째 이미지 직접 입력]'), i3 = sent.text.indexOf('[3번째 이미지 직접 입력]');
     check(`[${label}] 분석 요청: 고친 1번째 이미지 텍스트 뒤에 2·3번째 직접 입력 내용이 순서대로`, i1 >= 0 && i1 < i2 && i2 < i3);
-    check(`[${label}] 결과 안내: 직접 입력한 부분을 밝히고 원본 전체 확보를 보장하지 않음`, note.includes('2번째 이미지, 3번째 이미지는') && note.includes('빠짐없이 옮겼는지는 확인할 수 없어요'), note.slice(-90));
-    await page.screenshot({ path: `${OUT}/${label}-result-note.png`, fullPage: false });
-    // 처음 추출한 내용으로 되돌리면 직접 입력 내용과 표시도 지워져 다시 분석 불가
-    await page.click('#result-back');
+    await page.click('#error-edit');
     await page.waitForSelector('#view-review:not([hidden])');
+    // 처음 추출한 내용으로 되돌리면 직접 입력 내용과 표시도 지워져 다시 분석 불가
     await page.click('#review-restore');
     check(`[${label}] 원래 내용으로 되돌리면 다시 분석 불가`, (await page.isDisabled('#review-submit')) && (await issueList()).every((x) => !x.resolved)
       && (await page.inputValue('#extract-issues-list [data-issue-input="failed-2"]')) === '');
@@ -303,6 +300,18 @@ try {
     check(`[${label}] 일부 실패 안내`, status.kind === 'warn' && status.text.includes('3장 중 1장') && status.text.includes('2번째, 3번째') && status.text.includes('복구하기 전에는 분석할 수 없어요'), status.text.slice(0, 120));
     check(`[${label}] 실패한 이미지 표시`, failedItems.length === 2, failedItems.join(' / '));
     check(`[${label}] 성공한 이미지 텍스트는 S-03 확인란에`, extracted.includes('고객센터') && extracted.includes('240'));
+    // 다시 복구해 실제로 분석·저장: 기록에 직접 입력한 부분을 밝히는 안내
+    await page.goto(`${BASE}/#/review`);
+    await page.waitForSelector('#view-review:not([hidden])');
+    await page.fill('#extract-issues-list [data-issue-input="failed-2"]', '[2번째 이미지 직접 입력] 근무지: 서울 (가상 예시)');
+    await page.click('#extract-issues-list [data-issue-id="failed-2"] [data-issue-resolve=manual_input]');
+    await page.fill('#extract-issues-list [data-issue-input="failed-3"]', '[3번째 이미지 직접 입력] 지원방법: 이메일 (가상 예시)');
+    await page.click('#extract-issues-list [data-issue-id="failed-3"] [data-issue-resolve=manual_input]');
+    await page.click('#review-submit');
+    await page.waitForSelector('#view-record:not([hidden])', { timeout: 30_000 });
+    const note = await page.textContent('#doc-list .input-source-note');
+    check(`[${label}] 기록 안내: 직접 입력한 부분을 밝히고 원본 전체 확보를 보장하지 않음`, note.includes('2번째 이미지, 3번째 이미지는') && note.includes('빠짐없이 옮겼는지는 확인할 수 없어요'), note.slice(-90));
+    await page.screenshot({ path: `${OUT}/${label}-result-note.png`, fullPage: false });
   }
 
   // 3-0) PDF 일부 쪽 추출 실패 (OCR 처리 정책 3): 빈 쪽으로 조용히 넘기지 않고, 복구 전에는 분석하지 않는다
@@ -342,7 +351,7 @@ try {
     const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
     await page.click('#review-submit');
     const sent = JSON.parse((await reqP).postData());
-    await page.waitForSelector('#view-result:not([hidden])', { timeout: 30_000 });
+    await page.waitForSelector('#view-record:not([hidden])', { timeout: 30_000 });
     const a = sent.text.indexOf('2,600,000원'), b = sent.text.indexOf('휴일: 매주 일요일'), c = sent.text.indexOf('연차 유급휴가');
     check(`[${label}] 분석 요청: 1쪽 → 직접 입력한 2쪽 → 3쪽 순서`, a >= 0 && a < b && b < c);
   }
@@ -360,9 +369,9 @@ try {
     const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
     await page.click('#review-submit');
     const sent = JSON.parse((await reqP).postData());
-    await page.waitForSelector('#view-result:not([hidden])', { timeout: 30_000 });
-    const cards = await page.$$eval('#item-list > *', (els) => els.length);
-    const note = await page.textContent('#input-source-note');
+    await page.waitForSelector('#view-record:not([hidden])', { timeout: 30_000 });
+    const cards = await page.$$eval('#condition-list > li', (els) => els.length);
+    const note = await page.textContent('#doc-list .input-source-note');
     check(`[${label}] 분석 요청은 1쪽·3쪽 텍스트 그대로 (빈 쪽에 넣은 내용 없음)`, sent.text === extracted);
     check(`[${label}] 결과: 점검 항목 카드만 있고 빈 쪽용 결과는 없음, 안내에 제외한 쪽 표시`, cards >= 9 && cards <= 10 && note.includes('PDF 2쪽은') && note.includes('분석에서 제외'), `${cards}개, ${note.slice(-70)}`);
   }
@@ -413,11 +422,14 @@ try {
     for (const x of suspects) await page.click(`#extract-issues-list [data-issue-id="${x.id}"] [data-issue-resolve=range_checked]`);
     check(`[${label}] 원본과 비교해 범위를 확인했다고 표시하면 분석 가능`, !(await page.isDisabled('#review-submit')) && (await issueList()).every((x) => x.resolved));
     const submitAndCapture = async () => {
+      // 요청 내용만 확인하려고 분석은 실패(503)로 돌려 S03 상태(확인 표시)를 그대로 둔다
+      await page.route('**/api/analyze', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '가상 오류', code: 'missing_key' }) }));
       const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
       await page.click('#review-submit');
       const sent = JSON.parse((await reqP).postData());
-      await page.waitForSelector('#view-result:not([hidden])', { timeout: 30_000 });
-      await page.click('#result-back');
+      await page.waitForSelector('#view-error:not([hidden])', { timeout: 30_000 });
+      await page.unroute('**/api/analyze');
+      await page.click('#error-edit');
       await page.waitForSelector('#view-review:not([hidden])');
       return (sent.lowConfidence ?? []).map((r) => sent.text.slice(r.start, r.end));
     };

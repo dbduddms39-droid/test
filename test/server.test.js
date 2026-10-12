@@ -48,11 +48,23 @@ test('입력 검증', async () => {
 
 test('정적 파일 제공 및 경로 이탈 차단', async () => {
   const html = await (await fetch(`${base}/`)).text();
-  // 개인정보 안내: 서버·AI 모델로 전달된다는 사실과 개인정보를 가리라는 안내 (암호화·비저장 같은 보장은 넣지 않음)
-  assert.ok(html.includes('입력한 문서 텍스트는 분석을 위해 서버와 AI 모델에 전달됩니다.'));
-  assert.ok(html.includes('이름, 연락처, 주민등록번호 등 개인정보는 가리고 입력해 주세요.'));
-  assert.ok(!/암호화|저장하지 않|보안 모드/.test(html));
+  // 개인정보 안내(v3.1): 개인정보 가림, 서버를 거쳐 외부 AI로 전달된다는 사실, 브라우저에 저장된다는 사실.
+  // '저장하지 않음'은 실제 동작(일단확인 서버·원본 파일)에만 쓰고, 외부 AI 제공자의 보관은 보장하지 않는다. 암호화·보안 모드 같은 보장은 넣지 않음.
+  assert.ok(html.includes('주민등록번호, 주소 등 확인에 필요 없는 개인정보는 가리고 입력해 주세요.'));
+  assert.ok(html.includes('일단확인 서버를 거쳐 외부 AI 모델(Google Gemini API)에 전달돼요'));
+  assert.ok(html.includes('외부 AI 제공자의 데이터 처리 방침이 적용돼요'));
+  assert.ok(html.includes('원본 사진·PDF 파일은 저장하지 않아요'));
+  assert.ok(!/암호화|보안 모드|영구 보관합니다|원본 파일을 보관/.test(html));
   assert.equal((await fetch(`${base}/..%2Fserver.js`)).status, 404);
+});
+
+test('분석 API: includeCriteria를 요청하면 세부기준별 결과(검증된 근거만)를 함께, 기본 응답에는 넣지 않음', async () => {
+  const plain = await (await post({ docType: 'job_posting', text: '연봉: 3,400만원\n근무지: 서울' })).json();
+  assert.equal(plain.criteria, undefined);
+  const withC = await (await post({ docType: 'job_posting', text: '연봉: 3,400만원\n근무지: 서울', includeCriteria: true })).json();
+  assert.equal(Object.keys(withC.criteria).length, CRITERION_IDS.length);
+  assert.equal(withC.criteria['01-a'].evidence[0].text, '연봉: 3,400만원');
+  assert.equal((await post({ docType: 'job_posting', text: '연봉', includeCriteria: 'yes' })).status, 400);
 });
 
 test('AI 응답 스키마: 32개 세부기준 ID, 표현 유형, 06-a 기간 유형, 02-a 계산값 구조 (상태 코드는 AI가 정하지 않음)', () => {

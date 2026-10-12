@@ -1,4 +1,4 @@
-// 화면 이동·입력 보존 흐름을 실제 브라우저로 확인한다 (S-01~S-04, S-07).
+// 화면 이동·입력 보존 흐름을 실제 브라우저로 확인한다 (S01~S04, S06, 오류 화면).
 //   node scripts/e2e-flow.mjs
 // 항상 로컬 서버를 데모 모드로 띄우고 GEMINI_API_KEY를 넘기지 않는다 → 실제 AI 호출·과금 없음.
 // 분석 실패·지연은 브라우저에서 /api/analyze 응답을 가로채 만든다.
@@ -60,18 +60,25 @@ try {
   };
 
   // 1) 데이터 없이 결과·상세·확인·분석 중·오류 주소로 바로 들어와도 화면이 깨지지 않음
-  for (const hash of ['#/result', '#/detail/wage', '#/review', '#/analyzing', '#/error']) {
+  for (const hash of ['#/review', '#/analyzing', '#/error', '#/input', '#/compare']) {
     await page.goto(`${BASE}/${hash}`);
     await waitView('input');
     const notice = await page.isVisible('#route-notice') ? await page.textContent('#route-notice') : '';
-    check(`직접 접근 ${hash} → S-02로 이동`, page.url().endsWith('#/input') && (hash === '#/error' || notice.length > 0), notice.slice(0, 40) || '안내 없음');
+    check(`직접 접근 ${hash} → S02로 이동`, page.url().endsWith('#/new') && (hash !== '#/review' || notice.length > 0), notice.slice(0, 40) || '안내 없음');
+  }
+  for (const hash of ['#/result', '#/detail/wage', '#/unsaved', '#/records/rec_nothere']) {
+    await page.goto(`${BASE}/${hash}`);
+    await page.waitForSelector('#view-records:not([hidden])', { timeout: 15_000 });
+    check(`직접 접근 ${hash} → 내 기록 목록`, page.url().endsWith('#/records'));
   }
   check('직접 접근으로 분석 요청이 나가지 않음', requests.length === 0);
 
   // 2) 키보드: 입력 방식 탭(→ 키), 빈 입력만 분석 버튼 비활성 (최소 글자 수 없음)
-  await page.goto(`${BASE}/#/input`);
+  await page.goto(`${BASE}/#/new`);
   await page.reload();
   await waitView('input');
+  check('문서 유형을 고르기 전에는 분석 버튼 비활성', await page.isDisabled('#submit-btn'));
+  await page.check('input[name="doc-type"][value="job_posting"]');
   await page.focus('#tab-paste');
   await page.keyboard.press('ArrowRight');
   const uploadTab = (await page.getAttribute('#tab-upload', 'aria-selected')) === 'true' && (await page.isVisible('#panel-upload')) && (await page.evaluate(() => document.activeElement.id)) === 'tab-upload';
@@ -81,7 +88,7 @@ try {
   await page.fill('#doc-text', '   \n  ');
   check('공백만 있으면 분석 버튼 비활성', await page.isDisabled('#submit-btn'));
   await page.fill('#doc-text', '급여 300만원');
-  check('짧은 입력도 분석 버튼 활성 + 한계 안내', !(await page.isDisabled('#submit-btn')) && (await page.textContent('#submit-hint')).includes('문서에서 확인되지 않음'));
+  check('짧은 입력도 분석 버튼 활성 + 한계 안내', !(await page.isDisabled('#submit-btn')) && (await page.textContent('#submit-hint')).includes('짧은 내용도'));
   await page.fill('#doc-text', sample.text);
   // 탭을 오가도 입력한 텍스트 유지
   await page.click('#tab-upload');
@@ -95,34 +102,32 @@ try {
   await page.screenshot({ path: `${OUT}/S04-mobile.png`, fullPage: true });
   await page.evaluate(() => { document.querySelector('#input-form').requestSubmit(); document.querySelector('#input-form').requestSubmit(); });
   await sleep(300);
-  check('S-02 → S-04 (분석 중 화면)', await visible('analyzing'));
+  check('S02 → 분석 중 화면', await visible('analyzing'));
   check('분석 중 중복 요청 방지 (요청 1번)', requests.length === 1, `${requests.length}번`);
   await release();
-  await waitView('result');
-  check('S-04 → 결과 화면', page.url().endsWith('#/result') && requests.length === 1);
+  await waitView('record');
+  check('분석 → 기록 화면(S04), 저장 확인 표시', /#\/records\/rec_/.test(page.url()) && requests.length === 1 && (await page.textContent('#save-status')).includes('저장했어요'));
 
-  await page.click('.item-row >> nth=0');
-  await waitView('detail');
+  await page.click('#condition-list .btn-text >> nth=0');
+  await waitView('item');
   await page.goBack();
-  await waitView('result');
+  await waitView('record');
 
-  // 4) 뒤로 가기·다시 입력: 텍스트 유지
+  // 4) 뒤로 가기: 저장이 끝난 입력은 비운다 (같은 자료를 실수로 다시 등록하지 않게), 앞으로 가기로 기록 다시 보기
   await page.goBack();
   await waitView('input');
-  check('결과에서 브라우저 뒤로 가기 → S-02 (분석 중 화면 건너뜀), 텍스트 유지', (await page.inputValue('#doc-text')) === sample.text);
+  check('기록에서 브라우저 뒤로 가기 → S02 (분석 중 화면 건너뜀), 저장된 입력은 비워짐', (await page.inputValue('#doc-text')) === '' && !(await page.isChecked('input[name="doc-type"][value="job_posting"]')));
   await page.goForward();
-  await waitView('result');
-  await page.click('#result-back');
-  await waitView('input');
-  check("결과의 '다시 입력' → 직접 입력 경로라 S-02, 텍스트 유지", page.url().endsWith('#/input') && (await page.inputValue('#doc-text')) === sample.text);
-  // 결과 화면 다시 그리기·주소 이동만으로는 분석을 다시 요청하지 않음 (분석 중 주소로 직접 가도 결과로)
-  await page.goBack();
-  await waitView('result');
+  await waitView('record');
+  // 화면 다시 그리기·주소 이동만으로는 분석을 다시 요청하지 않음
   await page.goto(`${BASE}/#/analyzing`);
-  await waitView('result');
-  await page.goto(`${BASE}/#/input`);
+  await waitView('input');
+  await page.goto(`${BASE}/#/records`);
+  await page.waitForSelector('#view-records:not([hidden])');
+  await page.goto(`${BASE}/#/new`);
   await waitView('input');
   check('라우트 이동·재렌더링으로 분석 재요청 없음', requests.length === 1, `${requests.length}번`);
+  await page.check('input[name="doc-type"][value="job_posting"]');
 
   // 5) 분석 실패 → S-07 → 문서 내용 확인(S-02) / 다시 분석
   const EDITED = `${sample.text}\n문의: 인사팀 (가상 예시)`;
@@ -141,12 +146,14 @@ try {
   await page.unroute('**/api/analyze');
   const before = requests.length;
   await page.click('#retry-btn');
-  await waitView('result');
-  check('S-07 다시 분석 → 마지막으로 확인한 텍스트로 재요청 → 결과', requests.length === before + 1 && requests.at(-1).text === EDITED);
+  await waitView('record');
+  check('오류 화면 다시 분석 → 마지막으로 확인한 텍스트로 재요청 → 기록', requests.length === before + 1 && requests.at(-1).text === EDITED);
 
-  // 네트워크 오류도 S-07, 입력 오류(400)는 입력 화면에서 바로 안내
-  await page.goto(`${BASE}/#/input`);
+  // 네트워크 오류도 오류 화면, 입력 오류(400)는 입력 화면에서 바로 안내
+  await page.goto(`${BASE}/#/new`);
   await waitView('input');
+  await page.check('input[name="doc-type"][value="job_posting"]');
+  await page.fill('#doc-text', EDITED);
   await page.route('**/api/analyze', (route) => route.abort('failed'));
   await page.click('#submit-btn');
   await waitView('error');
@@ -175,7 +182,7 @@ try {
   check('분석 중 뒤로 가기 → 취소 안내, S-02 유지, 텍스트 유지', (await visible('input')) && abortNotice.includes('중단') && (await page.inputValue('#doc-text')) === EDITED, abortNotice);
 
   // 6-1) 파일 경로: S-02 → S-03 → (실패) S-07 → 문서 내용 확인은 S-03, 수정한 추출 텍스트 유지
-  await page.goto(`${BASE}/#/input`);
+  await page.goto(`${BASE}/#/new`);
   await waitView('input');
   await page.click('#tab-upload');
   const reqBeforeFile = requests.length;
@@ -210,21 +217,14 @@ try {
   check('파일 경로 S-07 문서 내용 확인 → S-03, 마지막 텍스트 유지', (await page.inputValue('#review-text')) === FILE_EDITED);
   await page.unroute('**/api/analyze');
   await page.click('#review-submit');
-  await waitView('result');
-  check('S-03 → S-04 → 결과: 수정한 텍스트로 요청', requests.at(-1).text === FILE_EDITED);
-  await page.click('#result-back');
-  await waitView('review');
-  check("파일 경로 결과의 '다시 입력' → S-03", (await page.inputValue('#review-text')) === FILE_EDITED);
+  await waitView('record');
+  check('S03 → 분석 → 기록: 수정한 텍스트로 요청', requests.at(-1).text === FILE_EDITED);
 
-  // 7) 새로고침: 메모리에만 두므로 결과·입력이 사라지고 안내 후 S-02로 (저장된다고 안내하지 않음)
-  await page.goto(`${BASE}/#/input`);
-  await waitView('input');
-  await page.click('#tab-paste');
-  await page.click('#submit-btn');
-  await waitView('result');
+  // 7) 새로고침: 저장된 기록은 이 브라우저에서 다시 열린다 (입력 중이던 내용은 메모리에만 있음)
+  const recUrl = page.url();
   await page.reload();
-  await waitView('input');
-  check('결과 화면 새로고침 → 데이터 없음 안내 후 S-02 (입력란 비어 있음)', (await page.textContent('#route-notice')).includes('새로고침') && (await page.inputValue('#doc-text')) === '');
+  await waitView('record');
+  check('기록 화면 새로고침 → 저장된 기록 그대로', page.url() === recUrl && (await page.$$('#doc-list > li')).length === 1);
 
   // 8) 주소(해시)에 문서 내용이 들어가지 않음
   check('주소에 문서 내용 없음', urls.every((u) => !decodeURIComponent(u).includes(MARK) && !u.includes('text=')), `${urls.length}개 주소 확인`);
@@ -233,11 +233,11 @@ try {
   for (const [w, h] of [[390, 844], [1440, 900]]) {
     await page.setViewportSize({ width: w, height: h });
     const bad = [];
-    for (const hash of ['#/', '#/input']) {
+    for (const hash of ['#/', '#/new', '#/records', recUrl.slice(recUrl.indexOf('#'))]) {
       await page.goto(`${BASE}/${hash}`);
       if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) bad.push(hash);
     }
-    check(`${w}px 가로 스크롤 없음 (S-01, S-02)`, bad.length === 0, bad.join(', '));
+    check(`${w}px 가로 스크롤 없음 (S01, S02, S06, S04)`, bad.length === 0, bad.join(', '));
   }
   check('브라우저 스크립트 오류 없음', pageErrors.length === 0, pageErrors.slice(0, 2).join(' | '));
 } catch (err) {

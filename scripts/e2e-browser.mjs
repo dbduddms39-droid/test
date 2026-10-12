@@ -55,23 +55,24 @@ try {
   const bodies = [];
   page.on('response', async (r) => { try { bodies.push(await r.text()); } catch { /* 본문 없음 */ } });
 
-  // S-01 시작 → '문서 확인하기' → S-02 문서 입력 (두 화면은 별도)
+  // S01 시작 → '입사조건 확인하기' → S02 자료 등록 (두 화면은 별도)
   await page.goto(BASE);
   await page.waitForSelector('#view-landing:not([hidden])');
-  check('S-01 시작 화면 (입력 화면과 분리)', !(await page.isVisible('#view-input')));
+  check('S01 시작 화면 (입력 화면과 분리)', !(await page.isVisible('#view-input')));
   await page.click('#landing-start');
   await page.waitForSelector('#view-input:not([hidden])');
-  check('S-01 → S-02 이동', page.url().endsWith('#/input'));
+  check('S01 → S02 이동', page.url().endsWith('#/new'));
   await page.screenshot({ path: `${OUT}/01-input.png`, fullPage: true });
 
-  // 1) 근로계약서 확인하기: 문서 유형을 고르지 않는다 (단독 확인은 근로계약서만)
-  check('근로계약서 확인하기: 문서 유형 선택 없음', !(await page.isVisible('input[name=docType]')) && (await page.textContent('#input-title')).includes('근로계약서'));
+  // 1) 문서 유형 3개 중 근로계약서 선택 (유형을 고르기 전에는 진행 불가)
+  check('S02: 문서 유형 3개, 고르기 전에는 진행 불가', (await page.$$('input[name="doc-type"]')).length === 3 && (await page.isDisabled('#submit-btn')));
+  await page.check('input[name="doc-type"][value="contract"]');
 
   // 2) 가상 근로계약서 붙여넣기
   await page.fill('#doc-text', sample.text);
   check('가상 근로계약서 입력', (await page.inputValue('#doc-text')) === sample.text, `${sample.text.length}자`);
 
-  // 3) 분석 시작
+  // 3) 분석 시작 → 기록 저장
   const responsePromise = page.waitForResponse((r) => r.url().endsWith('/api/analyze'), { timeout: 150_000 });
   await page.click('#submit-btn');
   const res = await responsePromise;
@@ -80,38 +81,39 @@ try {
   if (res.status() !== 200) throw new Error('analysis failed');
   check('분석 주체', !REQUIRE_AI || data.mode === 'gemini', `mode=${data.mode}`);
 
-  await page.waitForSelector('#view-result:not([hidden])', { timeout: 10_000 });
+  await page.waitForSelector('#view-record:not([hidden])', { timeout: 10_000 });
+  check('기록 저장 확인 후 표시', (await page.textContent('#save-status')).includes('저장했어요'));
   await page.screenshot({ path: `${OUT}/02-result.png`, fullPage: true });
+  const recordUrl = page.url();
 
   // 4) 점검 기준 v2.2 결과: 10개 주제, 08은 수습 적용이 확인될 때만 표시
-  check('API 결과: v2.2 형식, 주제 10개(중복 없음), 기존 8개 형식 필드 없음', data.version === 'v2.2' && data.topics.length === 10 && new Set(data.topics.map((t) => t.id)).size === 10 && data.items === undefined);
+  check('API 결과: v2.2 형식, 주제 10개(중복 없음), 세부기준 결과 포함', data.version === 'v2.2' && data.topics.length === 10 && new Set(data.topics.map((t) => t.id)).size === 10 && data.items === undefined && Object.keys(data.criteria ?? {}).length === 32);
   const visible = data.topics.filter((t) => t.visible);
   check('표시 항목 수 9개 또는 10개, 08 미표시면 상태 없음', [9, 10].includes(visible.length) && visible.length === data.counts.shown
     && data.topics.filter((t) => !t.visible).every((t) => t.id === '08' && t.status === null), `표시 ${visible.length}개`);
-  const rows = await page.$$eval('.item-row', (els) => els.map((e) => ({
-    label: e.querySelector('.item-label').textContent, status: e.querySelector('.badge').textContent,
+  const rows = await page.$$eval('#condition-list .condition', (els) => els.map((e) => ({
+    id: e.dataset.item, status: e.querySelector('.condition-doc .badge').textContent,
   })));
-  // 근로계약서 확인 화면의 상위 상태 라벨 (판정 코드는 v2.2 그대로, 화면 라벨만 서비스 기획에 맞춤)
+  // 근로계약서의 상위 상태 라벨 (판정 코드는 v2.2 그대로, 화면 라벨만 서비스 기획에 맞춤)
   const SHOWN_LABEL = { MAIN_FOUND: '기재됨', MAIN_PARTIAL: '내용이 모호함', MAIN_MISSING: '문서에서 확인되지 않음', MAIN_UNAVAILABLE: '분석 확인 불가' };
-  const rowsMatch = rows.length === visible.length && rows.every((r, k) => r.label === visible[k].label && r.status === SHOWN_LABEL[visible[k].status]);
-  check('화면 항목 = 표시 대상 항목', rowsMatch, `표시 ${rows.length}개`);
-  check('화면에 점검한 항목 수 표시', (await page.textContent('#result-count')) === `점검한 항목 ${visible.length}개`);
+  const rowsMatch = rows.length === visible.length && rows.every((r, k) => r.id === visible[k].id && r.status === SHOWN_LABEL[visible[k].status]);
+  check('주요 근로조건 = 표시 대상 항목 (계약서는 모든 항목의 기재 상태)', rowsMatch, `표시 ${rows.length}개`);
   for (const t of data.topics) console.log(`      ${t.visible ? '표시' : '숨김'}  ${t.id} ${t.label}: ${t.statusLabel ?? '-'}`);
-  check('붙여넣기 결과에는 추출 텍스트 안내가 없음', !(await page.isVisible('#input-source-note')));
+  check('붙여넣기 결과에는 추출 텍스트 안내가 없음', (await page.$$('#doc-list .input-source-note')).length === 0);
   const sourceText = await page.textContent('#analysis-source');
   check('결과 화면의 분석 주체 안내', REQUIRE_AI ? !sourceText.includes('데모') : true, sourceText.includes('데모') ? '데모 결과 표시' : 'AI 결과 표시');
 
-  // 상세 화면의 질문 영역: '일부 내용만 기재됨'·'관련 내용 찾지 못함'에만 있고, 다른 상태에는 없어야 한다
+  // 항목 상세의 질문: 근로계약서 단독이면 '내용이 모호함'·'문서에서 확인되지 않음'에만 있고, 기재됨·분석 확인 불가에는 없어야 한다
   const askMismatch = [];
   const checkAsk = async (t) => {
-    const hasAsk = await page.isVisible('#ask-copy');
+    const hasAsk = await page.isVisible('#item .item-followup .q-text');
     if (hasAsk !== ASK_STATUSES.includes(t.status)) askMismatch.push(`${t.label}(${t.statusLabel})`);
     return hasAsk;
   };
   // 세부기준: 화면의 세부 상태 라벨이 API와 같고, 근거는 입력 원문 그대로이며, 분석 확인 불가에는 근거를 보이지 않음
   const detailProblems = [];
   const checkCriteria = async (t, docText) => {
-    const shown = await page.$$eval('#detail .criterion', (els) => els.map((e) => ({
+    const shown = await page.$$eval('#item .criterion', (els) => els.map((e) => ({
       id: e.dataset.criterion,
       status: e.querySelector('.badge').textContent,
       evidence: [...e.querySelectorAll('.evidence-text')].map((x) => x.textContent),
@@ -123,26 +125,30 @@ try {
       else if (s.evidence.some((x) => !docText.includes(x))) detailProblems.push(`${c.id} 원문에 없는 근거`);
       else if (c.status === 'UNAVAILABLE' && s.evidence.length) detailProblems.push(`${c.id} 확인 불가에 근거 표시`);
     }
-    const notes = await page.$$eval('#detail .note', (els) => els.map((e) => e.className));
+    const notes = await page.$$eval('#item .doc-block .note', (els) => els.map((e) => e.className));
     const expected = ['neutral', 'applicability', 'probationHold'].filter((k) => t.notes[k]).length;
     if (notes.length !== expected) detailProblems.push(`${t.id} 안내 수`);
   };
+  const openItem = async (t) => {
+    await page.click(`#condition-list [data-item="${t.id}"] a.btn-text`);
+    await page.waitForSelector('#view-item:not([hidden])');
+  };
 
-  // 5) 주제별 세부기준·원문 근거 확인
+  // 5) 항목별 세부기준·원문 근거 확인
   for (const [k, t] of visible.entries()) {
-    await page.click(`.item-row >> nth=${k}`);
-    await page.waitForSelector('#view-detail:not([hidden])');
+    await openItem(t);
     await checkCriteria(t, sample.text);
     const hasAsk = await checkAsk(t);
-    console.log(`      ${t.id} ${t.label}: 세부 ${t.criteria.map((c) => `${c.id}=${c.status}`).join(' ')}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
+    console.log(`      ${t.id} ${t.label}: 세부 ${t.criteria.map((c) => `${c.id}=${c.status}`).join(' ')}, 질문 ${hasAsk ? '있음' : '없음'}`);
     if (k === 0) await page.screenshot({ path: `${OUT}/03-detail.png`, fullPage: true });
     await page.goBack();
-    await page.waitForSelector('#view-result:not([hidden])');
+    await page.waitForSelector('#view-record:not([hidden])');
   }
 
-  // 6) 부정 표현이 있는 가상 근로계약서로 다시 분석 → 질문 복사
-  await page.goto(`${BASE}/#/input`);
+  // 6) 부정 표현이 있는 가상 근로계약서로 새 기록 → 질문 복사
+  await page.goto(`${BASE}/#/new`);
   await page.waitForSelector('#view-input:not([hidden])');
+  await page.check('input[name="doc-type"][value="contract"]');
   await page.fill('#doc-text', missing.text);
   const res2Promise = page.waitForResponse((r) => r.url().endsWith('/api/analyze'), { timeout: 150_000 });
   await page.click('#submit-btn');
@@ -150,31 +156,31 @@ try {
   const data2 = await res2.json();
   check('두 번째 분석 API 응답 (부정 표현이 있는 근로계약서)', res2.status() === 200, `HTTP ${res2.status()}${data2.code ? `, ${data2.code}` : ''}`);
   if (res2.status() !== 200) throw new Error('second analysis failed');
-  await page.waitForSelector('#view-result:not([hidden])', { timeout: 10_000 });
+  await page.waitForSelector('#view-record:not([hidden])', { timeout: 10_000 });
+  check('두 번째 문서는 별도 기록', page.url() !== recordUrl);
   const visible2 = data2.topics.filter((t) => t.visible);
   let copied = null;
-  for (const [k, t] of visible2.entries()) {
-    await page.click(`.item-row >> nth=${k}`);
-    await page.waitForSelector('#view-detail:not([hidden])');
+  for (const t of visible2) {
+    await openItem(t);
     await checkCriteria(t, missing.text);
     const hasAsk = await checkAsk(t);
-    console.log(`      ${t.id} ${t.label}: ${t.statusLabel}, 질문 영역 ${hasAsk ? '있음' : '없음'}`);
+    console.log(`      ${t.id} ${t.label}: ${t.statusLabel}, 질문 ${hasAsk ? '있음' : '없음'}`);
     if (hasAsk && !copied) {
-      const shownQ = await page.textContent('#ask-text');
-      await page.click('#ask-copy');
-      await page.waitForSelector('.ask-status-done, .ask-status-error', { timeout: 5_000 });
-      const statusMsg = await page.textContent('.ask-status');
+      const shownQ = await page.inputValue('#item .item-followup .q-text');
+      await page.click('#item .item-followup [data-copy]');
+      await page.waitForFunction(() => document.querySelector('#item .item-followup .q-status')?.textContent);
+      const statusMsg = await page.textContent('#item .item-followup .q-status');
       const clip = await page.evaluate(() => navigator.clipboard.readText());
-      copied = { label: t.label, ok: clip === shownQ && statusMsg.includes('질문을 복사했어요'), noDigits: !/\d/.test(shownQ) };
+      copied = { label: t.label, ok: clip === shownQ && statusMsg.includes('복사했어요'), noDigits: !/\d/.test(shownQ) };
       const noScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
       check('질문 영역 모바일 화면(375px)에서 가로 스크롤 없음', noScroll);
       await page.screenshot({ path: `${OUT}/04-ask-copied.png`, fullPage: true });
     }
     await page.goBack();
-    await page.waitForSelector('#view-result:not([hidden])');
+    await page.waitForSelector('#view-record:not([hidden])');
   }
   check('세부기준 상태·근거·안내가 API 결과와 같고 근거는 입력 원문 그대로', detailProblems.length === 0, detailProblems.slice(0, 5).join(', '));
-  check('질문 영역은 내용이 모호함·문서에서 확인되지 않음 주제에만 표시', askMismatch.length === 0, askMismatch.join(', '));
+  check('질문은 내용이 모호함·문서에서 확인되지 않음 항목에만 (근로계약서 단독)', askMismatch.length === 0, askMismatch.join(', '));
   check('질문 복사 → 클립보드에 같은 문장 + 완료 안내', Boolean(copied?.ok), copied ? copied.label : '질문 영역이 있는 주제 없음');
   check('복사한 질문에 숫자(금액·날짜) 없음', Boolean(copied?.noDigits));
   check('브라우저 스크립트 오류 없음', pageErrors.length === 0, pageErrors.length ? `${pageErrors.length}건` : '');

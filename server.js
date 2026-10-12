@@ -1,4 +1,5 @@
-// 일단확인 MVP 서버: 정적 파일 제공 + POST /api/analyze(근로계약서 등 단일 문서) + POST /api/compare(2문서 비교)
+// 일단확인 MVP 서버: 정적 파일 제공 + POST /api/analyze(문서 1건) + POST /api/compare(2문서 비교)
+// 서버는 분석 요청을 처리할 뿐 문서·결과를 저장하지 않는다. 입사 기록은 사용자 브라우저(IndexedDB)에만 저장된다.
 // - 로컬: `node server.js` 로 직접 실행 (아래 맨 끝 블록)
 // - Vercel: 루트의 server.js를 Node 서버리스 함수로 import 해서 default export (req, res) 핸들러를 호출한다.
 //   public/ 정적 파일은 Vercel이 직접 제공한다.
@@ -77,9 +78,10 @@ async function handleAnalyze(req, res, { ai, limiter, trustProxy }) {
   } catch (err) {
     return sendJson(res, err.code === 'too_large' ? 413 : 400, { error: err.code === 'too_large' ? '입력이 너무 길어요.' : '요청 형식이 올바르지 않아요.' });
   }
-  const { docType, text, lowConfidence = [] } = body ?? {};
+  const { docType, text, lowConfidence = [], includeCriteria = false } = body ?? {};
   const invalid = validateDoc({ docType, text, lowConfidence });
   if (invalid) return sendJson(res, 400, { error: invalid });
+  if (typeof includeCriteria !== 'boolean') return sendJson(res, 400, { error: '요청 형식이 올바르지 않아요.' });
 
   const limit = limiter.check(clientIp(req, trustProxy));
   if (!limit.ok) {
@@ -90,7 +92,8 @@ async function handleAnalyze(req, res, { ai, limiter, trustProxy }) {
 
   let result;
   try {
-    result = await analyzeDocument({ text, docType, ai, log, lowConfidence });
+    // includeCriteria: 입사 기록에서 자료 사이 관계를 계산할 세부기준별 결과(검증된 근거만)를 함께 돌려준다
+    result = await analyzeDocument({ text, docType, ai, log, lowConfidence, withCriteria: includeCriteria });
   } catch (err) {
     const known = AI_ERROR_RESPONSES[err.code];
     if (!known) throw err;
