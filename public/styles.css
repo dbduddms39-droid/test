@@ -759,3 +759,5 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .flow-doc + .flow-doc::before { content: '↓'; content: '↓' / ''; position: absolute; left: 50%; top: calc(-1 * var(--space-lg)); transform: translate(-50%, -2px); color: var(--ink-3); font-family: var(--font-mono); line-height: var(--space-lg); }
 @media (min-width: 768px) { .flow-doc + .flow-doc::before { content: '→'; content: '→' / ''; left: -40px; top: 50%; width: 40px; text-align: center; transform: translateY(-50%); } }
 .flow-foot { margin: var(--space-lg) 0 0; font-size: 15px; }
+.sum-group.is-pending { border-left: 3px dotted var(--ink-3); }
+.badge-deferred { text-decoration: none; }

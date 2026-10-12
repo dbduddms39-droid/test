@@ -6,7 +6,7 @@
 // - 앞 자료에 없던 조건이 뒤 자료에 처음 적힌 것은 '바뀜'이 아니라 '새롭게 적힘'이다.
 // - 앞 자료에 있던 조건이 뒤 자료에 없는 것은 삭제·취소로 보지 않는다.
 // - 같은 문서 유형끼리도(예: 오퍼 안내 두 건) 비교한다.
-import { COMPARE_ITEMS, compareFacet, parseTimeRanges } from './compare-core.js';
+import { COMPARE_ITEMS, compareFacet, parseTimeRanges, parsePayRange, formatWonRange, parseAmounts, payUnit, formatWon } from './compare-core.js';
 
 export const DOC_TYPE_LABEL = { job_posting: '채용공고', offer: '오퍼·합격 안내', contract: '근로계약서' };
 
@@ -54,6 +54,20 @@ function kindOf(doc, facetId) {
 const PAIR_RELATION = { changed: 'different_stated', unclear: 'incomparable' };
 const CONCRETE = new Set(['CONFIRMED', 'NOT_APPLICABLE']);
 
+// 금액 범위(협의 가능한 범위)가 적힌 앞 자료와 구체적인 금액이 적힌 뒤 자료: 같은 산정 단위일 때만 범위 안·밖을 본다 (환산 없음)
+const wageTexts = (doc) => ['01-a', '01-b'].flatMap((id) => {
+  const c = doc.analysis?.criteria?.[id];
+  return c && c.status !== 'UNAVAILABLE' ? [c.sourceValue, ...(c.evidence ?? []).map((q) => q.text)].filter(Boolean) : [];
+}).join('\n');
+function rangeCheck(vagueDoc, concreteDoc) {
+  const ta = wageTexts(vagueDoc); const tb = wageTexts(concreteDoc);
+  const range = parsePayRange(ta);
+  const ua = payUnit(ta); const ub = payUnit(tb);
+  const amounts = [...new Set(parseAmounts(concreteDoc.analysis?.criteria?.['01-a']?.sourceValue ?? tb))];
+  if (!range || !ua || !ub || ua.key !== ub.key || amounts.length !== 1) return null;
+  return { inside: amounts[0] >= range.lo && amounts[0] <= range.hi, rangeText: formatWonRange(range), unitLabel: ua.label, amountText: formatWon(amounts[0]) };
+}
+
 // 화면·질문에 쓰는 짧은 값: 검증된 원문 기재값 → (시각은) 원문에서 읽은 시각 → 인용 구절(항목명 제외). 원문에 없는 값을 만들지 않는다.
 const stripLabel = (t) => String(t ?? '').replace(/^\s*(?:\d+\.\s*)?[^:：\n]{1,15}[:：]\s*/, '').trim();
 const clip = (t, n = 40) => (t.length > n ? `${t.slice(0, n)}…` : t);
@@ -94,12 +108,13 @@ function relateFacet(facet, documents, labels) {
       finding: c.finding ?? null,
     };
   }).map((side) => ({ ...side, display: displayValue(facet, side), concrete: CONCRETE.has(side.status) }));
-  if (documents.length < 2) return { id: facet.id, label: facet.label, kind: facet.kind, relation: null, relationLabel: null, notes: [], sides, specifiedIn: null };
+  if (documents.length < 2) return { id: facet.id, label: facet.label, kind: facet.kind, relation: null, relationLabel: null, notes: [], sides, specifiedIn: null, range: null };
 
   const present = docs.filter((d) => d.kind === 'present');
   const concrete = (d) => CONCRETE.has(d.doc.analysis?.criteria?.[facet.id]?.status) || (facet.id === '08-a' && isNoProbation(d.doc.analysis?.criteria));
   const notes = [];
   const found = new Set();
+  let range = null; // { docId, rangeText, unitLabel, inside, inDocs: [docId] }
   // 적혀 있는 자료끼리 등록 순서대로 비교. 구체적인 값끼리는 같음·다름·비교 어려움을 보고,
   // 앞 자료는 구체적이지 않고 뒤 자료가 구체적이면 '구체적으로 적힘'(아래), 둘 다 구체적이지 않으면 관계를 만들지 않는다.
   for (let i = 0; i < present.length; i += 1) {
@@ -107,6 +122,17 @@ function relateFacet(facet, documents, labels) {
       const A = present[i]; const B = present[j];
       const ca = concrete(A); const cb = concrete(B);
       if (!cb || (!ca && cb)) {
+        if (!ca && cb && facet.kind === 'money') {
+          const rc = rangeCheck(A.doc, B.doc);
+          if (rc) {
+            range ??= { docId: A.doc.id, rangeText: rc.rangeText, unitLabel: rc.unitLabel, inDocs: [], outDocs: [] };
+            if (range.docId === A.doc.id) (rc.inside ? range.inDocs : range.outDocs).push(B.doc.id);
+            if (!rc.inside) {
+              found.add('different_stated');
+              notes.push(`${labels[A.doc.id]}에 적힌 ${rc.unitLabel} 범위(${rc.rangeText}) 밖의 금액(${rc.amountText})이 ${labels[B.doc.id]}에 적혀 있어요.`);
+            }
+          }
+        }
         if (ca && !cb) {
           found.add('incomparable');
           notes.push(`${labels[B.doc.id]}에는 구체적인 값 없이 적혀 있어 ${labels[A.doc.id]}의 값과 비교하지 않았어요.`);
@@ -132,7 +158,9 @@ function relateFacet(facet, documents, labels) {
       found.add('newly_specified');
       specifiedIn = firstConcrete.doc.id;
       const vague = before.filter((d) => d.kind === 'present');
-      notes.push(`${vague.map((d) => labels[d.doc.id]).join('·')}에는 구체적인 ${facet.label} 없이 적혀 있었고, ${labels[firstConcrete.doc.id]}에 구체적으로 적혔어요. 조건이 바뀐 것으로 보지 않아요.`);
+      notes.push(range?.inDocs.includes(firstConcrete.doc.id)
+        ? `${labels[range.docId]}에는 협의 가능한 ${range.unitLabel} 범위(${range.rangeText})가 적혀 있고, ${labels[firstConcrete.doc.id]}에 그 범위 안의 구체적인 금액이 적혔어요. 협의가 끝났는지는 알 수 없어요.`
+        : `${vague.map((d) => labels[d.doc.id]).join('·')}에는 구체적인 ${facet.label} 없이 적혀 있었고, ${labels[firstConcrete.doc.id]}에 구체적으로 적혔어요. 조건이 바뀐 것으로 보지 않아요.`);
     } else if (docs.slice(0, firstPresent).some((d) => d.kind === 'missing')) {
       found.add('newly_stated');
       notes.push(`${labels[present[0].doc.id]}에 처음 적혔어요. 앞 자료에는 관련 내용이 없어 바뀐 것으로 보지 않아요.`);
@@ -144,7 +172,7 @@ function relateFacet(facet, documents, labels) {
     }
   }
   const relation = RELATION_ORDER.find((r) => found.has(r)) ?? null;
-  return { id: facet.id, label: facet.label, kind: facet.kind, relation, relationLabel: relation ? RELATION_LABEL[relation] : null, notes, sides, specifiedIn };
+  return { id: facet.id, label: facet.label, kind: facet.kind, relation, relationLabel: relation ? RELATION_LABEL[relation] : null, notes, sides, specifiedIn, range };
 }
 
 // documents: 등록 순서대로의 자료 [{ id, docType, analysis: { criteria, ... } }]

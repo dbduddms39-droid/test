@@ -78,13 +78,14 @@ test('T01 채용공고 하나: 결과가 완결되고, 공고에서 찾지 못�
   assert.ok(relateRecord([posting]).items.every((i) => i.relation === null), '자료가 하나면 자료 사이 관계를 만들지 않는다');
 });
 
-test('T02 짧은 오퍼 하나: 모호한 수습 중 급여만 우선 확인, 빠진 항목은 접힌 추가 확인으로', async () => {
+test('T02 짧은 오퍼 하나: 수습 중 급여 \'별도 협의\'는 질문 대신 협의 예정 상태로, 빠진 항목은 접힌 추가 확인으로', async () => {
   const offer = await entry('offer', OFFER_3600, OFFER_3600_SPECS);
   const f = buildFollowUps({ documents: [offer] });
   assert.ok(f.primary.length <= PRIMARY_LIMIT);
-  const probation = f.primary.find((x) => x.topicIds.includes('08'));
-  assert.ok(probation, '수습 중 급여(별도 협의)는 우선 확인 후보');
-  assert.deepEqual(probation.topicIds, ['07', '08'].filter((t) => probation.topicIds.includes(t)));
+  assert.ok(!allFollowUps(f).some((x) => x.topicIds.includes('08')), '협의 예정이라는 이유만으로 질문을 만들지 않는다');
+  const p08 = f.summary.pending.find((x) => x.topicId === '08');
+  assert.equal(p08?.kind, 'negotiate');
+  assert.match(p08.line, /라고 적혀 있어요\(협의 예정\)\. 다음 안내에서 구체적인 조건이 적히는지 이어서 확인해요/);
   assert.ok(!f.primary.some((x) => x.kind === 'missing'), '오퍼에 빠진 조건은 우선 확인으로 올리지 않는다');
   assert.ok(f.more.some((x) => x.topicIds.includes('02') && x.kind === 'missing'), '근무시간 미기재는 접힌 추가 확인');
   assert.ok(!allFollowUps(f).some((x) => x.topicIds.includes('09') || x.topicIds.includes('10')), '오퍼의 휴일·연차 미기재는 질문하지 않는다');

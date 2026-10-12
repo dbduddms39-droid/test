@@ -7,7 +7,7 @@ import {
   buildIssues, resolveIssue, unresolve, blockingIssues, resetTextDependent, resultNotes, isResolved, setSupplement, shiftAnchors, assembleText,
 } from './extract-issues.js';
 import { createStore, suggestAlias, StoreError, DEFAULT_ALIAS, NOTE_MAX, newId } from './store.js';
-import { buildFollowUps, BOUNDARY_TEXT } from './followups.js';
+import { buildFollowUps, BOUNDARY_TEXT, deferral } from './followups.js';
 import { DOC_TYPE_LABEL, RELATION_LABEL } from './relate.js';
 
 // 일단확인 클라이언트 (PRD v3.1: 자료 한 건으로 시작 → 지금 확인할 내용 → 입사 건별 기록 → 새 안내 추가).
@@ -38,35 +38,40 @@ const SUBMIT_HINT = {
 // '가상 예시 넣어보기'에 쓰는 가상 문서 (실제 회사·인물 정보 없음). 문서 유형별로 하나씩
 const EXAMPLES = {
   job_posting: [
-    '[가상 예시] 콘텐츠 운영 담당자 채용',
-    '회사명: 가상상사',
+    '[가상 예시] 주식회사 파란스텝 콘텐츠 마케터 채용',
+    '회사명: 주식회사 파란스텝',
+    '모집 직무: 콘텐츠 마케터 (경력 2~4년)',
+    '담당업무: 브랜드 SNS 콘텐츠 기획·제작, 캠페인 성과 분석',
     '고용형태: 정규직',
-    '연봉: 3,400만원',
-    '근무시간: 주 5일, 09:00~18:00',
-    '근무지: 서울 마포구 양화로 00',
-    '담당업무: 콘텐츠 기획 및 SNS 채널 운영',
+    '근무지: 서울 성동구 성수이로 00, 4층',
+    '근무시간: 주 5일(월~금), 09:00~18:00',
+    '휴게시간: 12:00~13:00',
+    '급여: 연봉 3,400만~3,800만 원, 경력에 따라 협의',
+    '수습기간: 3개월',
+    '수습 급여: 최종 합격 시 별도 안내',
   ],
   offer: [
-    '[가상 예시] 최종합격을 축하드립니다.',
-    '고용형태: 정규직',
-    '연봉: 3,600만원',
-    '근무시간: 주 5일, 09:00~18:00',
-    '근무장소: 서울 소재 사업장',
-    '담당업무: 콘텐츠 기획 및 SNS 채널 운영',
-    '수습기간: 3개월',
-    '수습 중 급여: 별도 협의',
-    '상세 근로조건은 입사 시 안내드립니다.',
+    '[가상 예시] 주식회사 파란스텝 최종 합격 안내',
+    '콘텐츠 마케터 포지션에 최종 합격하신 것을 축하드립니다. 처우 조건을 아래와 같이 안내드립니다.',
+    '- 연봉: 3,600만 원',
+    '- 근무시간: 10:00~19:00 (휴게시간 13:00~14:00), 주 5일',
+    '- 근무지: 서울 성동구 성수이로 00, 4층',
+    '- 고용형태: 정규직',
+    '- 수습기간: 3개월',
+    '- 수습기간 급여 조건은 근로계약서에 기재될 예정입니다.',
   ],
   contract: [
-    '[가상 예시] 근로계약서',
-    '1. 근로계약기간: 기간의 정함이 없음',
-    '2. 근무장소: 서울 마포구 양화로 00',
-    '3. 업무내용: 콘텐츠 기획 및 SNS 채널 운영',
-    '4. 소정근로시간: 09:00~18:00 (휴게 12:00~13:00), 주 40시간',
-    '5. 임금: 연봉 3,600만원, 매월 25일 지급',
+    '[가상 예시] 근로계약서 (주식회사 파란스텝)',
+    '1. 근로계약기간: 2026년 11월 2일부터 기간의 정함이 없음',
+    '2. 근무장소: 서울 성동구 성수이로 00, 4층',
+    '3. 업무내용: 브랜드 SNS 콘텐츠 기획·제작 및 캠페인 성과 분석',
+    '4. 소정근로시간: 10:00~19:00 (휴게시간 13:00~14:00), 주 5일, 주 40시간',
+    '5. 임금: 연봉 3,600만 원(세전), 매월 25일 지급',
     '6. 고용형태: 정규직',
-    '7. 수습: 입사일부터 3개월, 수습 기간 중 급여는 정규 급여의 90%',
-    '8. 연차 유급휴가: 근로기준법에 따라 부여',
+    '7. 수습기간: 2026년 11월 2일부터 2027년 2월 1일까지(3개월)',
+    '8. 수습기간 중 임금: 월 270만 원(세전, 정규 급여의 90%)',
+    '9. 휴일: 주휴일 매주 일요일',
+    '10. 연차 유급휴가: 근로기준법에 따라 부여',
   ],
 };
 const exampleText = (type) => EXAMPLES[type].join('\n');
@@ -1009,6 +1014,12 @@ const BRIEF_STATUS_LABEL = {
   MAIN_FOUND: '적혀 있어요', MAIN_PARTIAL: '일부만 확인돼요', MAIN_MISSING: '이 자료에서는 확인되지 않아요', MAIN_UNAVAILABLE: '분석 확인 불가',
 };
 const statusLabelFor = (docType, status) => (docType === 'contract' ? CONTRACT_STATUS_LABEL : BRIEF_STATUS_LABEL)[status];
+// 항목 상태 배지: 채용공고·오퍼의 협의·추후 안내 예정은 문제처럼 보이지 않게 그 상태 그대로 (근로계약서는 기재 상태 라벨 유지)
+function topicBadge(doc, t) {
+  const def = doc.docType !== 'contract' ? deferral(t) : null;
+  if (def) return el('span', { class: 'badge badge-missing badge-deferred', 'data-status': 'DEFERRED' }, def.label);
+  return statusBadge(t.status, statusLabelFor(doc.docType, t.status));
+}
 const ITEM_IDS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'];
 const CARD_IDS = new Set(['01', '02', '03', '04', '05', '06', '07', '08']); // 핵심 조건 요약 카드 (휴일·연차는 전체 목록에서)
 const topicOf = (doc, id) => doc.analysis?.topics?.find((t) => t.id === id) ?? null;
@@ -1041,6 +1052,13 @@ function topicExplain(t) {
   if (t.status === 'MAIN_FOUND') return null;
   if (t.status === 'MAIN_MISSING') return '관련 내용을 찾지 못했어요.';
   const req = t.criteria.filter((c) => c.required && c.status !== 'CONFIRMED' && c.status !== 'NOT_APPLICABLE');
+  const def = deferral(t);
+  if (def) {
+    // 협의·추후 안내 예정은 '빠짐'이 아니라 아직 정해지지 않았다고 적힌 상태
+    return def.rangeText
+      ? `협의 가능한 ${def.unitLabel ?? '급여'} 범위(${def.rangeText})가 적혀 있어요. 구체적인 금액은 이후 안내에서 확인해요.`
+      : `'${clipText(def.quote, 40)}'라고 적혀 있어요(${def.label}). 구체적인 조건은 이후 안내에서 확인해요.`;
+  }
   if (t.status === 'MAIN_UNAVAILABLE') {
     const codes = req.filter((c) => c.status === 'UNAVAILABLE').flatMap((c) => [c.unavailableReason, ...(c.unavailableCodes ?? [])]);
     return `분석 확인 불가: ${unavailableCause(codes)}. 적혀 있지 않다는 뜻이 아니에요.`;
@@ -1204,6 +1222,10 @@ function renderRecord(record, { unsaved = false } = {}) {
     summaryGroup('different', '서로 다르게 안내된 조건', sum.different, withQuestion),
     summaryGroup('specified', '새롭게 구체화된 조건', sum.specified, withQuestion),
     summaryGroup('needs', '여전히 확인이 필요한 조건', sum.needsCheck, withQuestion),
+    // 협의·추후 안내 예정: 질문 없이 상태만 (다음 안내에서 구체적으로 적히는지 이어서 확인)
+    summaryGroup('pending', '협의·추후 안내 예정인 조건', sum.pending ?? [], (x) => el('li', { class: 'sum-item', 'data-topic': x.topicId },
+      el('p', { class: 'sum-head' }, el('strong', {}, x.label), detailLink(x.topicId)),
+      el('p', { class: 'sum-line' }, x.line))),
     sum.unavailable.length ? el('div', { class: 'sum-group is-unavailable', 'data-group': 'unavailable', id: 'reanalyze-box' },
       el('h3', { class: 'sum-title' }, '분석 확인 불가', el('span', { class: 'sum-count' }, `${sum.unavailable.length}`)),
       el('p', { class: 'small' }, '근거를 원문에서 확인하지 못해 확정하지 않은 항목이에요. 적혀 있지 않다는 뜻이 아니어서 회사 질문을 만들지 않았어요. 같은 텍스트로 다시 분석할 수 있어요.'),
@@ -1243,7 +1265,7 @@ function renderRecord(record, { unsaved = false } = {}) {
         return el('li', { class: 'ccard-doc' },
           el('span', { class: 'cd-doc' }, labels[d.id]),
           v ? el('span', { class: `cd-value${v.vague ? ' is-vague' : ''}` }, v.text) : null,
-          !v || t.status !== 'MAIN_FOUND' ? statusBadge(t.status, statusLabelFor(d.docType, t.status)) : null);
+          !v || t.status !== 'MAIN_FOUND' ? topicBadge(d, t) : null);
       })),
       (() => { const line = cardInsight(record, relItem, labels, fus); return line ? el('p', { class: 'ccard-insight' }, line) : null; })(),
       saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-text' }, '자세히 보기 →') : null));
@@ -1266,7 +1288,7 @@ function renderRecord(record, { unsaved = false } = {}) {
         const ev = t.status === 'MAIN_UNAVAILABLE' ? null : firstEvidence(t);
         return el('li', { class: 'condition-doc' },
           el('span', { class: 'cd-doc' }, labels[d.id]),
-          statusBadge(t.status, statusLabelFor(d.docType, t.status)),
+          topicBadge(d, t),
           ev ? el('q', { class: 'cd-quote' }, clipText(ev.text)) : null,
           (() => { const x = topicExplain(t); return x ? el('span', { class: 'cd-explain small' }, x) : null; })());
       })),
@@ -1427,7 +1449,7 @@ function renderItem(record, itemId) {
     if (t.notes.probationHold) notes.push(el('div', { class: 'note note-hold' }, el('p', { class: 'note-title' }, '수습 중 급여 항목을 판정하지 않은 이유'), el('p', {}, t.notes.probationHold)));
     return el('section', { class: 'doc-block', 'data-doc': d.id },
       title,
-      el('p', { class: 'doc-block-status' }, statusBadge(t.status, statusLabelFor(d.docType, t.status)), el('span', { class: 'small' }, topicSummary(t))),
+      el('p', { class: 'doc-block-status' }, topicBadge(d, t), el('span', { class: 'small' }, d.docType !== 'contract' && deferral(t) ? topicExplain(t) : topicSummary(t))),
       el('div', { class: 'card-list' }, core.map(criterionCard)),
       extra.length ? el('details', { class: 'extra-criteria' }, el('summary', {}, `추가 세부 기준 ${extra.length}개`), el('div', { class: 'card-list is-compact' }, extra.map(criterionCard))) : null,
       ...notes,

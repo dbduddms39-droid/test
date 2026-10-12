@@ -12,6 +12,7 @@ import { CRITERION_IDS } from '../src/criteria.js';
 import { createRateLimiter } from '../src/rateLimit.js';
 import { buildExtraction } from '../test/v22-fixtures.js';
 import { QA_POSTING, QA_OFFER, QA_CONTRACT, QA_POSTING_SPECS, QA_OFFER_SPECS, QA_CONTRACT_SPECS, WAGE_FAILURE_MODES } from '../test/qa-docs.js';
+import { DEMO_POSTING, DEMO_OFFER, DEMO_CONTRACT, DEMO_POSTING_SPECS, DEMO_OFFER_SPECS, DEMO_CONTRACT_SPECS } from '../test/demo-docs.js';
 
 const OUT = 'e2e-artifacts/qa';
 await mkdir(OUT, { recursive: true });
@@ -27,7 +28,8 @@ const ai = {
   name: 'demo',
   async analyze({ segments, criterionIds }) {
     const text = segments.map((s) => s.text).join('\n');
-    const doc = [[QA_POSTING, QA_POSTING_SPECS], [QA_OFFER, QA_OFFER_SPECS], [QA_CONTRACT, QA_CONTRACT_SPECS]]
+    const doc = [[QA_POSTING, QA_POSTING_SPECS], [QA_OFFER, QA_OFFER_SPECS], [QA_CONTRACT, QA_CONTRACT_SPECS],
+      [DEMO_POSTING, DEMO_POSTING_SPECS], [DEMO_OFFER, DEMO_OFFER_SPECS], [DEMO_CONTRACT, DEMO_CONTRACT_SPECS]]
       .find(([t]) => segmentText(t).map((s) => s.text).join('\n') === text);
     if (!doc) throw Object.assign(new Error('unknown'), { code: 'api_error' });
     const specs = doc[0] === QA_CONTRACT && wageFailure ? WAGE_FAILURE_MODES.rewritten_value(doc[1]) : doc[1];
@@ -160,6 +162,25 @@ try {
     await page.click('button[data-reanalyze]');
     await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'));
     check(`[${tag}] 같은 텍스트로 재분석 → 임금 확인됨`, !(await page.$('[data-group="unavailable"]')) && (await text('#condition-list [data-item="01"]')).includes('36,000,000원'));
+    // 시연 문서(주식회사 파란스텝): 협의 예정 → 범위 안에서 구체화 → 계약서에서 수습 급여 구체화
+    if (tag === 'desk') {
+      await page.goto(`${BASE}/#/new`);
+      await register('job_posting', DEMO_POSTING);
+      check('[demo] 공고 하나: 기록 이름 = 주식회사 파란스텝', (await text('#record-title')) === '주식회사 파란스텝');
+      const pend = await groupText('pending');
+      check('[demo] 공고 하나: 연봉 범위·수습 급여는 협의·추후 안내 예정 상태 (질문 없음)', pend.includes('협의 가능한 연봉 범위(3,400만~3,800만원)') && pend.includes('추후 안내 예정') && !(await page.$('[data-group="pending"] .q-text')));
+      check('[demo] 공고 카드: 수습 중 급여 배지 = 추후 안내 예정', (await text('#condition-list [data-item="08"]')).includes('추후 안내 예정'));
+      await page.click('#add-doc');
+      await register('offer', DEMO_OFFER);
+      await page.click('#add-doc');
+      await register('contract', DEMO_CONTRACT);
+      const spec = await groupText('specified');
+      check('[demo] 급여: 범위 안에서 구체화 (서로 다른 안내 아님)', spec.includes('채용공고에는 협의 가능한 연봉 범위(3,400만~3,800만원)가 적혀 있고, 오퍼·합격 안내와 근로계약서에는 연봉 3,600만 원으로 기재되어 있어요.') && !(await groupText('different')).includes('급여'));
+      check('[demo] 수습 중 급여: 근로계약서에서 처음 구체화, 질문 없음', spec.includes('근로계약서에는 월 270만 원(세전, 정규 급여의 90%)으로 적혀 있어요') && !(await page.$('[data-group="specified"] [data-topic="08"] .q-text')));
+      check('[demo] 서로 다른 안내는 근무시간 하나', (await page.$$('[data-group="different"] .sum-item')).length === 1 && (await groupText('different')).includes('근무시간'));
+      check('[demo] 협의 완료·확정 단정 표현 없음', !/(협의 완료|확정된 합의|협의가 끝났)/.test(await text('#view-record')));
+      await page.screenshot({ path: `${OUT}/demo-s04-three-docs.png`, fullPage: true });
+    }
     check(`[${tag}] 페이지 오류 없음`, errors.length === 0, errors.join(' | '));
     await ctx.close();
   }

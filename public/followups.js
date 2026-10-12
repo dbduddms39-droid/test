@@ -10,6 +10,7 @@
 // 질문에는 검증된 원문 값만 넣고, 법률 판단이나 조건 확정 표현을 넣지 않는다.
 import { buildQuestion, josa } from './questions.js';
 import { relateRecord } from './relate.js';
+import { parsePayRange, formatWonRange, payUnit, parseAmounts } from './compare-core.js';
 
 export const PRIMARY_LIMIT = 3;
 const EXTRA_LIMIT = 2;
@@ -102,6 +103,26 @@ function valuePhrase(groups, noun) {
   }).join(', ');
 }
 
+// ---------- 협의 예정·추후 안내 예정 ----------
+// 핵심 세부기준이 모두 '정해지지 않음'(finding undecided: 협의·추후 안내·입사 시 안내 등)으로 적힌 항목.
+// 기준표 판정(일부 확인)은 그대로 두고, 화면 표시와 질문 선정에서만 '미기재'와 구분한다.
+export function deferral(t) {
+  if (!t?.visible || t.status !== 'MAIN_PARTIAL') return null;
+  const lacking = t.criteria.filter((c) => c.required && c.status !== 'CONFIRMED' && c.status !== 'NOT_APPLICABLE');
+  if (!lacking.length || !lacking.every((c) => c.basis === 'undecided')) return null;
+  const quotes = lacking.flatMap((c) => c.evidence.map((e) => e.text));
+  const text = quotes.join('\n');
+  const range = t.id === '01' ? parsePayRange(text) : null;
+  const negotiate = /(협의|조율|논의|면접\s*후|결정)/.test(text);
+  return {
+    kind: negotiate ? 'negotiate' : 'later',
+    label: negotiate ? '협의 예정' : '추후 안내 예정',
+    quote: quotes[0] ?? null,
+    rangeText: range ? formatWonRange(range) : null,
+    unitLabel: range ? payUnit(text)?.label ?? null : null,
+  };
+}
+
 // ---------- 자료 하나에서 나오는 후보 ----------
 function partialSentence(t, label, docType) {
   const req = t.criteria.filter((c) => c.required && c.status !== 'CONFIRMED' && c.status !== 'NOT_APPLICABLE');
@@ -116,6 +137,7 @@ function partialSentence(t, label, docType) {
 function docCandidates(doc, label, others) {
   const out = [];
   const reanalyze = [];
+  const pending = [];
   for (const t of doc.analysis?.topics ?? []) {
     if (!t.visible) continue;
     if (t.status === 'MAIN_UNAVAILABLE') {
@@ -130,9 +152,13 @@ function docCandidates(doc, label, others) {
     // 핵심 내용은 적혀 있고 세부 숫자(주 소정근로시간 등)만 직접 적혀 있지 않은 경우
     const lacking = t.criteria.filter((c) => c.required && c.status !== 'CONFIRMED' && c.status !== 'NOT_APPLICABLE');
     const detailOnly = t.status === 'MAIN_PARTIAL' && lacking.length > 0 && lacking.every((c) => DETAIL_ONLY.has(c.boundary));
+    const def = deferral(t);
     let kind = null;
     if (conflict) kind = 'conflict';
-    else if (t.status === 'MAIN_PARTIAL') {
+    else if (def && doc.docType !== 'contract') {
+      // 협의·추후 안내 예정: 질문 대신 상태를 안내하고, 뒤 자료에서 구체적으로 적혔는지 본다 (근로계약서는 아래에서 질문 후보)
+      if (!laterFound) pending.push({ topicId: t.id, docId: doc.id, docLabel: label, label: t.label, def });
+    } else if (t.status === 'MAIN_PARTIAL') {
       if (laterFound && doc.docType !== 'contract') kind = null; // 뒤 자료에 구체적으로 적혀 있으면 앞 자료의 모호함은 묻지 않음
       else if (detailOnly) kind = 'partial_detail';
       else if (doc.docType === 'contract') kind = 'contract_unclear';
@@ -155,7 +181,7 @@ function docCandidates(doc, label, others) {
     }
     out.push({ topicId: t.id, kind, sources: [{ docId: doc.id, docLabel: label, quotes }], sentence, detail: kind === 'partial_detail' ? lacking.map((c) => BOUNDARY_TEXT[c.boundary]).filter(Boolean)[0] : null });
   }
-  return { out, reanalyze };
+  return { out, reanalyze, pending };
 }
 
 // ---------- 자료 사이 관계에서 나오는 후보 ----------
@@ -172,6 +198,8 @@ function relationCandidates(rel, labels, documents) {
       if (f.relation === 'different_stated') {
         kind = 'different_stated';
         const groups = groupByValue(present.filter((s) => s.concrete), labels);
+        // 범위 밖 금액: 범위가 적힌 자료를 앞에 함께 보여 준다 ('채용공고에는 연봉 3,400만~3,800만원 범위')
+        if (f.range?.outDocs?.length) groups.unshift({ key: 'range', value: `${f.range.unitLabel} ${f.range.rangeText} 범위`, docs: [labels[f.range.docId]] });
         line = groups.map((g) => `${g.docs.join('·')} ${g.value}`).join(' / ');
         sentence = `${valuePhrase(groups, noun)} 기재되어 있습니다. 실제 적용되는 ${josa(noun, '을/를')} 확인 부탁드립니다.`;
       } else if (f.relation === 'incomparable') {
@@ -182,15 +210,21 @@ function relationCandidates(rel, labels, documents) {
       } else if (f.relation === 'newly_specified' && f.specifiedIn) {
         kind = 'newly_specified';
         const s = f.sides.find((x) => x.docId === f.specifiedIn);
-        line = `이전 자료에는 구체적인 ${josa(noun, '이/가')} 없었지만, ${labels[s.docId]}에는 ${euro(s.display)} 적혀 있어요.`;
-        sentence = NEW_CONDITION_ITEMS.has(item.id) || item.id === '01'
-          ? `앞서 받은 자료에는 구체적인 ${josa(noun, '이/가')} 없었고, ${labels[s.docId]}에는 ${euro(s.display)} 적혀 있습니다. 이 기준으로 확정된 것인지 확인 부탁드립니다.` : null;
+        if (f.range?.inDocs?.includes(s.docId)) {
+          // 협의 가능한 범위 안에서 구체적인 금액이 적힘. 같은 금액을 적은 뒤 자료를 함께 묶는다 (협의 완료 여부는 단정하지 않음)
+          const amount = (x) => { const a = [...new Set(parseAmounts(x.value ?? x.display))]; return a.length === 1 ? a[0] : null; };
+          const same = f.sides.filter((x) => x.concrete && amount(x) != null && amount(x) === amount(s)).map((x) => labels[x.docId]);
+          const shown = s.display.startsWith(f.range.unitLabel) ? s.display : `${f.range.unitLabel} ${s.display}`;
+          line = `${labels[f.range.docId]}에는 협의 가능한 ${f.range.unitLabel} 범위(${f.range.rangeText})가 적혀 있고, ${joinDocs(same)}에는 ${euro(shown)} 기재되어 있어요.`;
+        } else {
+          line = `이전 자료에는 구체적인 ${josa(noun, '이/가')} 없었지만, ${labels[s.docId]}에는 ${euro(s.display)} 적혀 있어요.`;
+        }
+        sentence = null; // 뒤 자료에 구체적으로 적힌 내용은 다시 묻지 않는다
       } else if (f.relation === 'newly_stated' && present.length) {
         kind = 'newly_stated';
         const first = present[0];
         line = `${labels[first.docId]}에 처음 적혔어요: ${first.display}`;
-        sentence = NEW_CONDITION_ITEMS.has(item.id)
-          ? `앞서 받은 자료에서는 ${noun}에 관한 내용을 찾지 못했고, ${labels[first.docId]}에는 ${euro(first.display)} 적혀 있습니다. 이 조건으로 확정된 것인지 확인 부탁드립니다.` : null;
+        sentence = null; // 처음 적힌 조건은 상태로 안내하고, 같은 내용을 다시 묻지 않는다
       } else if (f.relation === 'not_mentioned_later' && present.length && f === item.facets[0] && typeOf[f.sides.at(-1).docId] === 'contract') {
         // 뒤 자료가 근로계약서일 때만 묻는다. 짧은 오퍼·공고에서 빠진 조건은 질문 후보로 만들지 않는다
         kind = 'not_mentioned_later';
@@ -260,10 +294,12 @@ export function buildFollowUps(record) {
   const rel = relateRecord(documents);
   const cands = [];
   const reanalyze = [];
+  const pendingAll = [];
   for (const d of documents) {
     const r = docCandidates(d, rel.labels[d.id], documents.filter((o) => o.id !== d.id));
     cands.push(...r.out);
     reanalyze.push(...r.reanalyze);
+    pendingAll.push(...r.pending);
   }
   const relCands = documents.length > 1 ? relationCandidates(rel, rel.labels, documents) : [];
   cands.push(...relCands);
@@ -292,5 +328,19 @@ export function buildFollowUps(record) {
   const needsCheck = all.filter((x) => x.tier === 'primary' && x.kind !== 'different_stated')
     .map((x) => ({ topicId: x.topicIds[0], label: x.label, line: x.reasons[0] }));
   const unavailable = reanalyze.map((x) => ({ topicId: x.topicId, label: `${x.docLabel} · ${x.label}`, codes: x.codes }));
-  return { primary, more, reanalyze, relation: rel, summary: { different, specified, needsCheck, unavailable } };
+  // 협의·추후 안내 예정 (질문 없이 상태만): 항목마다 가장 뒤 자료 기준, 다른 요약에 이미 있는 항목은 빼고
+  const shown = new Set([...different, ...specified, ...needsCheck].map((x) => x.topicId));
+  const pendingByTopic = new Map();
+  for (const p of pendingAll) pendingByTopic.set(p.topicId, p);
+  const pending = [...pendingByTopic.values()].filter((p) => !shown.has(p.topicId)).map((p) => ({
+    topicId: p.topicId, label: TOPIC_NAME[p.topicId] ?? p.label, kind: p.def.kind, line: pendingLine(p),
+  }));
+  return { primary, more, reanalyze, relation: rel, summary: { different, specified, needsCheck, pending, unavailable } };
+}
+
+export function pendingLine({ docLabel, def }) {
+  const head = def.rangeText
+    ? `${docLabel}에는 협의 가능한 ${def.unitLabel ?? '급여'} 범위(${def.rangeText})가 적혀 있어요.`
+    : `${docLabel}에는 '${clip(def.quote, 40)}'라고 적혀 있어요(${def.label}).`;
+  return `${head} 다음 안내에서 구체적인 조건이 적히는지 이어서 확인해요.`;
 }

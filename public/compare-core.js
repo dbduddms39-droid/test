@@ -114,6 +114,16 @@ function wonValue(s) {
   if (!seen) return null;
   return Math.round(total + section + (n ?? 0));
 }
+// 금액 범위: '연봉 3,400만~3,800만 원', '3,400~3,800만원', '3,400만 원에서 3,800만 원'. 아니면 null
+export function parsePayRange(text) {
+  const m = String(text ?? '').match(/(\d[\d,]*(?:\.\d+)?)\s*(억|만)?\s*원?\s*(?:~|∼|–|-|에서|부터)\s*(\d[\d,]*(?:\.\d+)?)\s*(억|만)?\s*원/);
+  if (!m) return null;
+  const hiUnit = m[4] ?? '';
+  const lo = wonValue(`${m[1]}${m[2] ?? hiUnit}`.replace(/\s+/g, ''));
+  const hi = wonValue(`${m[3]}${hiUnit}`.replace(/\s+/g, ''));
+  return lo != null && hi != null && lo < hi ? { lo, hi } : null;
+}
+export const formatWonRange = (r) => `${formatWon(r.lo).replace(/원$/, '')}~${formatWon(r.hi)}`;
 export function formatWon(v) {
   if (v % 1e4 === 0 && v >= 1e4) {
     const man = v / 1e4;
@@ -202,6 +212,8 @@ export function parsePayday(text) {
 export function normalizeText(text, { place = false } = {}) {
   let t = String(text ?? '').replace(/^[^:：\n]{1,15}[:：]\s*/, '');
   if (place) t = t.replace(/(특별자치시|특별자치도|특별시|광역시)/g, '').replace(/(경기|강원|충청북|충청남|전라북|전라남|경상북|경상남|제주)도/g, '$1');
+  // 나열의 쉼표와 '및'은 같은 뜻으로 본다 ('기획·제작, 성과 분석' = '기획·제작 및 성과 분석')
+  t = t.replace(/(^|\s)및(?=\s)/g, ',');
   return t.replace(/[\s.,·()[\]{}'"“”‘’\-–~/]/g, '').toLowerCase();
 }
 // 고용형태 분류

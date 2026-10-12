@@ -38,7 +38,7 @@ try {
     check(`[${tag}] S01: 헤드라인·설명·보조 문구`, landing.includes('입사 전, 놓치지 말고') && landing.includes('안내받은 내용을 한곳에 기록하고 확인해요') && landing.includes('자료 하나만 있어도 시작할 수 있어요'));
     check(`[${tag}] S01: 주요 CTA가 첫 화면에 보임`, await page.$eval('#landing-start', (e) => e.getBoundingClientRect().bottom <= window.innerHeight));
     check(`[${tag}] S01: 영역 3개 (점검 주제 목록·확인 순서·원문 대조 섹션 없음)`, (await page.$$('#view-landing > *')).length === 3 && !(await page.$('.topic-grid, .steps, figure.compare')));
-    check(`[${tag}] S01: 이어서 확인 예시는 가상 시연 예시로 표시, 하나만 등록해도 된다는 안내`, landing.includes('가상 시연 예시 · 실제 분석 결과가 아니에요') && landing.includes('중 하나만 등록해도 괜찮아요') && !/변경됐|변경되었|위반입니다/.test(landing));
+    check(`[${tag}] S01: 이어서 확인 예시는 가상 시연 예시로 표시, 하나만 등록해도 된다는 안내`, landing.includes('가상 시연 예시') && landing.includes('실제 분석 결과가 아니에요') && landing.includes('중 하나만 등록해도 괜찮아요') && !/변경됐|변경되었|위반입니다/.test(landing));
     for (const [sel, hash, v] of [['#landing-records', '#/records', 'records'], ['#landing-start-bottom', '#/new', 'input']]) {
       await page.goto(BASE); await view('landing');
       await page.click(sel); await view(v);
