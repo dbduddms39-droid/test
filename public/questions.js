@@ -166,20 +166,56 @@ function mergeProbationQuestions(questions, mode) {
   return questions.flatMap((q) => q === first ? [merged] : q === period || q === pay ? [] : [q]);
 }
 
-// comparison: /api/compare 결과. 반환: [{ id, itemId, label, text }] (주제 내·연관 주제 묶음)
-export function buildCompareQuestions(comparison) {
+// 비교 결과는 건드리지 않고, 질문만 '주요'와 '선택적'으로 분리한다.
+// 두 문서 모두 미기재: 결과에서는 계속 표시하지만 자동으로 회사에 물을 질문은 아님.
+// 간략한 오퍼에 미기재: 앞 문서의 확정 조건이 사라졌다는 뜻이 아니므로 선택적 확인.
+// 계약서에서 앞 문서의 조건을 찾지 못한 경우, 확정값 충돌, 뒤 문서의 중요한 신규 조건은 주요 질문으로 유지.
+function isOptionalCompareFacet(f, comparison) {
+  return f.state === 'both_missing'
+    || (docIs(comparison, 1, 'offer') && f.state === 'not_comparable' && f.b.status === 'MISSING');
+}
+const finalized = (questions, mode) => dedupeQuestions(mergeProbationQuestions(questions, mode))
+  .map(({ sentences, ...q }) => q);
+
+export function buildCompareQuestionGroups(comparison) {
   const L = { A: comparison.docs[0].docTypeLabel, B: comparison.docs[1].docTypeLabel };
   const probationApplies = hasProbationApplication(comparison);
-  const out = comparison.items.map((item) => {
-    const sentences = [...new Set(item.facets.map((f, i) => {
-      if (item.id === '08' && f.state === 'both_missing' && !probationApplies) return null;
-      return compareSentence(f, L, i === 0, item, comparison);
-    }).filter(Boolean))];
-    if (!sentences.length) return null;
-    return { id: `q-${item.id}`, itemId: item.id, label: item.label, sentences, text: `안녕하세요. ${item.label} 관련해 여쭤봅니다. ${sentences.join(' ')} 감사합니다.` };
-  }).filter(Boolean);
-  return dedupeQuestions(mergeProbationQuestions(out, 'compare'))
-    .map(({ sentences, ...q }) => q); // 내부 문장 배열은 화면 결과에 전달하지 않음
+  const lists = { primary: [], optional: [] };
+  for (const item of comparison.items) {
+    const sentences = { primary: [], optional: [] };
+    for (const [i, f] of item.facets.entries()) {
+      if (item.id === '08' && f.state === 'both_missing' && !probationApplies) continue;
+      const sentence = compareSentence(f, L, i === 0, item, comparison);
+      if (!sentence) continue;
+      const bucket = isOptionalCompareFacet(f, comparison) ? 'optional' : 'primary';
+      sentences[bucket].push(sentence);
+    }
+    for (const bucket of ['primary', 'optional']) {
+      const unique = [...new Set(sentences[bucket])];
+      if (!unique.length) continue;
+      const reason = bucket === 'optional'
+        ? (item.facets.some((f) => f.state === 'both_missing')
+          ? '두 문서에서 모두 확인되지 않은 내용이에요.'
+          : '간략한 오퍼에서 확인되지 않은 내용이에요.')
+        : null;
+      lists[bucket].push({
+        id: `q-${item.id}`, itemId: item.id, label: item.label, sentences: unique, reason,
+        text: `안녕하세요. ${item.label} 관련해 여쭤봅니다. ${unique.join(' ')} 감사합니다.`,
+      });
+    }
+  }
+  return {
+    primary: finalized(lists.primary, 'compare'),
+    optional: finalized(lists.optional, 'compare'),
+  };
+}
+
+// 기존 호출은 주요 질문만 반환한다. '선택적' 질문은 사용자가 직접 추가할 때만 편집 목록에 들어간다.
+export function buildCompareQuestions(comparison) {
+  return buildCompareQuestionGroups(comparison).primary;
+}
+export function buildOptionalCompareQuestions(comparison) {
+  return buildCompareQuestionGroups(comparison).optional;
 }
 
 // 근로계약서 핵심 기준이 확인돼도, 일부 세부 조건에 대한 확인 질문은 유용할 수 있다.
@@ -202,13 +238,31 @@ function buildContractDetailQuestion(topic, docType) {
   return `안녕하세요. 근로계약서의 ${names.join('·')}에 대해 추가로 확인하고 싶습니다. 해당 조건을 구체적으로 알려 주실 수 있을까요? 감사합니다.`;
 }
 
-// 근로계약서 단독 확인 결과 → 질문 목록 (핵심 상태 우선, 기재됨 중 선택적 세부기준만 후속 질문)
+// 근로계약서 단독 점검: 핵심 기재 부족·미기재는 주요 질문으로,
+// 주요 조건이 기재된 주제에서 지급일·지급방법·휴게시간만 추가 확인으로 제안한다.
+export function buildContractQuestionGroups(result) {
+  const lists = { primary: [], optional: [] };
+  for (const t of result?.topics ?? []) {
+    if (!t.visible) continue;
+    const primaryText = buildQuestion(t, result.docType);
+    const optionalText = primaryText ? null : buildContractDetailQuestion(t, result.docType);
+    if (primaryText) lists.primary.push({ id: `q-${t.id}`, itemId: t.id, label: t.label, text: primaryText });
+    if (optionalText) lists.optional.push({
+      id: `q-${t.id}`, itemId: t.id, label: t.label,
+      reason: '주요 조건은 기재되어 있지만 일부 세부 정보는 추가 확인할 수 있어요.',
+      text: optionalText,
+    });
+  }
+  return {
+    primary: dedupeQuestions(mergeProbationQuestions(lists.primary, 'contract')),
+    optional: dedupeQuestions(lists.optional),
+  };
+}
 export function buildContractQuestions(result) {
-  const out = (result?.topics ?? []).map((t) => {
-    const text = buildQuestion(t, result.docType) ?? buildContractDetailQuestion(t, result.docType);
-    return text ? { id: `q-${t.id}`, itemId: t.id, label: t.label, text } : null;
-  }).filter(Boolean);
-  return dedupeQuestions(mergeProbationQuestions(out, 'contract'));
+  return buildContractQuestionGroups(result).primary;
+}
+export function buildOptionalContractQuestions(result) {
+  return buildContractQuestionGroups(result).optional;
 }
 
 // 클립보드 복사: Clipboard API를 먼저 쓰고, 안 되면 임시 입력란 선택 후 복사 명령을 쓴다.
