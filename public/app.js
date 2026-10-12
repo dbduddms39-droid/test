@@ -1123,8 +1123,8 @@ function renderCompare() {
     el('div', { class: 'cmp-item-head' }, el('h3', {}, item.label), statusBadge(item.state, item.stateLabel)),
     ...item.facets.map((f) => el('div', { class: `cmp-facet is-${f.state}` },
       el('div', { class: 'cmp-facet-head' }, el('span', { class: 'cmp-facet-label' }, f.label), statusBadge(f.state, f.stateLabel)),
-      el('div', { class: 'cmp-sides' }, compareSide(A, f.a), compareSide(B, f.b)),
-      el('p', { class: 'cmp-note' }, f.note))))));
+      el('p', { class: 'cmp-note' }, el('strong', {}, '이렇게 구분한 이유 · '), f.note),
+      el('div', { class: 'cmp-sides' }, compareSide(A, f.a), compareSide(B, f.b)))))));
 
   const questions = buildCompareQuestions(c);
   renderQuestions($('#compare-question-list'), questions);

@@ -641,3 +641,17 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .cmp-evidence q { quotes: '“' '”'; overflow-wrap: anywhere; }
 .cmp-note { margin: 8px 0 0; font-size: 13px; color: var(--ink-2); }
 .cmp-facet.is-changed .cmp-note { color: var(--ink); }
+
+
+/* 확인 기준을 드러내는 안내: 기존 편집지 색상과 레이아웃 유지 */
+.criteria-examples { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-sm); margin: var(--space-md) 0; }
+.criteria-example { min-width: 0; padding: 14px; background: var(--paper); border: 1px solid var(--rule-soft); }
+.criteria-example p { margin: 6px 0 0; font-size: 13px; color: var(--ink-2); }
+.criteria-example .criteria-values { font-size: 14px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.criteria-example .criteria-values span { color: var(--annot); padding: 0 3px; }
+.criteria-citation { margin: var(--space-sm) 0 0; }
+.criteria-method { margin: var(--space-md) 0; padding: 12px 16px; background: var(--paper); border: 1px solid var(--rule-soft); }
+.criteria-method summary { font-weight: 600; cursor: pointer; }
+.criteria-method p { color: var(--ink-2); font-size: 13px; line-height: 1.7; margin: var(--space-sm) 0 0; }
+.cmp-note strong { color: var(--annot); font-weight: 600; }
+@media (max-width: 767px) { .criteria-examples { grid-template-columns: 1fr; } }

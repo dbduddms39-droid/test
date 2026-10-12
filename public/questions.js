@@ -42,7 +42,7 @@ export function buildQuestion(topic, docType) {
 
 // ---------- 확인 질문 목록 (결과 화면 '회사에 확인할 질문') ----------
 // 질문은 템플릿으로만 만든다 (AI가 쓰지 않음). 사용자는 고치거나 골라서 직접 회사에 보낸다.
-// 문서에서 이미 명확하게 확인되는 조건(동일, 뒤 문서에 구체적으로 새로 적힘)에는 질문하지 않는다.
+// 동일한 조건에는 질문하지 않는다. 앞 문서에 없고 뒤 문서에 처음 등장한 조건은 변경으로 단정하지 않고 적용 여부를 확인한다.
 
 // 한글 받침에 맞춘 조사 ('급여 금액이', '지급일이', '근무장소가')
 export function josa(word, pair) {
@@ -69,7 +69,7 @@ export function dedupeQuestions(list) {
 }
 
 // 비교 결과의 세부 항목 하나 → 질문 문장 (질문이 필요 없으면 null)
-// A: 앞 단계 문서, B: 뒤 단계 문서. 뒤 문서가 실제로 적용될 조건에 더 가깝다고 보고, 뒤 문서가 명확하면 묻지 않는다.
+// A: 앞 단계 문서, B: 뒤 단계 문서. 같은 조건은 질문하지 않되, 새롭게 기재된 내용은 확인 질문으로 연결한다.
 function compareSentence(f, L, isCoreFacet, item) {
   // 원문 기재값이 없으면 첫 인용 줄을 짧게 보여 준다 (문서에 없는 값을 만들지 않음)
   const a = clip(f.a.value ?? f.a.evidence?.[0]?.text); const b = clip(f.b.value ?? f.b.evidence?.[0]?.text);
@@ -79,9 +79,16 @@ function compareSentence(f, L, isCoreFacet, item) {
       return `${subj} 문서마다 다르게 적혀 있습니다(${L.A}: ${a || '해당 없음'} / ${L.B}: ${b || '해당 없음'}). 최종적으로 적용되는 ${josa(f.label, '을/를')} 확인 부탁드립니다.`;
     case 'missing_one':
       return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
+    case 'added':
+      // 새로 기재된 내용은 변경이나 위반이라고 단정하지 않고, 실제 적용 여부만 확인한다.
+      return f.a.status === 'MISSING' && f.b.status === 'CONFIRMED' && b
+        ? `${L.A}에서는 ${f.label}에 관한 내용을 찾지 못했지만 ${L.B}에는 ‘${b}’라고 적혀 있습니다. 이 조건이 실제로 적용되는지 확인 부탁드립니다.`
+        : null;
     case 'not_comparable':
-      // 간략한 오퍼에 없는 경우: 뒤 문서(B)가 비어 있을 때만 묻는다. 앞 문서만 비어 있고 뒤 문서에 적혀 있으면 묻지 않는다.
+      // 간략한 오퍼의 미기재는 삭제·변경이 아니다. 어느 쪽에 기재됐는지 구분한다.
       if (f.b.status === 'MISSING' && a) return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
+      if (f.a.status === 'MISSING' && f.b.status === 'CONFIRMED' && b)
+        return `${L.A}에서는 ${f.label}에 관한 내용을 찾지 못했지만 ${L.B}에는 ‘${b}’라고 적혀 있습니다. 이 조건이 실제로 적용되는지 확인 부탁드립니다.`;
       return null;
     case 'unclear':
       if (f.b.status === 'PARTIAL' || f.b.status === 'UNCLEAR') return `${L.B}의 ${subj} 구체적으로 정해지지 않은 것으로 보여 여쭤봅니다(${L.B}: ${b}). 구체적인 ${josa(f.label, '을/를')} 알려 주실 수 있을까요?`;
