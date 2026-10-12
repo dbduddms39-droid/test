@@ -57,8 +57,7 @@ test('비교 질문: 달라짐·새로 기재됨·한쪽 미기재·모호함에
   ]));
   assert.deepEqual(qs.map((q) => q.itemId), ['01', '03', '07', '05']);
   assert.match(qs[0].text, /급여 금액이 문서마다 다르게 적혀 있습니다\(채용공고: 3,600만원 \/ 근로계약서: 3,200만원\)/);
-  assert.match(qs[0].text, /지급일/);
-  assert.match(qs[0].text, /채용공고에서는 지급일에 관한 내용을 찾지 못했지만 근로계약서에는 ‘매월 25일’이라고 적혀 있습니다/);
+  assert.doesNotMatch(qs[0].text, /지급일/, '뒤 문서에 구체적으로 적힌 부가 정보는 반복 질문하지 않음');
   assert.match(qs[1].text, /근로계약서에서 근무장소에 관한 내용을 찾지 못했습니다\. 채용공고에 적힌 조건\(서울 마포구\)이 그대로 적용되는지/);
   assert.match(qs[2].text, /구체적인 수습 기간을 알려 주실 수 있을까요/);
   assert.match(qs[3].text, /두 문서 모두에서 고용형태에 관한 내용을 찾지 못했습니다/);
@@ -81,6 +80,45 @@ test('비교 질문: 새로 등장한 수습 조건과 간략한 오퍼의 미�
   assert.equal(q2.length, 1);
   assert.match(q2[0].text, /오퍼 안내에서는 기간의 정함에 관한 내용을 찾지 못했지만 근로계약서에는 ‘계약기간 1년’/);
   assert.doesNotMatch(q2[0].text, /변경되었|위반|삭제되었/);
+});
+
+test('비교 질문: 새로 기재된 핵심 조건만 확인 질문으로, 세부 정보는 원문 비교에 남긴다', () => {
+  const qs = buildCompareQuestions(comparison([
+    { id: '01', label: '급여 및 지급 조건', facets: [
+      fct('01-a', '급여 금액', 'added', side('MISSING'), side('CONFIRMED', '연봉 3,600만 원')),
+      fct('01-f', '지급일', 'added', side('MISSING'), side('CONFIRMED', '매월 25일')),
+    ] },
+    { id: '02', label: '근무시간 및 휴게시간', facets: [
+      fct('02-b', '출퇴근 시각', 'added', side('MISSING'), side('CONFIRMED', '09:00~18:00')),
+      fct('02-c', '휴게시간', 'added', side('MISSING'), side('CONFIRMED', '12:00~13:00')),
+    ] },
+  ]));
+  assert.deepEqual(qs.map((q) => q.itemId), ['01']);
+  assert.match(qs[0].text, /연봉 3,600만 원/);
+  assert.doesNotMatch(qs[0].text, /지급일/);
+});
+
+test('근로계약서 단독: 핵심 기재됨이어도 지정된 세부 조건이 미기재·미확정이면 질문한다', () => {
+  const criteria = (...vals) => vals.map(([id, status]) => ({ id, role: 'D', status }));
+  const qs = buildContractQuestions({ docType: 'contract', topics: [
+    { id: '01', label: '임금', visible: true, status: 'MAIN_FOUND', criteria: criteria(['01-e', 'MISSING'], ['01-f', 'MISSING'], ['01-g', 'MISSING']) },
+    { id: '02', label: '근무시간', visible: true, status: 'MAIN_FOUND', criteria: criteria(['02-c', 'UNCLEAR']) },
+    { id: '03', label: '근무장소', visible: true, status: 'MAIN_FOUND', criteria: criteria(['03-b', 'MISSING']) },
+    { id: '04', label: '담당업무', visible: true, status: 'MAIN_FOUND', criteria: criteria(['04-b', 'UNAVAILABLE']) },
+  ] });
+  assert.deepEqual(qs.map((q) => q.itemId), ['01', '02']);
+  assert.match(qs[0].text, /급여 지급방법·급여 지급일/);
+  assert.doesNotMatch(qs[0].text, /세전|세후/);
+  assert.match(qs[1].text, /휴게시간/);
+});
+
+test('근로계약서 단독: 분석 불가나 해당 없음은 문서 미기재 질문으로 만들지 않는다', () => {
+  const qs = buildContractQuestions({ docType: 'contract', topics: [
+    { id: '01', label: '임금', visible: true, status: 'MAIN_FOUND', criteria: [{ id: '01-e', role: 'D', status: 'UNAVAILABLE' }] },
+    { id: '02', label: '근무시간', visible: true, status: 'MAIN_UNAVAILABLE', criteria: [{ id: '02-c', role: 'D', status: 'MISSING' }] },
+    { id: '08', label: '수습 중 급여', visible: false, status: null },
+  ] });
+  assert.equal(qs.length, 0);
 });
 
 test('질문 중복 제거: 같은 문장은 하나만 (공백 차이 무시), 한 항목은 질문 하나로 묶음', () => {

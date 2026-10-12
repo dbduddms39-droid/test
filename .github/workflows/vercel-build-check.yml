@@ -17,11 +17,28 @@ on:
       - 'src/**'
       - 'scripts/check-vercel-output.mjs'
       - '.github/workflows/vercel-build-check.yml'
+      - 'test/**'
 
 permissions:
   contents: read
 
 jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Unit and regression tests (no live AI call)
+        run: npm test
+
   vercel-build:
     runs-on: ubuntu-latest
     timeout-minutes: 15

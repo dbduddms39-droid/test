@@ -69,7 +69,11 @@ export function dedupeQuestions(list) {
 }
 
 // 비교 결과의 세부 항목 하나 → 질문 문장 (질문이 필요 없으면 null)
-// A: 앞 단계 문서, B: 뒤 단계 문서. 같은 조건은 질문하지 않되, 새롭게 기재된 내용은 확인 질문으로 연결한다.
+// 새로 기재된 조건은 '핵심 조건'에만 기본 질문을 만든다.
+// 새로 기재된 지급일·휴게시간 등 세부 정보는 결과에서 보여 주되, 이미 구체적으로 적혔다면 재질문하지 않는다.
+// 이는 법적 중요도 순위가 아니라 사용자에게 반복 질문을 줄이려는 제품 정책이다.
+const NEW_CORE_FACETS = new Set(['01-a', '02-a', '03-a', '04-a', '05-a', '06-a', '06-b', '07-a', '07-b', '08-a']);
+// A: 앞 단계 문서, B: 뒤 단계 문서. 같은 조건은 질문하지 않되, 새롭게 기재된 핵심 조건은 적용 여부를 확인한다.
 function compareSentence(f, L, isCoreFacet, item) {
   // 원문 기재값이 없으면 첫 인용 줄을 짧게 보여 준다 (문서에 없는 값을 만들지 않음)
   const a = clip(f.a.value ?? f.a.evidence?.[0]?.text); const b = clip(f.b.value ?? f.b.evidence?.[0]?.text);
@@ -81,13 +85,13 @@ function compareSentence(f, L, isCoreFacet, item) {
       return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
     case 'added':
       // 새로 기재된 내용은 변경이나 위반이라고 단정하지 않고, 실제 적용 여부만 확인한다.
-      return f.a.status === 'MISSING' && f.b.status === 'CONFIRMED' && b
+      return NEW_CORE_FACETS.has(f.id) && f.a.status === 'MISSING' && f.b.status === 'CONFIRMED' && b
         ? `${L.A}에서는 ${f.label}에 관한 내용을 찾지 못했지만 ${L.B}에는 ‘${b}’라고 적혀 있습니다. 이 조건이 실제로 적용되는지 확인 부탁드립니다.`
         : null;
     case 'not_comparable':
       // 간략한 오퍼의 미기재는 삭제·변경이 아니다. 어느 쪽에 기재됐는지 구분한다.
       if (f.b.status === 'MISSING' && a) return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
-      if (f.a.status === 'MISSING' && f.b.status === 'CONFIRMED' && b)
+      if (NEW_CORE_FACETS.has(f.id) && f.a.status === 'MISSING' && f.b.status === 'CONFIRMED' && b)
         return `${L.A}에서는 ${f.label}에 관한 내용을 찾지 못했지만 ${L.B}에는 ‘${b}’라고 적혀 있습니다. 이 조건이 실제로 적용되는지 확인 부탁드립니다.`;
       return null;
     case 'unclear':
@@ -97,7 +101,7 @@ function compareSentence(f, L, isCoreFacet, item) {
     case 'both_missing':
       return isCoreFacet ? `두 문서 모두에서 ${item.label}에 관한 내용을 찾지 못했습니다. ${TOPIC_ASK[item.id]?.ask ?? ''}`.trim() : null;
     default:
-      return null; // 동일·새로 추가·해당 없음·분석 확인 불가(분석 문제이지 문서 내용이 아님)
+      return null; // 동일·해당 없음·분석 확인 불가(분석 문제이지 문서 내용이 아님)
   }
 }
 
@@ -112,10 +116,30 @@ export function buildCompareQuestions(comparison) {
   return dedupeQuestions(out);
 }
 
-// 근로계약서 단독 확인 결과 → 질문 목록 (기존 주제별 질문 템플릿을 그대로 쓰고 중복 제거)
+// 근로계약서 핵심 기준이 확인돼도, 일부 세부 조건에 대한 확인 질문은 유용할 수 있다.
+// 먼저 지급방법(법령 관련 기재항목)·지급일(공식 서식)·휴게시간(계약 유형에 따라 법령/공식서식 참고)만 적용한다.
+// 모든 누락된 추가 기준을 자동 질문하면 사용자에게 불필요한 질문이 쌓일 수 있어 제한한다.
+const DETAIL_FOLLOWUPS = {
+  '01': { '01-e': '급여 지급방법', '01-f': '급여 지급일' },
+  '02': { '02-c': '휴게시간' },
+};
+const DETAIL_NEEDS_CHECK = new Set(['MISSING', 'PARTIAL', 'UNCLEAR']);
+
+function buildContractDetailQuestion(topic, docType) {
+  if (docType !== 'contract' || !topic?.visible || topic.status !== 'MAIN_FOUND') return null;
+  const candidates = DETAIL_FOLLOWUPS[topic.id];
+  if (!candidates || !Array.isArray(topic.criteria)) return null;
+  const names = topic.criteria
+    .filter((c) => c.role === 'D' && DETAIL_NEEDS_CHECK.has(c.status) && candidates[c.id])
+    .map((c) => candidates[c.id]);
+  if (!names.length) return null;
+  return `안녕하세요. 근로계약서의 ${names.join('·')}에 대해 추가로 확인하고 싶습니다. 해당 조건을 구체적으로 알려 주실 수 있을까요? 감사합니다.`;
+}
+
+// 근로계약서 단독 확인 결과 → 질문 목록 (핵심 상태 우선, 기재됨 중 선택적 세부기준만 후속 질문)
 export function buildContractQuestions(result) {
   const out = (result?.topics ?? []).map((t) => {
-    const text = buildQuestion(t, result.docType);
+    const text = buildQuestion(t, result.docType) ?? buildContractDetailQuestion(t, result.docType);
     return text ? { id: `q-${t.id}`, itemId: t.id, label: t.label, text } : null;
   }).filter(Boolean);
   return dedupeQuestions(out);

@@ -1044,10 +1044,21 @@ function renderResult() {
   $('#item-list').replaceChildren(...visible.map(topicCard));
   if (!visible.some((t) => t.id === selectedTopic)) selectedTopic = (visible.find((t) => topicMarks(t).size) ?? visible[0])?.id ?? null;
   renderSourcePanel();
-  // 회사에 확인할 질문: 핵심 내용이 일부만 적혔거나 확인되지 않는 항목에만 생성 (기재됨·분석 확인 불가 제외)
+  // 회사에 확인할 질문: 핵심 내용이 부족하거나 확인되지 않은 주제 + 선택적 세부 정보(지급일 등)
   const questions = buildContractQuestions(result);
   $('#result-questions').hidden = !questions.length;
+  $('#result-question-shortcut').hidden = !questions.length;
+  $('#result-question-count').textContent = `회사에 확인할 질문 ${questions.length}개`;
   renderQuestions($('#result-question-list'), questions);
+}
+
+// 결과의 확인 질문으로 바로 이동: 해시 라우터를 건드리지 않고 스크롤·키보드 포커스만 이동한다.
+for (const [buttonId, titleId] of [['result-question-jump', 'result-questions-title'], ['compare-question-jump', 'compare-questions-title']]) {
+  $(`#${buttonId}`).addEventListener('click', () => {
+    const title = $(`#${titleId}`);
+    title.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    title.focus({ preventScroll: true });
+  });
 }
 
 // ---------- 회사에 확인할 질문 (복사·수정) ----------
@@ -1128,6 +1139,8 @@ function renderCompare() {
 
   const questions = buildCompareQuestions(c);
   renderQuestions($('#compare-question-list'), questions);
+  $('#compare-question-shortcut').hidden = !questions.length;
+  $('#compare-question-count').textContent = `회사에 확인할 질문 ${questions.length}개`;
   $('#compare-no-questions').hidden = questions.length > 0;
   $('#compare-questions').querySelector('[data-copy-all]').hidden = !questions.length;
   $('#compare-notice').textContent = COMPARE_NOTICE;

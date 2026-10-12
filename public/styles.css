@@ -687,3 +687,11 @@ button.evidence-chip:hover { border-color: var(--annot); }
   .sample-pay { font-size: 13px; }
   .sample-question { padding: 12px; }
 }
+
+
+/* 결과에서 질문까지의 짧은 경로 · 기존 교정지 팔레트 유지 */
+.questions-shortcut { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 18px; margin: var(--space-md) 0; padding: 12px 16px; border: 1px solid var(--rule); border-left: 3px solid var(--annot); background: var(--paper); font-size: 14px; }
+.questions-shortcut span { font-weight: 600; }
+.questions-shortcut button { flex: none; }
+.questions h2:focus { outline: none; }
+.questions h2:focus-visible { outline: 2px solid var(--annot); outline-offset: 4px; }
