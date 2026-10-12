@@ -75,6 +75,30 @@ export function dedupeQuestions(list) {
 const NEW_CORE_FACETS = new Set(['01-a', '02-a', '03-a', '04-a', '05-a', '06-a', '06-b', '07-a', '07-b', '08-a']);
 const INCOMPLETE_STATUSES = new Set(['PARTIAL', 'UNCLEAR']);
 
+// '협의 후 결정'은 금액이 없다는 뜻과 같지 않다. 원문 표현이 검증된 경우만 단계별 안내한다.
+const NEGOTIATION = /(?:협의\s*(?:후|하여|해서)?\s*(?:결정|확정)|추후\s*협의|별도\s*협의|면접\s*후\s*(?:결정|협의)|급여\s*협의)/;
+const negotiatingWage = (f, side) => f.id === '01-a' && INCOMPLETE_STATUSES.has(side.status)
+  && NEGOTIATION.test([side.value, ...(side.evidence ?? []).map((e) => e.text)].filter(Boolean).join(' '));
+const docIs = (comparison, i, kind) => comparison.docs[i]?.docType === kind
+  || (kind === 'job_posting' && comparison.docs[i]?.docTypeLabel === '채용공고')
+  || (kind === 'offer' && /오퍼|합격 안내/.test(comparison.docs[i]?.docTypeLabel ?? ''))
+  || (kind === 'contract' && comparison.docs[i]?.docTypeLabel === '근로계약서');
+function negotiationQuestion(f, comparison) {
+  if (f.id !== '01-a') return undefined;
+  const aPlanned = docIs(comparison, 0, 'job_posting') && negotiatingWage(f, f.a);
+  const bPlanned = negotiatingWage(f, f.b);
+  const bOffer = docIs(comparison, 1, 'offer');
+  const bContract = docIs(comparison, 1, 'contract');
+  const bClear = f.b.status === 'CONFIRMED';
+  if (aPlanned && bClear) return null; // 예정된 협의가 금액으로 구체화됨: 변경으로 취급하지 않음
+  if (aPlanned && bOffer && f.b.status === 'MISSING') return null; // 공고의 협의 예정만으로 오퍼에 질문을 강제하지 않음
+  if ((aPlanned || bPlanned) && bOffer && bPlanned)
+    return '최종 오퍼에도 급여가 협의 후 결정으로 안내되어 있습니다. 급여는 언제, 어떤 기준으로 확정되며 최종 금액은 어떻게 안내받을 수 있을까요?';
+  if (bContract && bPlanned)
+    return '근로계약서에 급여가 협의 후 결정으로 기재되어 있습니다. 최종 적용되는 급여 금액과 산정 단위를 확인 부탁드립니다.';
+  return undefined; // 나머지는 기존 조건별 질문 규칙 유지
+}
+
 // 처음 등장한 핵심 조건: 이미 구체적으로 기재됐다면 적용 여부, '별도 협의'라면 구체적인 내용을 질문한다.
 function newlyStatedCoreQuestion(f, L, b) {
   if (!NEW_CORE_FACETS.has(f.id) || f.a.status !== 'MISSING' || !b) return null;
@@ -86,7 +110,9 @@ function newlyStatedCoreQuestion(f, L, b) {
 }
 
 // A: 앞 단계 문서, B: 뒤 단계 문서. 같은 조건은 질문하지 않되, 새롭게 기재된 핵심 조건의 구체성을 확인한다.
-function compareSentence(f, L, isCoreFacet, item) {
+function compareSentence(f, L, isCoreFacet, item, comparison) {
+  const negotiation = negotiationQuestion(f, comparison);
+  if (negotiation !== undefined) return negotiation;
   // 원문 기재값이 없으면 첫 인용 줄을 짧게 보여 준다 (문서에 없는 값을 만들지 않음)
   const a = clip(f.a.value ?? f.a.evidence?.[0]?.text); const b = clip(f.b.value ?? f.b.evidence?.[0]?.text);
   const subj = josa(f.label, '이/가');
@@ -147,7 +173,7 @@ export function buildCompareQuestions(comparison) {
   const out = comparison.items.map((item) => {
     const sentences = [...new Set(item.facets.map((f, i) => {
       if (item.id === '08' && f.state === 'both_missing' && !probationApplies) return null;
-      return compareSentence(f, L, i === 0, item);
+      return compareSentence(f, L, i === 0, item, comparison);
     }).filter(Boolean))];
     if (!sentences.length) return null;
     return { id: `q-${item.id}`, itemId: item.id, label: item.label, sentences, text: `안녕하세요. ${item.label} 관련해 여쭤봅니다. ${sentences.join(' ')} 감사합니다.` };

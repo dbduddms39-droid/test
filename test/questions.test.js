@@ -230,6 +230,43 @@ test('계약서 단독도 두 수습 질문이 필요한 경우에만 결합한�
   assert.deepEqual(onlyOne.map((x) => x.itemId), ['07']);
 });
 
+
+test('채용공고의 급여 협의 예정만으로 질문하지 않고, 오퍼에서 금액이 정해지면 재질문하지 않는다', () => {
+  const plan = side('PARTIAL', '급여: 협의 후 결정');
+  const concrete = side('CONFIRMED', '연봉 3,600만원');
+  const mk = (bState, b) => ({
+    docs: [{ docType: 'job_posting', docTypeLabel: '채용공고' }, { docType: 'offer', docTypeLabel: '오퍼·합격 안내' }],
+    items: [{ id: '01', label: '급여 및 지급 조건', facets: [fct('01-a', '급여 금액', bState, plan, b)] }],
+  });
+  assert.deepEqual(buildCompareQuestions(mk('not_comparable', side('MISSING'))), []);
+  assert.deepEqual(buildCompareQuestions(mk('unclear', concrete)), []);
+});
+
+test('최종 오퍼에서도 급여가 협의 후 결정이면 확정 시점과 기준을 묻는다', () => {
+  const cs = { docs: [{ docType: 'job_posting', docTypeLabel: '채용공고' }, { docType: 'offer', docTypeLabel: '오퍼·합격 안내' }],
+    items: [{ id: '01', label: '급여 및 지급 조건', facets: [fct('01-a', '급여 금액', 'unclear', side('PARTIAL', '급여 협의 후 결정'), side('UNCLEAR', '급여 추후 협의'))] }] };
+  const qs = buildCompareQuestions(cs);
+  assert.equal(qs.length, 1);
+  assert.match(qs[0].text, /언제, 어떤 기준으로 확정/);
+});
+
+test('근로계약서에 협의 예정이면 최종 금액을 묻고, 확정액이 생기면 해당 이유로 묻지 않는다', () => {
+  const docs = [{ docType: 'offer', docTypeLabel: '오퍼·합격 안내' }, { docType: 'contract', docTypeLabel: '근로계약서' }];
+  const a = side('UNCLEAR', '급여 협의 후 결정');
+  const qs = buildCompareQuestions({ docs, items: [{ id: '01', label: '급여', facets: [fct('01-a', '급여 금액', 'unclear', a, side('PARTIAL', '협의 후 결정'))] }] });
+  assert.match(qs[0].text, /최종 적용되는 급여 금액과 산정 단위/);
+  const noAsk = buildCompareQuestions({ docs, items: [{ id: '01', label: '급여', facets: [fct('01-a', '급여 금액', 'unclear', a, side('CONFIRMED', '연봉 3,600만원'))] }] });
+  assert.deepEqual(noAsk, []);
+});
+
+test('최종 오퍼의 협의 후 결정과 일반적인 모호 표현을 구분한다', () => {
+  const docs = [{ docType: 'job_posting', docTypeLabel: '채용공고' }, { docType: 'offer', docTypeLabel: '오퍼·합격 안내' }];
+  const qs = buildCompareQuestions({ docs, items: [{ id: '01', label: '급여', facets: [fct('01-a', '급여 금액', 'unclear', side('PARTIAL', '회사 내규'), side('UNCLEAR', '추후 협의'))] }] });
+  assert.match(qs[0].text, /언제, 어떤 기준으로 확정/);
+  const notNegotiation = buildCompareQuestions({ docs, items: [{ id: '01', label: '급여', facets: [fct('01-a', '급여 금액', 'unclear', side('PARTIAL', '회사 내규'), side('UNCLEAR', '회사 내규'))] }] });
+  assert.doesNotMatch(notNegotiation[0].text, /언제, 어떤 기준으로 확정/);
+});
+
 test('질문 중복 제거: 같은 문장은 하나만 (공백 차이 무시), 한 항목은 질문 하나로 묶음', () => {
   assert.equal(dedupeQuestions([{ text: '급여를 알려 주세요.' }, { text: ' 급여를  알려 주세요. ' }, { text: '' }]).length, 1);
   const same = fct('02-a', '소정근로시간', 'changed', side('CONFIRMED', '주 40시간'), side('CONFIRMED', '주 45시간'));

@@ -336,6 +336,12 @@ function compareFacet(facet, docA, docB, L) {
   } else {
     r = compareConcrete(facet.kind, a, b, docA, docB, L);
   }
+  // 채용공고의 협의 예정은 아직 결정되지 않았다는 원문 설명이지, 잘못된 조건이라는 판정이 아니다.
+  // 기존 상태 코드는 유지하며 '협의 예정'은 안내 문구로만 사용한다.
+  if (facet.id === '01-a' && docA.docType === 'job_posting' && a.kind === 'vague'
+    && /(?:협의\s*(?:후|하여|해서)?\s*(?:결정|확정)|추후\s*협의|별도\s*협의|면접\s*후\s*(?:결정|협의)|급여\s*협의)/.test(a.text)) {
+    r.note = `채용공고에는 급여가 협의 예정으로 안내되어 있어요. ${r.note}`;
+  }
   const side = (s) => ({ status: s.status, value: s.kind === 'missing' || s.kind === 'unavailable' ? null : s.raw, evidence: s.evidence, finding: s.finding });
   // 질문·요약에 쓰는 짧은 원문: 원문 기재값, 없으면 첫 인용 줄
   return { id: facet.id, label: facet.label, state: r.state, stateLabel: STATE_LABEL[r.state], note: r.note, a: side(a), b: side(b) };
