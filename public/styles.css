@@ -734,3 +734,6 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .optional-question button { flex: none; font-size: 13px; min-height: 38px; }
 .optional-question button:disabled { opacity: .55; cursor: default; }
 @media(max-width:420px) { .optional-question { align-items: flex-start; } .optional-question button { padding: 8px; } }
+
+/* 두 번째 기능은 장황한 소개 대신 한 줄로 안내 */
+.hero-contract-note { margin: 12px 0 0; font-size: 13px; color: var(--ink-2); }

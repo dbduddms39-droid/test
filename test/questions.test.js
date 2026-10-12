@@ -39,7 +39,7 @@ test('문서 유형에 맞는 표현을 쓴다', () => {
 });
 
 // ---------- 확인 질문 목록 (2문서 비교·근로계약서 단독) ----------
-import { buildCompareQuestions, buildContractQuestions, dedupeQuestions } from '../public/questions.js';
+import { buildCompareQuestions, buildContractQuestions, buildCompareQuestionGroups, buildContractQuestionGroups, dedupeQuestions } from '../public/questions.js';
 
 const side = (status, value = null) => ({ status, value, evidence: value ? [{ line: 1, text: value }] : [] });
 const fct = (id, label, state, a, b) => ({ id, label, state, a, b });
@@ -55,12 +55,15 @@ test('비교 질문: 달라짐·새로 기재됨·한쪽 미기재·모호함에
     { id: '05', label: '고용형태', facets: [fct('05-a', '계약 형태', 'both_missing', side('MISSING'), side('MISSING'))] },
     { id: '06', label: '계약기간', facets: [fct('06-a', '기간의 정함', 'unavailable', side('UNAVAILABLE'), side('CONFIRMED', '정규직'))] },
   ]));
-  assert.deepEqual(qs.map((q) => q.itemId), ['01', '03', '07', '05']);
+  assert.deepEqual(qs.map((q) => q.itemId), ['01', '03', '07']);
+  const optional = buildCompareQuestionGroups(comparison([
+    { id: '05', label: '고용형태', facets: [fct('05-a', '계약 형태', 'both_missing', side('MISSING'), side('MISSING'))] },
+  ])).optional;
   assert.match(qs[0].text, /급여 금액이 문서마다 다르게 적혀 있습니다\(채용공고: 3,600만원 \/ 근로계약서: 3,200만원\)/);
   assert.doesNotMatch(qs[0].text, /지급일/, '뒤 문서에 구체적으로 적힌 부가 정보는 반복 질문하지 않음');
   assert.match(qs[1].text, /근로계약서에서 근무장소에 관한 내용을 찾지 못했습니다\. 채용공고에 적힌 조건\(서울 마포구\)이 그대로 적용되는지/);
   assert.match(qs[2].text, /구체적인 수습 기간을 알려 주실 수 있을까요/);
-  assert.match(qs[3].text, /두 문서 모두에서 고용형태에 관한 내용을 찾지 못했습니다/);
+  assert.match(optional[0].text, /두 문서 모두에서 고용형태에 관한 내용을 찾지 못했습니다/);
   for (const q of qs) assert.doesNotMatch(q.text, /위반|불법|위법|신뢰|추천/, '법률 판정·평가를 하지 않음');
 });
 
@@ -100,12 +103,14 @@ test('비교 질문: 새로 기재된 핵심 조건만 확인 질문으로, 세�
 
 test('근로계약서 단독: 핵심 기재됨이어도 지정된 세부 조건이 미기재·미확정이면 질문한다', () => {
   const criteria = (...vals) => vals.map(([id, status]) => ({ id, role: 'D', status }));
-  const qs = buildContractQuestions({ docType: 'contract', topics: [
+  const groups = buildContractQuestionGroups({ docType: 'contract', topics: [
     { id: '01', label: '임금', visible: true, status: 'MAIN_FOUND', criteria: criteria(['01-e', 'MISSING'], ['01-f', 'MISSING'], ['01-g', 'MISSING']) },
     { id: '02', label: '근무시간', visible: true, status: 'MAIN_FOUND', criteria: criteria(['02-c', 'UNCLEAR']) },
     { id: '03', label: '근무장소', visible: true, status: 'MAIN_FOUND', criteria: criteria(['03-b', 'MISSING']) },
     { id: '04', label: '담당업무', visible: true, status: 'MAIN_FOUND', criteria: criteria(['04-b', 'UNAVAILABLE']) },
   ] });
+  assert.deepEqual(groups.primary, []);
+  const qs = groups.optional;
   assert.deepEqual(qs.map((q) => q.itemId), ['01', '02']);
   assert.match(qs[0].text, /급여 지급방법·급여 지급일/);
   assert.doesNotMatch(qs[0].text, /세전|세후/);
@@ -155,9 +160,10 @@ test('확인 질문: 앞 문서도 추후 협의였으면 그대로 적용되느
       fct('08-a', '수습 중 지급 기준', 'not_comparable', side('UNCLEAR', '추후 협의'), side('MISSING')),
     ] },
   ] };
-  const q2 = buildCompareQuestions(offerVersion);
-  assert.equal(q2.length, 1);
-  assert.doesNotMatch(q2[0].text, /그대로 적용되는지/);
+  const groups = buildCompareQuestionGroups(offerVersion);
+  assert.equal(groups.primary.length, 0);
+  assert.equal(groups.optional.length, 1);
+  assert.doesNotMatch(groups.optional[0].text, /그대로 적용되는지/);
 });
 
 test('확인 질문: 분석 불가·세부항목의 새 기재·동일 조건에는 불필요한 질문을 만들지 않는다', () => {
@@ -212,7 +218,12 @@ test('수습 적용 미확인이고 수습 급여도 양쪽 미기재면 급여 
     { id: '07', label: '수습기간', facets: [fct('07-a', '수습 적용', 'both_missing', side('MISSING'), side('MISSING'))] },
     { id: '08', label: '수습기간 중 급여', facets: [fct('08-a', '수습 중 지급 기준', 'both_missing', side('MISSING'), side('MISSING'))] },
   ]));
-  assert.deepEqual(qs.map((x) => x.itemId), ['07']);
+  assert.deepEqual(qs.map((x) => x.itemId), []);
+  const optional = buildCompareQuestionGroups(comparison([
+    { id: '07', label: '수습기간', facets: [fct('07-a', '수습 적용', 'both_missing', side('MISSING'), side('MISSING'))] },
+    { id: '08', label: '수습기간 중 급여', facets: [fct('08-a', '수습 중 지급 기준', 'both_missing', side('MISSING'), side('MISSING'))] },
+  ])).optional;
+  assert.deepEqual(optional.map((x) => x.itemId), ['07']);
 });
 
 test('계약서 단독도 두 수습 질문이 필요한 경우에만 결합한다', () => {
