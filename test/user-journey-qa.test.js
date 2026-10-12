@@ -97,7 +97,7 @@ test('QA 4: 오퍼→계약서 급여 불일치 + 수습 신설은 확인 질문
   const c = compareDocuments([await offerFixed(), await contractFixed()]);
   verifySource(c);
   assert.ok(F('01-a', 'changed', c));
-  assert.ok(F('07-a', 'added', c));
+  assert.ok(F('07-a', 'not_comparable', c), '간략한 오퍼에 수습 조건이 없으면 변경·신설이 아닌 비교 불가');
   const qs = buildCompareQuestions(c);
   assert.match(qs.find((q) => q.itemId === '01')?.text ?? '', /3,600만원/);
   assert.match(qs.find((q) => q.itemId === '01')?.text ?? '', /3,200만원/);
