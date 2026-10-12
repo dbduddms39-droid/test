@@ -720,3 +720,17 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .input-criteria-list li { padding-left: 2px; min-width: 0; }
 .input-criteria-list li::marker { color: var(--ink-3); }
 @media (max-width: 520px) { .input-criteria-list { grid-template-columns: minmax(0, 1fr); } }
+
+
+/* 주요 질문 아래에 선택형 추가 확인 항목을 접어 표시 */
+.optional-questions { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--rule-soft); }
+.optional-questions summary { font-weight: 600; font-size: 15px; cursor: pointer; padding: 8px 0; }
+.optional-questions summary span { font-size: 13px; color: var(--ink-2); font-weight: 400; }
+.optional-question-list { list-style: none; margin: 12px 0 0; padding: 0; }
+.optional-question { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--rule-soft); padding: 12px 0; }
+.optional-question-info { min-width: 0; flex: 1; }
+.optional-question-label { font-weight: 600; font-size: 14px; }
+.optional-question-info p { margin: 3px 0 0; }
+.optional-question button { flex: none; font-size: 13px; min-height: 38px; }
+.optional-question button:disabled { opacity: .55; cursor: default; }
+@media(max-width:420px) { .optional-question { align-items: flex-start; } .optional-question button { padding: 8px; } }

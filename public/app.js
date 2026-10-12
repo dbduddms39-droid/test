@@ -1,5 +1,5 @@
 import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-rules.js';
-import { buildQuestion, copyText, buildCompareQuestions, buildContractQuestions } from './questions.js';
+import { buildQuestion, copyText, buildCompareQuestionGroups, buildContractQuestionGroups } from './questions.js';
 import { el, statusBadge, V22_STATUS_LABEL, CONTRACT_STATUS_LABEL, sourcePanelLines } from './components.js';
 import { ROUTES, checkText, editRouteFor, resolveRoute, classifyAnalyzeFailure } from './flow.js';
 import { createTracker, applyEdit, confirmSpan, pendingRanges, unlocatedPending, summary as ocrSummary } from './ocr-spans.js';
@@ -1040,11 +1040,14 @@ function renderResult() {
   if (!visible.some((t) => t.id === selectedTopic)) selectedTopic = (visible.find((t) => topicMarks(t).size) ?? visible[0])?.id ?? null;
   renderSourcePanel();
   // 회사에 확인할 질문: 핵심 내용이 부족하거나 확인되지 않은 주제 + 선택적 세부 정보(지급일 등)
-  const questions = buildContractQuestions(result);
-  $('#result-questions').hidden = !questions.length;
-  $('#result-question-shortcut').hidden = !questions.length;
-  $('#result-question-count').textContent = `회사에 확인할 질문 ${questions.length}개`;
-  renderQuestions($('#result-question-list'), questions);
+  const questions = buildContractQuestionGroups(result);
+  $('#result-questions').hidden = !questions.primary.length && !questions.optional.length;
+  $('#result-question-shortcut').hidden = !questions.primary.length && !questions.optional.length;
+  $('#result-question-count').textContent = `주요 질문 ${questions.primary.length}개 · 추가 확인 ${questions.optional.length}개`;
+  renderQuestions($('#result-question-list'), questions.primary);
+  $('#result-no-questions').hidden = questions.primary.length > 0;
+  $('#result-questions').querySelector('[data-copy-all]').hidden = !questions.primary.length;
+  renderOptionalQuestions('result', questions.optional);
 }
 
 // 결과의 확인 질문으로 바로 이동: 해시 라우터를 건드리지 않고 스크롤·키보드 포커스만 이동한다.
@@ -1058,18 +1061,51 @@ for (const [buttonId, titleId] of [['result-question-jump', 'result-questions-ti
 
 // ---------- 회사에 확인할 질문 (복사·수정) ----------
 // 질문은 템플릿으로 만든 초안이다. 사용자가 고쳐 쓴 내용을 그대로 복사한다.
-function renderQuestions(list, questions) {
-  list.replaceChildren(...questions.map((q, i) => {
-    const id = `${list.id}-${i}`;
-    const ta = el('textarea', { id, class: 'q-text', rows: '4' });
-    ta.value = q.text;
-    return el('li', { class: 'question' },
-      el('label', { class: 'q-label', for: id }, q.label),
-      ta,
-      el('div', { class: 'q-actions' },
-        el('button', { type: 'button', class: 'icon-btn', 'data-copy': id }, '복사'),
-        el('span', { class: 'q-status muted small', role: 'status', 'aria-live': 'polite' })));
+function renderOptionalQuestions(prefix, questions) {
+  const details = `#${prefix}-optional`;
+  const list = `#${prefix}-optional-list`;
+  $(details).hidden = !questions.length;
+  $(details).open = false;
+  $(`#${prefix}-optional-count`).textContent = `${questions.length}개`;
+  $(list).replaceChildren(...questions.map((q) => {
+    const id = `${prefix}-optional-${q.id}`;
+    return el('li', { class: 'optional-question' },
+      el('div', { class: 'optional-question-info' },
+        el('span', { class: 'optional-question-label' }, q.label),
+        el('p', { class: 'muted small' }, q.reason || '추가로 확인할 수 있는 내용이에요.')),
+      el('button', { type: 'button', class: 'btn-editorial btn-auto', 'data-add-optional': prefix, 'data-optional-id': q.id }, '질문에 추가'));
   }));
+  optionalQuestionStore[prefix] = questions;
+}
+const optionalQuestionStore = { result: [], compare: [] };
+document.addEventListener('click', (e) => {
+  const button = e.target.closest('button[data-add-optional]');
+  if (!button) return;
+  const prefix = button.dataset.addOptional;
+  const q = optionalQuestionStore[prefix]?.find((v) => v.id === button.dataset.optionalId);
+  if (!q) return;
+  const list = $(`#${prefix === 'result' ? 'result' : 'compare'}-question-list`);
+  if ([...list.querySelectorAll('[data-question-id]')].some((node) => node.dataset.questionId === q.id)) return;
+  const li = questionRow(list.id, q, list.children.length);
+  list.append(li);
+  $(`#${prefix}-no-questions`).hidden = true;
+  $(`#${prefix}-questions`).querySelector('[data-copy-all]').hidden = false;
+  button.textContent = '질문에 추가됨';
+  button.disabled = true;
+});
+function questionRow(listId, q, index) {
+  const id = `${listId}-${index}`;
+  const ta = el('textarea', { id, class: 'q-text', rows: '4' });
+  ta.value = q.text;
+  return el('li', { class: 'question', 'data-question-id': q.id },
+    el('label', { class: 'q-label', for: id }, q.label),
+    ta,
+    el('div', { class: 'q-actions' },
+      el('button', { type: 'button', class: 'icon-btn', 'data-copy': id }, '복사'),
+      el('span', { class: 'q-status muted small', role: 'status', 'aria-live': 'polite' })));
+}
+function renderQuestions(list, questions) {
+  list.replaceChildren(...questions.map((q, i) => questionRow(list.id, q, i)));
 }
 document.addEventListener('click', async (e) => {
   const one = e.target.closest('button[data-copy]');
@@ -1132,12 +1168,13 @@ function renderCompare() {
       el('p', { class: 'cmp-note' }, el('strong', {}, '이렇게 구분한 이유 · '), f.note),
       el('div', { class: 'cmp-sides' }, compareSide(A, f.a), compareSide(B, f.b)))))));
 
-  const questions = buildCompareQuestions(c);
-  renderQuestions($('#compare-question-list'), questions);
-  $('#compare-question-shortcut').hidden = !questions.length;
-  $('#compare-question-count').textContent = `회사에 확인할 질문 ${questions.length}개`;
-  $('#compare-no-questions').hidden = questions.length > 0;
-  $('#compare-questions').querySelector('[data-copy-all]').hidden = !questions.length;
+  const questions = buildCompareQuestionGroups(c);
+  renderQuestions($('#compare-question-list'), questions.primary);
+  $('#compare-question-shortcut').hidden = !questions.primary.length && !questions.optional.length;
+  $('#compare-question-count').textContent = `주요 질문 ${questions.primary.length}개 · 추가 확인 ${questions.optional.length}개`;
+  $('#compare-no-questions').hidden = questions.primary.length > 0;
+  $('#compare-questions').querySelector('[data-copy-all]').hidden = !questions.primary.length;
+  renderOptionalQuestions('compare', questions.optional);
   $('#compare-notice').textContent = COMPARE_NOTICE;
 }
 // 핵심 차이에서 항목으로 이동 (해시 라우팅을 쓰므로 링크 기본 동작 대신 스크롤)

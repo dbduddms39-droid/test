@@ -346,10 +346,16 @@
         </aside>
       </div>
       <section class="questions" id="result-questions" aria-labelledby="result-questions-title" hidden>
-        <h2 id="result-questions-title" tabindex="-1">회사에 확인할 질문</h2>
+        <h2 id="result-questions-title" tabindex="-1">회사에 확인할 주요 질문</h2>
         <p class="muted small">구체적인 내용이 부족하거나 문서에서 확인되지 않는 항목에 대한 질문이에요. 원문을 확인한 뒤 고쳐 쓰거나 필요한 질문만 골라 직접 보내 주세요.</p>
         <ol class="question-list" id="result-question-list"></ol>
-        <button type="button" class="btn-editorial btn-auto" data-copy-all="result-question-list">질문 모두 복사</button>
+        <p class="muted small" id="result-no-questions" hidden>우선 확인할 주요 질문은 없어요. 아래 추가 확인 항목은 필요할 때 선택할 수 있어요.</p>
+        <button type="button" class="btn-editorial btn-auto" data-copy-all="result-question-list">주요 질문 모두 복사</button>
+        <details class="optional-questions" id="result-optional" hidden>
+          <summary>추가로 확인할 항목 <span id="result-optional-count"></span></summary>
+          <p class="muted small">필요한 항목만 질문 목록에 추가할 수 있어요. 추가한 질문은 수정하거나 복사할 수 있어요.</p>
+          <ul class="optional-question-list" id="result-optional-list"></ul>
+        </details>
       </section>
       <div class="result-foot">
         <p class="small" id="result-notice"></p>
@@ -393,11 +399,16 @@
       </section>
 
       <section class="questions" id="compare-questions" aria-labelledby="compare-questions-title">
-        <h2 id="compare-questions-title" tabindex="-1">회사에 확인할 질문</h2>
-        <p class="muted small">달라졌거나 새로 기재된 조건, 구체적인 내용이 부족하거나 확인되지 않는 조건에 대한 질문 초안이에요. 원문을 확인하고 필요한 질문만 고쳐 쓰거나 골라 직접 보내 주세요.</p>
+        <h2 id="compare-questions-title" tabindex="-1">회사에 확인할 주요 질문</h2>
+        <p class="muted small">확정된 조건의 차이나 계약서에 확인되지 않는 조건 등 우선 확인할 내용을 정리했어요. 필요한 질문만 고쳐 쓰거나 복사해 주세요.</p>
         <ol class="question-list" id="compare-question-list"></ol>
-        <p class="muted small" id="compare-no-questions" hidden>현재 비교 규칙에서 생성할 확인 질문이 없어요. 중요한 조건은 원문과 함께 직접 확인해 주세요.</p>
-        <button type="button" class="btn-editorial btn-auto" data-copy-all="compare-question-list">질문 모두 복사</button>
+        <p class="muted small" id="compare-no-questions" hidden>우선 확인할 주요 질문은 없어요. 추가 확인 항목을 살펴볼 수 있어요.</p>
+        <button type="button" class="btn-editorial btn-auto" data-copy-all="compare-question-list">주요 질문 모두 복사</button>
+        <details class="optional-questions" id="compare-optional" hidden>
+          <summary>추가로 확인할 항목 <span id="compare-optional-count"></span></summary>
+          <p class="muted small">두 문서 모두 미기재됐거나 간략한 오퍼에서 생략된 내용이에요. 필요한 질문만 추가해 주세요.</p>
+          <ul class="optional-question-list" id="compare-optional-list"></ul>
+        </details>
       </section>
 
       <div class="result-foot">
