@@ -119,15 +119,41 @@ function compareSentence(f, L, isCoreFacet, item) {
   }
 }
 
-// comparison: /api/compare 결과. 반환: [{ id, itemId, label, text }] (항목마다 하나, 중복 제거)
+// 수습을 적용한다는 내용이 확인되지 않으면 두 문서 모두 미기재된 수습 급여에 질문하지 않는다.
+// 비교 상태와 원문 근거는 변경하지 않고 질문 생성만 제한한다.
+function hasProbationApplication(comparison) {
+  const f = comparison.items.find((i) => i.id === '07')?.facets.find((v) => v.id === '07-a');
+  return Boolean(f && [f.a, f.b].some((side) => side?.status === 'CONFIRMED' && side.finding !== 'negated'));
+}
+
+// 수습기간과 수습 중 급여가 모두 질문 대상일 때 한 개의 편집 가능한 질문으로 결합한다.
+// 항목별 결과는 각각 유지한다. 한쪽에 질문이 없다면 결합하지 않는다.
+function mergeProbationQuestions(questions, mode) {
+  const period = questions.find((q) => q.itemId === '07');
+  const pay = questions.find((q) => q.itemId === '08');
+  if (!period || !pay) return questions;
+  const text = mode === 'compare'
+    ? `안녕하세요. 수습기간과 수습 중 급여를 함께 확인하고 싶습니다. ${[...new Set([...(period.sentences ?? []), ...(pay.sentences ?? [])])].join(' ')} 감사합니다.`
+    : '안녕하세요. 근로계약서의 수습기간과 수습 중 급여에 대해 확인하고 싶습니다. 수습 적용 여부와 기간, 수습 중 급여 지급 기준(금액 또는 정규 급여 대비 비율)을 함께 알려 주실 수 있을까요? 감사합니다.';
+  const first = questions.find((q) => q === period || q === pay);
+  const merged = { id: 'q-07-08', itemId: first.itemId, itemIds: ['07', '08'], label: '수습기간·수습 중 급여', text };
+  return questions.flatMap((q) => q === first ? [merged] : q === period || q === pay ? [] : [q]);
+}
+
+// comparison: /api/compare 결과. 반환: [{ id, itemId, label, text }] (주제 내·연관 주제 묶음)
 export function buildCompareQuestions(comparison) {
   const L = { A: comparison.docs[0].docTypeLabel, B: comparison.docs[1].docTypeLabel };
+  const probationApplies = hasProbationApplication(comparison);
   const out = comparison.items.map((item) => {
-    const sentences = [...new Set(item.facets.map((f, i) => compareSentence(f, L, i === 0, item)).filter(Boolean))];
+    const sentences = [...new Set(item.facets.map((f, i) => {
+      if (item.id === '08' && f.state === 'both_missing' && !probationApplies) return null;
+      return compareSentence(f, L, i === 0, item);
+    }).filter(Boolean))];
     if (!sentences.length) return null;
-    return { id: `q-${item.id}`, itemId: item.id, label: item.label, text: `안녕하세요. ${item.label} 관련해 여쭤봅니다. ${sentences.join(' ')} 감사합니다.` };
+    return { id: `q-${item.id}`, itemId: item.id, label: item.label, sentences, text: `안녕하세요. ${item.label} 관련해 여쭤봅니다. ${sentences.join(' ')} 감사합니다.` };
   }).filter(Boolean);
-  return dedupeQuestions(out);
+  return dedupeQuestions(mergeProbationQuestions(out, 'compare'))
+    .map(({ sentences, ...q }) => q); // 내부 문장 배열은 화면 결과에 전달하지 않음
 }
 
 // 근로계약서 핵심 기준이 확인돼도, 일부 세부 조건에 대한 확인 질문은 유용할 수 있다.
@@ -156,7 +182,7 @@ export function buildContractQuestions(result) {
     const text = buildQuestion(t, result.docType) ?? buildContractDetailQuestion(t, result.docType);
     return text ? { id: `q-${t.id}`, itemId: t.id, label: t.label, text } : null;
   }).filter(Boolean);
-  return dedupeQuestions(out);
+  return dedupeQuestions(mergeProbationQuestions(out, 'contract'));
 }
 
 // 클립보드 복사: Clipboard API를 먼저 쓰고, 안 되면 임시 입력란 선택 후 복사 명령을 쓴다.
