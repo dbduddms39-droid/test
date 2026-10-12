@@ -1309,7 +1309,6 @@ function route() {
   }
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== r.view;
   document.body.dataset.view = r.view;
-  $('#topbar-cta').hidden = r.view !== 'landing';
   if (r.view === 'detail') renderDetail(r.id);
   else RENDER[r.view]?.(r);
 

@@ -224,7 +224,6 @@ textarea:focus { outline: none; border-color: var(--ink); }
 .route-notice { margin: 0 0 var(--space-md); padding: 8px 12px; font-size: 14px; background: var(--wash); border-left: 2px solid var(--annot); }
 .topbar-inner { display: flex; align-items: center; gap: var(--space-sm); max-width: 1200px; margin: 0 auto; }
 .topbar { padding: 12px var(--gutter); }
-.topbar-cta { margin-left: auto; }
 .site-footer { border-top: 1px solid var(--rule); background: var(--wash); padding: var(--space-lg) var(--gutter); font-size: 13px; color: var(--ink-2); }
 .site-footer p { max-width: 1200px; margin: 0 auto; }
 
