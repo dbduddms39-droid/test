@@ -7,7 +7,7 @@
 // - 한쪽 문서에 없는 조건은 '삭제·변경'으로 보지 않는다 → '한쪽 문서에서 확인되지 않음'.
 //   간략한 오퍼 안내에 없는 조건은 '비교 불가 · 추가 확인 필요'로 따로 구분한다.
 // - '추후 협의', '회사 내규에 따름'처럼 구체적이지 않은 표현, 한 문서 안의 서로 다른 값은 구체적인 조건으로 보지 않는다
-//   → '모호하거나 직접 비교하기 어려움'.
+//   → '추가 확인 필요'로 안내하고 근거 설명에서 왜 어려운지 구분한다.
 // - 금액·시간처럼 수치로 비교할 수 있는 항목은 두 문서의 산정 단위가 같고 값을 하나로 특정할 수 있을 때만 차이를 계산한다.
 //   단위가 다르면(연봉 ↔ 월급 등) 환산하지 않는다.
 // - 장소·업무처럼 글로 적힌 항목은 표기를 정리해 같을 때만 '동일'로 본다. 다르면 같은지 추측하지 않고 '직접 비교 어려움'.
@@ -26,7 +26,7 @@ export const STATE_LABEL = {
   added: '새로 추가된 조건',
   missing_one: '한쪽 문서에서 확인되지 않음',
   not_comparable: '비교 불가 · 추가 확인 필요',
-  unclear: '모호하거나 직접 비교하기 어려움',
+  unclear: '추가 확인 필요',
   both_missing: '두 문서 모두 확인되지 않음',
   unavailable: '분석 확인 불가',
   not_applicable: '해당 없음',
@@ -361,7 +361,7 @@ export function compareDocuments(docs) {
   });
   const allFacets = items.flatMap((i) => i.facets.map((f) => ({ ...f, itemId: i.id, itemLabel: i.label })));
   const counts = Object.fromEntries(Object.keys(STATE_LABEL).map((s) => [s, items.filter((i) => i.state === s).length]));
-  // 핵심 차이: 달라진 조건 → 확인 불가 → 비교 불가 → 한쪽 미기재 → 모호 순
+  // 핵심 차이: 달라진 조건 → 확인 불가 → 비교 불가 → 한쪽 미기재 → 세부 확인 필요 순
   const highlights = STATE_ORDER.slice(0, 5).flatMap((s) => allFacets.filter((f) => f.state === s))
     .map((f) => ({ itemId: f.itemId, itemLabel: f.itemLabel, facetId: f.id, facetLabel: f.label, state: f.state, stateLabel: f.stateLabel, note: f.note }));
 

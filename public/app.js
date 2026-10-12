@@ -246,7 +246,7 @@ $('#slot-file-drop').addEventListener('click', () => {
 const MODE_TEXT = {
   contract: {
     crumb: '근로계약서 확인', title: '근로계약서를 확인할까요?',
-    lead: '근로계약서 내용을 붙여넣거나 사진·PDF로 올려 주세요. 주요 근로조건이 적혀 있는지, 모호하지 않은지 확인해요.',
+    lead: '근로계약서 내용을 붙여넣거나 사진·PDF로 올려 주세요. 주요 조건이 적혀 있는지, 더 확인할 내용이 있는지 살펴봐요.',
     submit: '근로계약서 확인 시작하기 →',
   },
   compare: {
@@ -1044,7 +1044,7 @@ function renderResult() {
   $('#item-list').replaceChildren(...visible.map(topicCard));
   if (!visible.some((t) => t.id === selectedTopic)) selectedTopic = (visible.find((t) => topicMarks(t).size) ?? visible[0])?.id ?? null;
   renderSourcePanel();
-  // 회사에 확인할 질문: 내용이 모호하거나 확인되지 않는 항목만 (기재됨·분석 확인 불가는 질문하지 않음)
+  // 회사에 확인할 질문: 핵심 내용이 일부만 적혔거나 확인되지 않는 항목에만 생성 (기재됨·분석 확인 불가 제외)
   const questions = buildContractQuestions(result);
   $('#result-questions').hidden = !questions.length;
   renderQuestions($('#result-question-list'), questions);

@@ -31,10 +31,10 @@ export const V22_STATUS_LABEL = {
   CONFIRMED: '확인됨', PARTIAL: '일부 확인', UNCLEAR: '불분명함', MISSING: '확인되지 않음', NOT_APPLICABLE: '해당 없음', UNAVAILABLE: '분석 확인 불가',
 };
 
-// 근로계약서 단독 확인 화면의 상위 상태 라벨 (서비스 기획: 기재됨 / 내용이 모호함 / 문서에서 확인되지 않음).
+// 근로계약서 단독 확인 화면의 상위 상태 라벨 (사용자에게는 판단 대신 추가 확인 필요 여부를 안내).
 // 판정 규칙·상태 코드는 v2.2 그대로이고, 화면 라벨만 바꾼다. '분석 확인 불가'(근거 검증 실패·OCR 불확실)는 따로 남긴다.
 export const CONTRACT_STATUS_LABEL = {
-  MAIN_FOUND: '기재됨', MAIN_PARTIAL: '내용이 모호함', MAIN_MISSING: '문서에서 확인되지 않음', MAIN_UNAVAILABLE: '분석 확인 불가',
+  MAIN_FOUND: '기재됨', MAIN_PARTIAL: '추가 확인 필요', MAIN_MISSING: '문서에서 확인되지 않음', MAIN_UNAVAILABLE: '분석 확인 불가',
 };
 
 // 상태 배지. 기호는 CSS ::before로 그려 textContent에는 라벨만 남긴다.

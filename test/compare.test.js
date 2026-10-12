@@ -6,7 +6,7 @@ import { analyzeDocument } from '../src/analyze.js';
 import { CRITERION_IDS } from '../src/criteria.js';
 import { segmentText } from '../src/segment.js';
 import {
-  compareDocuments, parseAmounts, payUnit, parseHours, parseTimeRanges, normalizeText, employmentKinds, parsePeriod, formatWon,
+  compareDocuments, STATE_LABEL, parseAmounts, payUnit, parseHours, parseTimeRanges, normalizeText, employmentKinds, parsePeriod, formatWon,
 } from '../src/compare.js';
 import { buildExtraction } from './v22-fixtures.js';
 import { scriptedAI } from './helpers.js';
@@ -19,6 +19,12 @@ async function doc(docType, lines, specs) {
 }
 const item = (c, id) => c.items.find((i) => i.id === id);
 const facet = (c, id) => c.items.flatMap((i) => i.facets).find((f) => f.id === id);
+
+test('비교 결과는 구체적인 확인 사유와 함께 중립적인 확인 필요 라벨을 사용한다', () => {
+  assert.equal(STATE_LABEL.unclear, '추가 확인 필요');
+  assert.equal(STATE_LABEL.changed, '달라진 조건');
+  assert.equal(STATE_LABEL.unavailable, '분석 확인 불가');
+});
 
 // ---- 가상 문서 (실제 회사·인물과 무관) ----
 const POSTING = ['[가상] 채용공고 — 바른데이터', '고용형태: 정규직', '연봉: 3,600만원', '근무시간: 주 40시간, 09:00~18:00', '근무지: 서울특별시 강남구 테헤란로 100', '담당업무: 데이터 품질 점검', '수습기간: 3개월'];
