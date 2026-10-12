@@ -569,3 +569,74 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .link-external { color: var(--annot); }
 .detail-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-sm); margin-top: var(--space-xl); padding-top: var(--space-md); border-top: 1px solid var(--rule); }
 @media (max-width: 639px) { .detail-actions .btn-auto, .result-foot .btn-auto { width: 100%; } }
+
+/* ---------- 2문서 비교·근로계약서 확인 (서비스 기획 개정) ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* S-01: 두 기능 */
+.hero-modes { display: grid; gap: var(--space-sm); margin: var(--space-lg) 0 0; padding-top: var(--space-md); border-top: 1px solid var(--rule); max-width: 34em; }
+.hero-modes div { display: grid; gap: 2px; }
+.hero-modes dt { font-weight: 600; font-size: 14px; }
+.hero-modes dd { margin: 0; font-size: 14px; color: var(--ink-2); }
+.cta-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-sm); }
+
+/* S-02: 기능 전환과 비교 문서 A·B */
+.mode-switch { display: flex; gap: var(--space-lg); margin: 0 0 var(--space-md); border-bottom: 1px solid var(--rule); }
+.mode-switch a { padding: 8px 0; color: var(--ink-2); text-decoration: none; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.mode-switch a[aria-current] { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+.mode-switch a:hover { color: var(--ink); }
+.compare-setup { margin: 0 0 var(--space-lg); padding: 0; border: 0; }
+.compare-setup legend { font-weight: 600; margin-bottom: var(--space-sm); }
+.compare-setup legend .mono-meta { display: inline; margin: 0; color: var(--ink-3); }
+.slot-list { display: grid; gap: var(--space-sm); }
+@media (min-width: 640px) { .slot-list { grid-template-columns: 1fr 1fr; } }
+.slot { display: grid; gap: 6px; padding: 10px 12px; background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius); }
+.slot.is-active { border-color: var(--ink); box-shadow: inset 0 2px 0 var(--ink); }
+.slot-tab { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); padding: 0; font: inherit; text-align: left; color: var(--ink); background: none; border: 0; cursor: pointer; }
+.slot-name { font-weight: 600; }
+.slot-state { font-size: 13px; color: var(--ink-2); }
+.slot-type select { width: 100%; min-height: 40px; padding: 6px 8px; font: inherit; font-size: 14px; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius); }
+.slot-file { padding: var(--space-md); background: var(--paper); border: 1px solid var(--rule); border-left: 2px solid var(--annot); }
+.slot-file-title { margin: 0 0 4px; font-weight: 600; }
+.slot-file-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-md); margin-top: var(--space-sm); }
+
+/* 회사에 확인할 질문 */
+.questions { margin-top: var(--space-xl); padding: var(--space-lg) var(--gutter); background: var(--paper); border: 1px solid var(--rule-soft); border-top: 2px solid var(--ink); box-shadow: var(--paper-edge); }
+.questions h2 { margin-top: 0; }
+.question-list { list-style: none; margin: var(--space-md) 0; padding: 0; display: grid; gap: var(--space-md); counter-reset: q; }
+.question { display: grid; gap: 6px; counter-increment: q; }
+.q-label { font-weight: 600; font-size: 14px; }
+.q-label::before { content: counter(q) '. '; font: 500 13px/1 var(--font-mono); color: var(--ink-3); }
+.q-text { width: 100%; padding: 10px 12px; font: inherit; font-size: 14px; line-height: 1.6; color: var(--ink); background: var(--desk); border: 1px solid var(--rule); border-radius: var(--radius); resize: vertical; }
+.q-actions { display: flex; align-items: center; gap: var(--space-sm); }
+.q-status { margin: 0; }
+
+/* 근로조건 비교 결과 */
+.compare-docs { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); }
+.cmp-summary { margin: var(--space-md) 0 var(--space-lg); padding: var(--space-md) var(--gutter); background: var(--paper); border: 1px solid var(--rule-soft); border-left: 3px solid var(--annot); box-shadow: var(--paper-edge); }
+.cmp-summary h2 { margin-top: 0; }
+.cmp-highlights { list-style: none; margin: var(--space-sm) 0 0; padding: 0; display: grid; gap: 8px; }
+.cmp-highlight { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--space-sm); padding-top: 8px; border-top: 1px solid var(--rule-soft); font-size: 14px; }
+.cmp-highlight-link { font-weight: 600; color: var(--ink); }
+.cmp-highlight-note { flex-basis: 100%; color: var(--ink-2); }
+.cmp-list { list-style: none; margin: var(--space-md) 0 0; padding: 0; display: grid; gap: var(--space-md); }
+.cmp-item { padding: var(--space-md) 16px; background: var(--paper); border: 1px solid var(--rule-soft); box-shadow: var(--paper-edge); scroll-margin-top: var(--space-md); }
+.cmp-item:focus { outline: none; }
+.cmp-item:focus-visible { outline: 2px solid var(--annot); outline-offset: 2px; }
+.cmp-item-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: var(--space-sm); padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+.cmp-item-head h3 { margin: 0; font-size: 17px; }
+.cmp-facet { padding: 12px 0; }
+.cmp-facet + .cmp-facet { border-top: 1px dashed var(--rule); }
+.cmp-facet-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: var(--space-sm); margin-bottom: 8px; }
+.cmp-facet-label { font-weight: 600; font-size: 14px; }
+.cmp-sides { display: grid; gap: var(--space-sm); }
+@media (min-width: 768px) { .cmp-sides { grid-template-columns: 1fr 1fr; } }
+.cmp-side { padding: 10px 12px; background: var(--desk); border: 1px solid var(--rule-soft); min-width: 0; }
+.cmp-doc { margin: 0 0 4px; font-size: 12px; color: var(--ink-2); }
+.cmp-value { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.cmp-value.is-empty { font-weight: 400; color: var(--ink-2); }
+.cmp-evidence { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.cmp-evidence li { display: flex; gap: var(--space-sm); align-items: baseline; padding-left: 8px; border-left: 2px solid var(--rule); }
+.cmp-evidence q { quotes: '“' '”'; overflow-wrap: anywhere; }
+.cmp-note { margin: 8px 0 0; font-size: 13px; color: var(--ink-2); }
+.cmp-facet.is-changed .cmp-note { color: var(--ink); }

@@ -71,7 +71,8 @@ export function dedupeQuestions(list) {
 // 비교 결과의 세부 항목 하나 → 질문 문장 (질문이 필요 없으면 null)
 // A: 앞 단계 문서, B: 뒤 단계 문서. 뒤 문서가 실제로 적용될 조건에 더 가깝다고 보고, 뒤 문서가 명확하면 묻지 않는다.
 function compareSentence(f, L, isCoreFacet, item) {
-  const a = clip(f.a.value); const b = clip(f.b.value);
+  // 원문 기재값이 없으면 첫 인용 줄을 짧게 보여 준다 (문서에 없는 값을 만들지 않음)
+  const a = clip(f.a.value ?? f.a.evidence?.[0]?.text); const b = clip(f.b.value ?? f.b.evidence?.[0]?.text);
   const subj = josa(f.label, '이/가');
   switch (f.state) {
     case 'changed':
@@ -80,7 +81,7 @@ function compareSentence(f, L, isCoreFacet, item) {
       return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
     case 'not_comparable':
       // 간략한 오퍼에 없는 경우: 뒤 문서(B)가 비어 있을 때만 묻는다. 앞 문서만 비어 있고 뒤 문서에 적혀 있으면 묻지 않는다.
-      if (!f.b.value && f.a.value) return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
+      if (f.b.status === 'MISSING' && a) return `${L.B}에서 ${f.label}에 관한 내용을 찾지 못했습니다. ${L.A}에 적힌 조건(${a})이 그대로 적용되는지 확인 부탁드립니다.`;
       return null;
     case 'unclear':
       if (f.b.status === 'PARTIAL' || f.b.status === 'UNCLEAR') return `${L.B}의 ${subj} 구체적으로 정해지지 않은 것으로 보여 여쭤봅니다(${L.B}: ${b}). 구체적인 ${josa(f.label, '을/를')} 알려 주실 수 있을까요?`;

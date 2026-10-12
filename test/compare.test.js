@@ -149,7 +149,7 @@ test("'회사 내규에 따름'·한 문서 안의 서로 다른 급여는 구�
   });
   const f = facet(compareDocuments([a, b]), '01-a');
   assert.equal(f.state, 'unclear');
-  assert.match(f.note, /내규/);
+  assert.match(f.note, /다른 규정 참조/);
   assert.match(f.note, /서로 다른 값/);
 });
 
@@ -193,4 +193,23 @@ test('비교 결과 → 확인 질문: 엔진 결과로 바로 질문을 만들�
   assert.ok(!ids.includes('01'), '급여 금액이 같으면 묻지 않음');
   assert.ok(ids.includes('03'), '오퍼에 없는 근무장소는 채용공고 조건이 그대로인지 질문');
   assert.match(qs.find((q) => q.itemId === '03').text, /오퍼·합격 안내에서 근무장소에 관한 내용을 찾지 못했습니다\. 채용공고에 적힌 조건\(서울특별시 강남구 테헤란로 100\)/);
+});
+
+test('출퇴근 시각에서 휴게 시각은 빼고 비교, 보조 항목이 두 문서 모두 없으면 항목 대표 상태를 바꾸지 않음, 미기재 ↔ 해당 없음은 해당 없음', async () => {
+  const a = await doc('job_posting', ['[가상] 공고', '근무시간: 09:00~18:00', '근무지: 서울 마포구 양화로 00'], {
+    '02-b': { f: 'specific', q: ['근무시간: 09:00~18:00'], sv: '09:00~18:00' },
+    '03-a': { f: 'specific', q: ['근무지: 서울 마포구 양화로 00'], sv: '서울 마포구 양화로 00' },
+  });
+  const b = await doc('contract', ['[가상] 계약서', '근로시간: 09:00~18:00 (휴게 12:00~13:00)', '근무장소: 서울특별시 마포구 양화로 00', '계약기간: 기간의 정함이 없음'], {
+    '02-b': { f: 'specific', q: ['근로시간: 09:00~18:00 (휴게 12:00~13:00)'] },
+    '03-a': { f: 'specific', q: ['근무장소: 서울특별시 마포구 양화로 00'], sv: '서울특별시 마포구 양화로 00' },
+    '06-a': { f: 'specific', q: ['계약기간: 기간의 정함이 없음'], sv: '기간의 정함이 없음', term: 'indefinite' },
+  });
+  const c = compareDocuments([a, b]);
+  assert.equal(facet(c, '02-b').state, 'same');
+  assert.equal(facet(c, '03-b').state, 'both_missing');
+  assert.equal(item(c, '03').state, 'same', '재택·파견 여부가 두 문서 모두 없어도 근무장소가 같으면 동일');
+  assert.equal(facet(c, '06-b').state, 'not_applicable');
+  assert.equal(facet(c, '02-b').b.value, null, '원문 기재값이 없으면 값을 만들지 않고 인용 줄만');
+  assert.equal(facet(c, '02-b').b.evidence[0].text, '근로시간: 09:00~18:00 (휴게 12:00~13:00)');
 });

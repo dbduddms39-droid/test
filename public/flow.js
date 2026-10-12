@@ -6,7 +6,9 @@ export const SHORT_CHARS = 30;    // 이보다 짧으면 안내만 한다 (분�
 
 export const ROUTES = {
   landing: '#/',
-  input: '#/input',
+  input: '#/input',          // 근로계약서 확인하기 (입력)
+  compare: '#/compare',      // 근로조건 비교하기 (두 문서 입력)
+  compareResult: '#/compare/result',
   review: '#/review',
   analyzing: '#/analyzing',
   result: '#/result',
@@ -24,18 +26,21 @@ export function checkText(text) {
   return { ok: true, code: len < SHORT_CHARS ? 'short' : null };
 }
 
-// 입력 출처 → 내용을 확인·수정하는 화면. 직접 입력은 S-02, 파일 추출(PDF·OCR)은 S-03.
-export const editRouteFor = (inputSource) => (inputSource === 'paste' ? ROUTES.input : ROUTES.review);
+// 입력 출처 → 내용을 확인·수정하는 화면. 직접 입력은 S-02, 파일 추출(PDF·OCR)은 S-03, 2문서 비교는 비교 입력 화면.
+export const editRouteFor = (inputSource) => (inputSource === 'compare' ? ROUTES.compare : inputSource === 'paste' ? ROUTES.input : ROUTES.review);
 
 // 해시 → 보여 줄 화면. 필요한 데이터가 없으면 다른 화면으로 보낸다(redirect).
-// state: { hasResult, hasReview, analyzing, hasError, detailExists(id) }
+// state: { hasResult, hasCompare, lastKind('single'|'compare'), hasReview, analyzing, hasError, detailExists(id) }
 export function resolveRoute(hash, state) {
   const h = hash || '#/';
   if (h === '#/' || h === '#') return { view: 'landing' };
-  if (h === ROUTES.input) return { view: 'input' };
+  if (h === ROUTES.input) return { view: 'input', mode: 'contract' };
+  if (h === ROUTES.compare) return { view: 'input', mode: 'compare' };
+  if (h === ROUTES.compareResult) return state.hasCompare ? { view: 'compare' } : { redirect: ROUTES.compare, notice: 'no_result' };
   if (h === ROUTES.review) return state.hasReview ? { view: 'review' } : { redirect: ROUTES.input, notice: 'no_review' };
   if (h === ROUTES.analyzing) {
     if (state.analyzing) return { view: 'analyzing' };
+    if (state.lastKind === 'compare') return state.hasCompare ? { redirect: ROUTES.compareResult } : { redirect: ROUTES.compare, notice: 'no_result' };
     return state.hasResult ? { redirect: ROUTES.result } : { redirect: ROUTES.input, notice: 'no_result' };
   }
   if (h === ROUTES.error) return state.hasError ? { view: 'error' } : { redirect: ROUTES.input };

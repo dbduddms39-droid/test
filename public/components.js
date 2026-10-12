@@ -19,6 +19,9 @@ const STATUS_KIND = {
   stated: 'found', unclear: 'review', not_found: 'missing', unavailable: 'unavailable',
   MAIN_FOUND: 'found', MAIN_PARTIAL: 'review', MAIN_MISSING: 'missing', MAIN_UNAVAILABLE: 'unavailable',
   CONFIRMED: 'found', PARTIAL: 'review', UNCLEAR: 'review', MISSING: 'missing', NOT_APPLICABLE: 'missing', UNAVAILABLE: 'unavailable',
+  // 2문서 비교 상태 (src/compare.js). 달라진 조건·모호한 조건은 '확인 필요' 표시, 한쪽·양쪽 미기재는 '없음' 표시
+  same: 'found', added: 'found', changed: 'review', unclear: 'review',
+  missing_one: 'missing', not_comparable: 'missing', both_missing: 'missing', not_applicable: 'missing',
 };
 export const statusKind = (code) => STATUS_KIND[code] ?? 'unavailable';
 
@@ -26,6 +29,12 @@ export const statusKind = (code) => STATUS_KIND[code] ?? 'unavailable';
 export const V22_STATUS_LABEL = {
   MAIN_FOUND: '주요 내용 기재됨', MAIN_PARTIAL: '일부 내용만 기재됨', MAIN_MISSING: '관련 내용 찾지 못함', MAIN_UNAVAILABLE: '분석 확인 불가',
   CONFIRMED: '확인됨', PARTIAL: '일부 확인', UNCLEAR: '불분명함', MISSING: '확인되지 않음', NOT_APPLICABLE: '해당 없음', UNAVAILABLE: '분석 확인 불가',
+};
+
+// 근로계약서 단독 확인 화면의 상위 상태 라벨 (서비스 기획: 기재됨 / 내용이 모호함 / 문서에서 확인되지 않음).
+// 판정 규칙·상태 코드는 v2.2 그대로이고, 화면 라벨만 바꾼다. '분석 확인 불가'(근거 검증 실패·OCR 불확실)는 따로 남긴다.
+export const CONTRACT_STATUS_LABEL = {
+  MAIN_FOUND: '기재됨', MAIN_PARTIAL: '내용이 모호함', MAIN_MISSING: '문서에서 확인되지 않음', MAIN_UNAVAILABLE: '분석 확인 불가',
 };
 
 // 상태 배지. 기호는 CSS ::before로 그려 textContent에는 라벨만 남긴다.

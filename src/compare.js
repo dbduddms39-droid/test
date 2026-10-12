@@ -50,7 +50,7 @@ export const COMPARE_ITEMS = [
 const VAGUE_NOTE = {
   undecided: "'추후 협의'처럼 아직 정해지지 않은 표현이에요",
   conflict: '한 문서 안에 서로 다른 값이 함께 적혀 있어요',
-  coarse: '내규 참조처럼 구체적이지 않은 표현이에요',
+  coarse: '구체적인 값 없이 큰 틀이나 다른 규정 참조로만 적혀 있어요',
   negated: '지급·적용하지 않는다는 표현이 적혀 있어요',
 };
 
@@ -72,8 +72,8 @@ function sideOf(doc, id) {
     naReason,
     evidence,
     text,
-    // 화면·질문에 보여 줄 원문 그대로의 값 (검증된 원문 기재값, 없으면 첫 인용 줄)
-    raw: c.sourceValue ?? evidence[0]?.text ?? null,
+    // 화면·질문에 보여 줄 원문 그대로의 값 (검증된 원문 기재값). 없으면 인용 줄(evidence)만 보여 준다
+    raw: c.sourceValue ?? null,
   };
 }
 const isNoProbation = (doc) => doc.criteria?.['07-a']?.status === 'CONFIRMED' && doc.criteria['07-a'].finding === 'negated';
@@ -145,9 +145,10 @@ export function parseHours(text) {
 }
 // 출퇴근 시각: '09:00~18:00', '9시~18시', '10시부터 19시까지'
 const hm = (h, m = '0') => `${String(Number(h)).padStart(2, '0')}:${String(Number(m)).padStart(2, '0')}`;
-export function parseTimeRanges(text) {
+export function parseTimeRanges(text, { skipBreaks = false } = {}) {
   const out = [];
-  const t = String(text ?? '');
+  // 출퇴근 시각을 읽을 때는 '휴게 12:00~13:00' 같은 휴게 시각을 빼고 읽는다
+  const t = skipBreaks ? String(text ?? '').replace(/휴게\s*(?:시간)?\s*[:：]?\s*[^,)\n]*/g, '') : String(text ?? '');
   for (const m of t.matchAll(/(\d{1,2}):(\d{2})\s*(?:~|-|–|∼|부터)\s*(\d{1,2}):(\d{2})/g)) out.push(`${hm(m[1], m[2])}~${hm(m[3], m[4])}`);
   for (const m of t.matchAll(/(\d{1,2})\s*시\s*(?:(\d{1,2})\s*분)?\s*(?:~|-|부터)\s*(\d{1,2})\s*시\s*(?:(\d{1,2})\s*분)?/g)) out.push(`${hm(m[1], m[2] ?? 0)}~${hm(m[3], m[4] ?? 0)}`);
   return [...new Set(out)].sort();
@@ -236,7 +237,7 @@ function compareConcrete(kind, a, b, docA, docB, L) {
       return CHANGED(`${unit} ${ha.h}시간 → ${unit} ${hb.h}시간 (${Math.abs(hb.h - ha.h)}시간 ${hb.h > ha.h ? '늘었어요' : '줄었어요'})`);
     }
     case 'times': {
-      const ta = parseTimeRanges(a.text); const tb = parseTimeRanges(b.text);
+      const ta = parseTimeRanges(a.text, { skipBreaks: true }); const tb = parseTimeRanges(b.text, { skipBreaks: true });
       if (!ta.length || !tb.length) return UNCLEAR('출퇴근 시각을 읽을 수 없어 직접 비교하지 않았어요.');
       if (ta.join() === tb.join()) return SAME(`${ta.join(', ')}로 같아요.`);
       return CHANGED(`${ta.join(', ')} → ${tb.join(', ')}`);
@@ -307,6 +308,9 @@ function compareFacet(facet, docA, docB, L) {
     r = { state: 'unavailable', note: '원문 근거를 확인하지 못해 비교하지 않았어요. 문서에 적혀 있지 않다는 뜻이 아니에요.' };
   } else if (a.kind === 'missing' && b.kind === 'missing') {
     r = { state: 'both_missing', note: '두 문서 모두에서 관련 내용을 찾지 못했어요.' };
+  } else if ((a.kind === 'missing' && b.kind === 'na') || (a.kind === 'na' && b.kind === 'missing')) {
+    const na = a.kind === 'na' ? a : b;
+    r = { state: 'not_applicable', note: `${a.kind === 'na' ? L.A : L.B}는 ${NA_TEXT[na.naReason] ?? '해당 없음'}이라 이 조건은 해당 없어요.` };
   } else if (a.kind === 'missing' || b.kind === 'missing') {
     const missing = a.kind === 'missing' ? 'A' : 'B';
     const missingDoc = missing === 'A' ? docA : docB;
@@ -333,6 +337,7 @@ function compareFacet(facet, docA, docB, L) {
     r = compareConcrete(facet.kind, a, b, docA, docB, L);
   }
   const side = (s) => ({ status: s.status, value: s.kind === 'missing' || s.kind === 'unavailable' ? null : s.raw, evidence: s.evidence, finding: s.finding });
+  // 질문·요약에 쓰는 짧은 원문: 원문 기재값, 없으면 첫 인용 줄
   return { id: facet.id, label: facet.label, state: r.state, stateLabel: STATE_LABEL[r.state], note: r.note, a: side(a), b: side(b) };
 }
 
@@ -349,7 +354,9 @@ export function compareDocuments(docs) {
 
   const items = COMPARE_ITEMS.map((item) => {
     const facets = item.facets.map((f) => compareFacet(f, docA, docB, L));
-    const state = STATE_ORDER.find((s) => facets.some((f) => f.state === s)) ?? 'same';
+    // 대표 상태: 보조 세부 항목(두 번째부터)이 두 문서 모두 없거나 해당 없음이면 대표 상태를 정하는 데 쓰지 않는다
+    const deciding = facets.filter((f, i) => i === 0 || !['both_missing', 'not_applicable'].includes(f.state));
+    const state = STATE_ORDER.find((s) => deciding.some((f) => f.state === s)) ?? facets[0].state;
     return { id: item.id, label: item.label, state, stateLabel: STATE_LABEL[state], facets };
   });
   const allFacets = items.flatMap((i) => i.facets.map((f) => ({ ...f, itemId: i.id, itemLabel: i.label })));

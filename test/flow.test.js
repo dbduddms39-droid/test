@@ -23,7 +23,16 @@ test('입력 출처별 수정 화면: 직접 입력은 S-02, 파일 추출은 S-
 test('라우트: S-01과 S-02는 별도 화면', () => {
   assert.deepEqual(resolveRoute('', base), { view: 'landing' });
   assert.deepEqual(resolveRoute('#/', base), { view: 'landing' });
-  assert.deepEqual(resolveRoute('#/input', base), { view: 'input' });
+  assert.deepEqual(resolveRoute('#/input', base), { view: 'input', mode: 'contract' });
+  assert.deepEqual(resolveRoute('#/compare', base), { view: 'input', mode: 'compare' });
+});
+
+test('라우트: 비교 결과는 비교 결과가 있을 때만, 분석이 끝난 뒤 분석 중 주소는 마지막 분석 종류의 결과로', () => {
+  assert.deepEqual(resolveRoute('#/compare/result', base), { redirect: ROUTES.compare, notice: 'no_result' });
+  assert.deepEqual(resolveRoute('#/compare/result', { ...base, hasCompare: true }), { view: 'compare' });
+  assert.deepEqual(resolveRoute('#/analyzing', { ...base, hasCompare: true, lastKind: 'compare' }), { redirect: ROUTES.compareResult });
+  assert.deepEqual(resolveRoute('#/analyzing', { ...base, lastKind: 'compare' }), { redirect: ROUTES.compare, notice: 'no_result' });
+  assert.equal(editRouteFor('compare'), ROUTES.compare);
 });
 
 test('라우트: 데이터 없이 결과·상세·확인·분석 중·오류 주소로 들어오면 입력 화면으로', () => {

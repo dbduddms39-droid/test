@@ -1,6 +1,6 @@
 import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-rules.js';
-import { buildQuestion, copyText } from './questions.js';
-import { el, statusBadge, V22_STATUS_LABEL, sourcePanelLines } from './components.js';
+import { buildQuestion, copyText, buildCompareQuestions, buildContractQuestions } from './questions.js';
+import { el, statusBadge, V22_STATUS_LABEL, CONTRACT_STATUS_LABEL, sourcePanelLines } from './components.js';
 import { ROUTES, checkText, editRouteFor, resolveRoute, classifyAnalyzeFailure } from './flow.js';
 import { createTracker, applyEdit, confirmSpan, pendingRanges, unlocatedPending, summary as ocrSummary } from './ocr-spans.js';
 import {
@@ -18,38 +18,74 @@ const ROUTE_NOTICE = {
   no_result: '확인할 분석 결과가 없어요. 새로고침하거나 창을 닫으면 입력 내용과 결과가 사라져요. 문서를 다시 입력해 주세요.',
   no_review: '확인할 추출 텍스트가 없어요. 파일을 다시 올려 텍스트를 추출해 주세요.',
   aborted: '분석을 중단했어요. 입력한 내용은 그대로 있어요.',
+  slot_filled: '확인한 추출 텍스트를 이 문서의 내용으로 넣었어요. 다른 문서도 넣은 뒤 비교를 시작해 주세요.',
 };
 const SUBMIT_HINT = {
   empty: '문서 내용을 입력해 주세요.',
-  short: '짧은 내용도 확인할 수 있어요. 문서에 적히지 않은 조건은 결과에서 \'관련 내용 찾지 못함\'으로 표시돼요.',
+  short: '짧은 내용도 확인할 수 있어요. 문서에 적히지 않은 조건은 결과에서 \'문서에서 확인되지 않음\'으로 표시돼요.',
   too_long: '20,000자 이하로 줄여 주세요.',
-  ok: '입력한 문서의 근로조건을 항목별 확인 결과로 정리해 드려요.',
+  ok: '근로계약서의 주요 근로조건을 항목별로 정리해 드려요.',
 };
-// '가상 예시 넣어보기'에 쓰는 가상 문서 (실제 회사·인물 정보 없음)
-const EXAMPLE_TEXT = [
-  '[가상 예시] 최종합격을 축하드립니다.',
-  '고용형태: 정규직',
-  '연봉: 3,600만원',
-  '근무시간: 주 5일, 09:00~18:00',
-  '근무장소: 서울 소재 사업장',
-  '담당업무: 콘텐츠 기획 및 SNS 채널 운영',
-  '수습기간: 3개월',
-  '수습 중 급여: 별도 협의',
-  '연차 유급휴가: 회사 내규에 따름',
-  '상세 근로조건은 입사 시 안내드립니다.',
-].join('\n');
+// '가상 예시 넣어보기'에 쓰는 가상 문서 (실제 회사·인물 정보 없음). 문서 유형별로 하나씩
+const EXAMPLES = {
+  job_posting: [
+    '[가상 예시] 콘텐츠 운영 담당자 채용',
+    '고용형태: 정규직',
+    '연봉: 3,600만원',
+    '근무시간: 주 5일, 09:00~18:00',
+    '근무지: 서울 마포구 양화로 00',
+    '담당업무: 콘텐츠 기획 및 SNS 채널 운영',
+    '수습기간: 3개월',
+  ],
+  offer: [
+    '[가상 예시] 최종합격을 축하드립니다.',
+    '고용형태: 정규직',
+    '연봉: 3,600만원',
+    '근무시간: 주 5일, 09:00~18:00',
+    '근무장소: 서울 소재 사업장',
+    '담당업무: 콘텐츠 기획 및 SNS 채널 운영',
+    '수습기간: 3개월',
+    '수습 중 급여: 별도 협의',
+    '연차 유급휴가: 회사 내규에 따름',
+    '상세 근로조건은 입사 시 안내드립니다.',
+  ],
+  contract: [
+    '[가상 예시] 근로계약서',
+    '1. 근로계약기간: 기간의 정함이 없음',
+    '2. 근무장소: 서울 마포구 양화로 00',
+    '3. 업무내용: 콘텐츠 기획 및 SNS 채널 운영',
+    '4. 소정근로시간: 09:00~18:00 (휴게 12:00~13:00), 주 40시간',
+    '5. 임금: 연봉 3,400만원, 매월 25일 지급',
+    '6. 고용형태: 정규직',
+    '7. 수습: 입사일부터 3개월, 수습 기간 중 급여는 정규 급여의 90%',
+    '8. 연차 유급휴가: 근로기준법에 따라 부여',
+  ],
+};
+const exampleText = (type) => EXAMPLES[type].join('\n');
+const EXAMPLE_TEXTS = Object.keys(EXAMPLES).map(exampleText);
+
+// 입력 맥락: 근로계약서 확인(contract) / 근로조건 비교의 문서 A·B. 맥락마다 입력란 내용·파일 추출 상태·이미지 목록을 따로 둔다.
+// 입력 화면과 S-03은 지금 맥락의 것을 보여 주고, 맥락을 바꾸면 저장했다가 다시 꺼낸다.
+const blankContext = (docType) => ({ docType, text: '', tab: 'paste', file: null, images: [], imagesVersion: 0, useFile: false });
+const contexts = { contract: blankContext('contract'), A: blankContext('job_posting'), B: blankContext('contract') };
+const SLOT_NAME = { A: '문서 A', B: '문서 B' };
 
 const state = {
+  mode: 'contract', // 'contract'(근로계약서 확인하기) | 'compare'(근로조건 비교하기)
+  ctxKey: 'contract', // 지금 입력·확인 중인 맥락
+  slot: 'A',        // 비교 모드에서 입력 중인 문서
   tab: 'paste',     // S-02에서 고른 입력 방식
   file: null,       // 파일 추출 결과 { source: 'ocr'|'pdf', original, previews: [{ url, name }], imagesVersion, ownUrls, words, tracker, lastText, issues }
-  last: null,       // 마지막으로 분석을 요청한 { docType, text, inputSource } — S-07 재시도·수정에 사용
+  last: null,       // 마지막으로 분석을 요청한 { kind: 'single'|'compare', ... } — S-07 재시도·수정에 사용
   inflight: null,   // 진행 중인 분석 { controller }
   error: null,      // S-07에 보여 줄 { message }
 };
-let result = null;
+let result = null;          // 근로계약서 단독 확인 결과
+let compareResult = null;   // 2문서 비교 결과
 
 const $ = (sel) => document.querySelector(sel);
-const docType = () => document.querySelector('input[name=docType]:checked').value;
+// 단독 확인은 근로계약서만 (채용공고·오퍼 안내 단독 확인은 서비스 범위 밖)
+const docType = () => 'contract';
 const go = (hash, replace = false) => { if (replace) location.replace(hash); else location.hash = hash; };
 const showMsg = (node, text) => { node.textContent = text; node.hidden = !text; };
 
@@ -90,18 +126,153 @@ const inputError = $('#input-error');
 
 function updatePasteState() {
   $('#char-count').textContent = textarea.value.length.toLocaleString();
+  if (state.mode === 'compare') {
+    renderSlots();
+    const v = validateCompare();
+    submitBtn.disabled = !v.ok || Boolean(state.inflight);
+    $('#submit-hint').textContent = v.ok ? '두 문서를 항목별로 비교하고, 회사에 확인할 질문을 정리해 드려요.' : v.message;
+    return;
+  }
   const c = checkText(textarea.value);
   submitBtn.disabled = !c.ok || Boolean(state.inflight);
   $('#submit-hint').textContent = SUBMIT_HINT[c.code ?? 'ok'];
 }
 textarea.addEventListener('input', () => { inputError.hidden = true; updatePasteState(); });
 
+// 지금 입력 중인 문서의 유형 (근로계약서 확인은 항상 근로계약서)
+const currentDocType = () => (state.mode === 'compare' ? contexts[state.slot].docType : 'contract');
+
 $('#example-btn').addEventListener('click', () => {
-  if (textarea.value.trim() && textarea.value !== EXAMPLE_TEXT && !confirm('입력란의 내용을 가상 예시로 바꿀까요?')) return;
-  textarea.value = EXAMPLE_TEXT;
+  const example = exampleText(currentDocType());
+  if (textarea.value.trim() && !EXAMPLE_TEXTS.includes(textarea.value) && !confirm('입력란의 내용을 가상 예시로 바꿀까요?')) return;
+  textarea.value = example;
   updatePasteState();
   textarea.focus();
 });
+
+// ---------- 입력 맥락 전환 (근로계약서 확인 / 비교 문서 A·B) ----------
+function saveContext() {
+  const c = contexts[state.ctxKey];
+  Object.assign(c, { text: textarea.value, tab: state.tab, file: state.file, images, imagesVersion });
+}
+function useContext(key) {
+  if (key === state.ctxKey) return true;
+  if (busy) return false; // 추출 중에는 바꾸지 않는다
+  saveContext();
+  const c = contexts[key];
+  state.ctxKey = key;
+  textarea.value = c.text;
+  state.file = c.file;
+  images = c.images;
+  imagesVersion = c.imagesVersion;
+  reviewText.value = state.file ? state.file.lastText : '';
+  selectMethod(c.tab === 'upload' ? $('#tab-upload') : $('#tab-paste'));
+  renderImages();
+  uploadStatus.hidden = true;
+  inputError.hidden = true;
+  return true;
+}
+const inputRoute = () => (state.ctxKey === 'contract' ? ROUTES.input : ROUTES.compare);
+
+// 비교 문서 하나의 분석용 내용: 사진·PDF에서 추출해 S-03에서 확인한 텍스트를 쓰기로 했으면 그 텍스트, 아니면 직접 입력란
+function slotContent(key) {
+  const c = contexts[key];
+  const file = key === state.ctxKey ? state.file : c.file;
+  if (c.useFile && file) {
+    const { text, ranges } = assembleText(file.lastText, file.issues ?? [], pendingRanges(file.tracker, file.lastText));
+    const blocked = blockingIssues(file.issues ?? []).length > 0 || unlocatedPending(file.tracker, file.lastText).length > 0;
+    return { source: file.source, text, lowConfidence: ranges, notes: resultNotes(file.issues ?? []), blocked };
+  }
+  return { source: 'paste', text: key === state.ctxKey ? textarea.value : c.text, lowConfidence: [], notes: [], blocked: false };
+}
+function validateCompare() {
+  for (const key of ['A', 'B']) {
+    const content = slotContent(key);
+    if (content.blocked) return { ok: false, message: `${SLOT_NAME[key]}의 추출 텍스트 확인을 마쳐 주세요.` };
+    const c = checkText(content.text);
+    if (c.code === 'empty') return { ok: false, message: `${SLOT_NAME[key]}의 내용을 넣어 주세요.` };
+    if (c.code === 'too_long') return { ok: false, message: `${SLOT_NAME[key]}는 20,000자 이하로 줄여 주세요.` };
+  }
+  if (contexts.A.docType === contexts.B.docType) return { ok: false, message: '서로 다른 두 종류의 문서를 선택해 주세요.' };
+  return { ok: true };
+}
+const TYPE_LABEL = { job_posting: '채용공고', offer: '오퍼 안내', contract: '근로계약서' };
+function renderSlots() {
+  for (const key of ['A', 'B']) {
+    const content = slotContent(key);
+    const n = content.text.trim() ? content.text.length.toLocaleString() : 0;
+    $(`#slot-state-${key}`).textContent = content.blocked ? '추출 텍스트 확인 필요'
+      : !n ? '비어 있음' : content.source === 'paste' ? `직접 입력 · ${n}자` : `사진·PDF 텍스트 · ${n}자`;
+    $(`#slot-type-${key}`).value = contexts[key].docType;
+    const tab = $(`#slot-tab-${key}`);
+    const on = state.slot === key;
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+    tab.closest('.slot').classList.toggle('is-active', on);
+  }
+  const useFile = contexts[state.slot].useFile && Boolean(state.file);
+  $('#slot-file').hidden = !useFile;
+  $('#paste-editor').hidden = useFile;
+  $('#method-title').textContent = `${SLOT_NAME[state.slot]} 내용 (${TYPE_LABEL[contexts[state.slot].docType]})`;
+}
+for (const key of ['A', 'B']) {
+  $(`#slot-tab-${key}`).addEventListener('click', () => {
+    if (state.slot === key) return;
+    if (!useContext(key)) return showUploadStatus('파일을 읽는 중에는 문서를 바꿀 수 없어요.', 'warn');
+    state.slot = key;
+    updatePasteState();
+  });
+  $(`#slot-tab-${key}`).addEventListener('keydown', (e) => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    e.preventDefault();
+    const other = key === 'A' ? 'B' : 'A';
+    $(`#slot-tab-${other}`).click();
+    $(`#slot-tab-${other}`).focus();
+  });
+  $(`#slot-type-${key}`).addEventListener('change', (e) => {
+    contexts[key].docType = e.target.value;
+    inputError.hidden = true;
+    updatePasteState();
+  });
+}
+$('#slot-file-drop').addEventListener('click', () => {
+  if (!confirm('사진·PDF에서 추출한 텍스트 대신 직접 입력할까요? 추출 텍스트는 이 문서의 비교에 쓰지 않아요.')) return;
+  contexts[state.slot].useFile = false;
+  updatePasteState();
+  textarea.focus();
+});
+
+// 입력 화면 모드 (근로계약서 확인 / 근로조건 비교)
+const MODE_TEXT = {
+  contract: {
+    crumb: '근로계약서 확인', title: '근로계약서를 확인할까요?',
+    lead: '근로계약서 내용을 붙여넣거나 사진·PDF로 올려 주세요. 주요 근로조건이 적혀 있는지, 모호하지 않은지 확인해요.',
+    submit: '근로계약서 확인 시작하기 →',
+  },
+  compare: {
+    crumb: '근로조건 비교', title: '비교할 두 문서를 넣어 주세요.',
+    lead: '채용공고·오퍼 안내·근로계약서 중 두 문서를 골라 각각 내용을 넣어 주세요. 항목별로 같은 점과 달라진 점, 확인이 필요한 점을 정리해요.',
+    submit: '두 문서 비교 시작하기 →',
+  },
+};
+function applyMode(mode) {
+  state.mode = mode;
+  useContext(mode === 'compare' ? state.slot : 'contract');
+  const t = MODE_TEXT[mode];
+  $('#input-crumb').textContent = t.crumb;
+  $('#input-title').textContent = t.title;
+  $('#input-lead').textContent = t.lead;
+  submitBtn.textContent = t.submit;
+  $('#compare-setup').hidden = mode !== 'compare';
+  $('#method-index').textContent = mode === 'compare' ? '§ 02' : '§ 01';
+  if (mode !== 'compare') { $('#method-title').textContent = '내용 전달 방식'; $('#slot-file').hidden = true; $('#paste-editor').hidden = false; }
+  $('#mode-compare').toggleAttribute('aria-current', mode === 'compare');
+  $('#mode-contract').toggleAttribute('aria-current', mode === 'contract');
+  if (mode === 'compare') $('#mode-compare').setAttribute('aria-current', 'page'); else $('#mode-contract').setAttribute('aria-current', 'page');
+  $('#paste-submit-row').hidden = mode !== 'compare' && state.tab !== 'paste';
+  $('#review-resume').hidden = !state.file;
+  updatePasteState();
+}
 $('#clear-text').addEventListener('click', () => {
   if (textarea.value.trim() && !confirm('입력란의 내용을 모두 지울까요?')) return;
   textarea.value = '';
@@ -113,19 +284,34 @@ const selectMethod = initTabs([$('#tab-paste'), $('#tab-upload')], (tab) => {
   state.tab = tab.id === 'tab-upload' ? 'upload' : 'paste';
   $('#panel-paste').hidden = state.tab !== 'paste';
   $('#panel-upload').hidden = state.tab !== 'upload';
-  $('#paste-submit-row').hidden = state.tab !== 'paste';
+  $('#paste-submit-row').hidden = state.mode !== 'compare' && state.tab !== 'paste';
   inputError.hidden = true;
 });
 
 // 직접 입력: S-02 → S-04
 $('#input-form').addEventListener('submit', (e) => {
   e.preventDefault();
+  if (state.mode === 'compare') return submitCompare();
   if (state.tab !== 'paste') return;
   const text = textarea.value;
   const c = checkText(text);
   if (!c.ok) return showMsg(inputError, c.code === 'too_long' ? '문서는 20,000자 이하로 입력해 주세요.' : '문서 내용을 입력해 주세요.');
-  startAnalysis({ docType: docType(), text, inputSource: 'paste' });
+  startAnalysis({ kind: 'single', docType: docType(), text, inputSource: 'paste' });
 });
+
+// 근로조건 비교: 두 문서를 확인한 뒤 한 번에 요청한다 (문서마다 분석하고 서버가 항목별로 비교)
+function submitCompare() {
+  const v = validateCompare();
+  if (!v.ok) return showMsg(inputError, v.message);
+  const content = { A: slotContent('A'), B: slotContent('B') };
+  startAnalysis({
+    kind: 'compare',
+    inputSource: 'compare',
+    documents: ['A', 'B'].map((k) => ({ docType: contexts[k].docType, text: content[k].text, ...(content[k].lowConfidence.length ? { lowConfidence: content[k].lowConfidence } : {}) })),
+    sources: { [contexts.A.docType]: content.A.source, [contexts.B.docType]: content.B.source },
+    notes: { [contexts.A.docType]: content.A.notes, [contexts.B.docType]: content.B.notes },
+  });
+}
 
 // ---------- 파일 업로드 → 브라우저 안에서 텍스트 추출 → S-03 ----------
 // - 이미지: 최대 5장을 같은 문서의 연속 캡처로 보고, 사용자가 정한 순서대로 OCR해 하나로 합친다.
@@ -206,7 +392,7 @@ function renderImages() {
 }
 
 // S-03 미리보기가 쓰는 이미지 URL은 목록에서 지워도 추출 결과를 바꿀 때까지 해제하지 않는다.
-const inPreview = (url) => Boolean(state.file?.previews.some((p) => p.url === url));
+const inPreview = (url) => [state.file, ...Object.values(contexts).map((c) => c.file)].some((f) => f?.previews.some((p) => p.url === url));
 function releaseImage(img) { if (!inPreview(img.url)) URL.revokeObjectURL(img.url); }
 
 imageList.addEventListener('click', (e) => {
@@ -251,6 +437,7 @@ function applyExtracted(text, source, previews, ownUrls = [], words = [], issues
   const old = state.file;
   // OCR이 알려 준 불확실한 글자의 위치를 추적한다 (사용자가 고치거나 원본과 대조해 확인한 곳만 해제)
   state.file = { source, original: text, previews, imagesVersion, ownUrls, words, tracker: createTracker(text, words), lastText: text, issues };
+  contexts[state.ctxKey].useFile = false; // 새로 추출한 텍스트는 S-03에서 다시 확인해야 비교에 쓴다
   if (old) {
     old.ownUrls.forEach((u) => URL.revokeObjectURL(u));
     // 목록에서 이미 지운 이미지의 URL은 이제 해제한다
@@ -496,7 +683,7 @@ function issueItem(x) {
   if (!resolved) {
     if (state.file?.previews?.length) actions.push(el('button', { type: 'button', class: 'btn-text', 'data-issue-action': 'view' }, '원본 보기'));
     if (failed) {
-      actions.push(el('a', { href: ROUTES.input, class: 'btn-text', 'data-issue-action': 'reextract' }, x.unit === 'pdf' ? '파일 다시 올려 추출하기' : '이미지 바꾸고 다시 추출하기'));
+      actions.push(el('a', { href: inputRoute(), class: 'btn-text', 'data-issue-action': 'reextract' }, x.unit === 'pdf' ? '파일 다시 올려 추출하기' : '이미지 바꾸고 다시 추출하기'));
       actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'manual_input' }, '원본을 보고 직접 입력했어요'));
       // 글자를 찾지 못했고 원본 미리보기로 대조할 수 있는 경우에만. 시스템이 빈 쪽이라고 정한 것이 아님을 밝힌다.
       if (x.canConfirmBlank) {
@@ -646,7 +833,13 @@ reviewSubmit.addEventListener('click', () => {
   const { text, ranges } = assembleText(reviewText.value, state.file.issues ?? [], pendingRanges(state.file.tracker, reviewText.value));
   const c = checkText(text);
   if (!c.ok) return showMsg(reviewError, c.code === 'too_long' ? '문서는 20,000자 이하로 줄여 주세요.' : '분석할 문서 내용을 입력해 주세요.');
-  startAnalysis({ docType: docType(), text, inputSource: state.file.source, lowConfidence: ranges, extractNotes: resultNotes(state.file.issues ?? []) });
+  // 근로조건 비교의 문서 A·B: 분석하지 않고, 확인한 텍스트를 그 문서의 내용으로 쓰고 비교 입력 화면으로 돌아간다
+  if (state.ctxKey !== 'contract') {
+    contexts[state.ctxKey].useFile = true;
+    pendingNotice = 'slot_filled';
+    return go(ROUTES.compare);
+  }
+  startAnalysis({ kind: 'single', docType: docType(), text, inputSource: state.file.source, lowConfidence: ranges, extractNotes: resultNotes(state.file.issues ?? []) });
 });
 
 // ---------- S-04 분석 중 · S-07 오류 ----------
@@ -664,16 +857,21 @@ async function startAnalysis(payload, { replace = false } = {}) {
   state.last = payload;
   state.error = null;
   result = null; // 이전 결과가 새 입력의 결과처럼 보이지 않게 한다
+  compareResult = null;
+  const isCompare = payload.kind === 'compare';
+  $('#analyzing-title').textContent = isCompare ? '두 문서의 근로조건을 비교하고 있어요.' : '근로계약서의 근로조건을 확인하고 있어요.';
   setAnalyzing(true);
   go(ROUTES.analyzing, replace);
 
   let res = null;
   let data = {};
   try {
-    res = await fetch('/api/analyze', {
+    res = await fetch(isCompare ? '/api/compare' : '/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ docType: payload.docType, text: payload.text, ...(payload.lowConfidence?.length ? { lowConfidence: payload.lowConfidence } : {}) }),
+      body: JSON.stringify(isCompare
+        ? { documents: payload.documents }
+        : { docType: payload.docType, text: payload.text, ...(payload.lowConfidence?.length ? { lowConfidence: payload.lowConfidence } : {}) }),
       signal: controller.signal,
     });
     data = await res.json().catch(() => ({}));
@@ -685,8 +883,12 @@ async function startAnalysis(payload, { replace = false } = {}) {
   }
   if (controller.signal.aborted) return; // 사용자가 분석 화면을 떠남
 
+  if (isCompare && res?.ok && data?.version === 'compare-v1' && Array.isArray(data.items)) {
+    compareResult = { ...data, sources: payload.sources, notes: payload.notes };
+    return go(ROUTES.compareResult, true);
+  }
   // 점검 기준 v2.2 형식이 아닌 응답(예: 이전 버전 서버)은 결과로 보여 주지 않는다 (8개·10개 형식 혼용 방지)
-  if (res?.ok && isV22(data)) {
+  if (!isCompare && res?.ok && isV22(data)) {
     result = { ...data, inputSource: payload.inputSource, extractNotes: payload.extractNotes ?? [] };
     return go(ROUTES.result, true);
   }
@@ -696,7 +898,7 @@ async function startAnalysis(payload, { replace = false } = {}) {
   }
   const message = res ? data.error || '분석에 실패했어요. 잠시 후 다시 시도해 주세요.' : '서버에 연결하지 못했어요. 네트워크 연결을 확인한 뒤 다시 시도해 주세요.';
   if (res && classifyAnalyzeFailure(res.status) === 'input') {
-    showMsg(payload.inputSource === 'paste' ? inputError : reviewError, message);
+    showMsg(payload.inputSource === 'paste' || isCompare ? inputError : reviewError, message);
     return go(editRouteFor(payload.inputSource), true);
   }
   state.error = { message };
@@ -812,7 +1014,7 @@ function topicCard(t) {
     el('a', { href: `#/detail/${t.id}`, class: 'item-row' },
       el('span', { class: 'topic-index' }, `§ ${t.id}`),
       el('span', { class: 'item-label' }, t.label),
-      statusBadge(t.status, t.statusLabel)),
+      statusBadge(t.status, CONTRACT_STATUS_LABEL[t.status])),
     el('p', { class: 'topic-summary' }, topicSummary(t)),
     el('div', { class: 'topic-foot' },
       el('span', { class: 'excerpt' }, excerpt),
@@ -836,13 +1038,109 @@ function renderResult() {
   $('#result-notice').textContent = `${result.sourceGuide} ${result.notice}`;
   $('#result-count').textContent = `점검한 항목 ${result.counts.shown}개`;
   $('#result-tally').textContent = MAIN_ORDER.filter((s) => result.counts.byStatus[s] > 0)
-    .map((s) => `${V22_STATUS_LABEL[s]} ${result.counts.byStatus[s]}`).join(' · ');
+    .map((s) => `${CONTRACT_STATUS_LABEL[s]} ${result.counts.byStatus[s]}`).join(' · ');
   $('#source-panel-doc').textContent = result.docTypeLabel;
   const visible = result.topics.filter((t) => t.visible);
   $('#item-list').replaceChildren(...visible.map(topicCard));
   if (!visible.some((t) => t.id === selectedTopic)) selectedTopic = (visible.find((t) => topicMarks(t).size) ?? visible[0])?.id ?? null;
   renderSourcePanel();
+  // 회사에 확인할 질문: 내용이 모호하거나 확인되지 않는 항목만 (기재됨·분석 확인 불가는 질문하지 않음)
+  const questions = buildContractQuestions(result);
+  $('#result-questions').hidden = !questions.length;
+  renderQuestions($('#result-question-list'), questions);
 }
+
+// ---------- 회사에 확인할 질문 (복사·수정) ----------
+// 질문은 템플릿으로 만든 초안이다. 사용자가 고쳐 쓴 내용을 그대로 복사한다.
+function renderQuestions(list, questions) {
+  list.replaceChildren(...questions.map((q, i) => {
+    const id = `${list.id}-${i}`;
+    const ta = el('textarea', { id, class: 'q-text', rows: '4' });
+    ta.value = q.text;
+    return el('li', { class: 'question' },
+      el('label', { class: 'q-label', for: id }, q.label),
+      ta,
+      el('div', { class: 'q-actions' },
+        el('button', { type: 'button', class: 'icon-btn', 'data-copy': id }, '복사'),
+        el('span', { class: 'q-status muted small', role: 'status', 'aria-live': 'polite' })));
+  }));
+}
+document.addEventListener('click', async (e) => {
+  const one = e.target.closest('button[data-copy]');
+  const all = e.target.closest('button[data-copy-all]');
+  if (!one && !all) return;
+  const texts = one ? [document.getElementById(one.dataset.copy).value]
+    : [...document.getElementById(all.dataset.copyAll).querySelectorAll('.q-text')].map((t) => t.value.trim()).filter(Boolean);
+  const ok = texts.length > 0 && await copyText(texts.join('\n\n'));
+  const status = one ? one.parentElement.querySelector('.q-status') : null;
+  const msg = ok ? (one ? '복사했어요.' : `질문 ${texts.length}개를 복사했어요.`) : '복사하지 못했어요. 질문을 직접 선택해 복사해 주세요.';
+  if (status) status.textContent = msg;
+  else { all.textContent = ok ? msg : '복사하지 못했어요'; setTimeout(() => { all.textContent = '질문 모두 복사'; }, 2500); }
+});
+
+// ---------- 근로조건 비교 결과 ----------
+const COMPARE_NOTICE = '문서에 적힌 내용을 비교한 결과예요. 한쪽 문서에 적혀 있지 않은 조건은 바뀌거나 삭제된 것으로 보지 않아요. 법률 위반 여부, 기업의 신뢰도, 입사 적합성, 앞으로의 근로조건 변경 가능성은 판단하지 않아요.';
+const SIDE_EMPTY = { MISSING: '문서에서 확인되지 않음', UNAVAILABLE: '분석 확인 불가', NOT_APPLICABLE: '해당 없음' };
+
+function compareSide(doc, side) {
+  const empty = SIDE_EMPTY[side.status];
+  return el('div', { class: 'cmp-side' },
+    el('p', { class: 'cmp-doc' }, doc.docTypeLabel),
+    empty ? el('p', { class: 'cmp-value is-empty' }, empty) : side.value ? el('p', { class: 'cmp-value' }, side.value) : null,
+    side.evidence.length ? el('ul', { class: 'cmp-evidence', 'aria-label': `${doc.docTypeLabel} 원문 근거` },
+      side.evidence.map((e) => el('li', {}, el('span', { class: 'line-ref' }, `${e.line}번 줄`), el('q', {}, e.text)))) : null);
+}
+
+function renderCompare() {
+  const c = compareResult;
+  const [A, B] = c.docs;
+  $('#cmp-title').textContent = `${A.docTypeLabel} ↔ ${B.docTypeLabel} 비교 결과`;
+  $('#compare-docs').textContent = `앞 단계 문서: ${A.docTypeLabel} · 뒤 단계 문서: ${B.docTypeLabel}`;
+  const source = $('#compare-source');
+  source.textContent = c.mode === 'demo'
+    ? '데모 결과예요. AI 분석이 아니라 개발용 키워드 규칙으로 만든 결과라서 실제 판단에 쓰면 안 돼요.'
+    : 'AI가 각 문서에서 찾은 내용을 서버가 원문과 대조해 확인한 뒤, 항목별 규칙으로 비교한 결과예요.';
+  source.classList.toggle('analysis-source-demo', c.mode === 'demo');
+  const fileNotes = c.docs.flatMap((d) => {
+    const src = c.sources?.[d.docType];
+    return src && src !== 'paste' ? [`${d.docTypeLabel}: ${EXTRACTED_NOTE[src] ?? ''}`, ...(c.notes?.[d.docType] ?? []).map((n) => `${d.docTypeLabel}: ${n}`)] : [];
+  });
+  const inputNote = $('#compare-input-note');
+  inputNote.hidden = !fileNotes.length;
+  inputNote.textContent = fileNotes.join(' ');
+
+  $('#cmp-tally').textContent = Object.entries(c.summary.counts).filter(([, n]) => n > 0)
+    .map(([state, n]) => `${c.items.find((i) => i.state === state)?.stateLabel ?? state} ${n}`).join(' · ');
+  const highlights = c.summary.highlights;
+  $('#cmp-highlights').replaceChildren(...(highlights.length
+    ? highlights.map((h) => el('li', { class: `cmp-highlight is-${h.state}` },
+      el('a', { href: `#cmp-${h.itemId}`, class: 'cmp-highlight-link', 'data-cmp-item': h.itemId }, `${h.itemLabel} · ${h.facetLabel}`),
+      statusBadge(h.state, h.stateLabel),
+      el('span', { class: 'cmp-highlight-note' }, h.note)))
+    : [el('li', { class: 'muted' }, '두 문서에서 달라졌거나 확인이 필요한 조건을 찾지 못했어요. 아래 항목별 비교와 원문을 함께 확인해 주세요.')]));
+
+  $('#cmp-list').replaceChildren(...c.items.map((item) => el('li', { class: `cmp-item is-${item.state}`, id: `cmp-${item.id}`, tabindex: '-1' },
+    el('div', { class: 'cmp-item-head' }, el('h3', {}, item.label), statusBadge(item.state, item.stateLabel)),
+    ...item.facets.map((f) => el('div', { class: `cmp-facet is-${f.state}` },
+      el('div', { class: 'cmp-facet-head' }, el('span', { class: 'cmp-facet-label' }, f.label), statusBadge(f.state, f.stateLabel)),
+      el('div', { class: 'cmp-sides' }, compareSide(A, f.a), compareSide(B, f.b)),
+      el('p', { class: 'cmp-note' }, f.note))))));
+
+  const questions = buildCompareQuestions(c);
+  renderQuestions($('#compare-question-list'), questions);
+  $('#compare-no-questions').hidden = questions.length > 0;
+  $('#compare-questions').querySelector('[data-copy-all]').hidden = !questions.length;
+  $('#compare-notice').textContent = COMPARE_NOTICE;
+}
+// 핵심 차이에서 항목으로 이동 (해시 라우팅을 쓰므로 링크 기본 동작 대신 스크롤)
+$('#cmp-highlights').addEventListener('click', (e) => {
+  const a = e.target.closest('a[data-cmp-item]');
+  if (!a) return;
+  e.preventDefault();
+  const target = document.getElementById(`cmp-${a.dataset.cmpItem}`);
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  target.focus({ preventScroll: true });
+});
 
 // ---------- S-06 항목 상세 ----------
 function evidenceChips(c) {
@@ -881,7 +1179,7 @@ function renderDetail(id) {
   const extracted = result.inputSource !== 'paste';
 
   const head = el('header', { class: 'detail-head' },
-    el('span', { class: 'index-chip' }, t.id), el('h1', {}, t.label), statusBadge(t.status, t.statusLabel));
+    el('span', { class: 'index-chip' }, t.id), el('h1', {}, t.label), statusBadge(t.status, CONTRACT_STATUS_LABEL[t.status]));
   const summary = el('div', { class: 'summary-box' },
     el('p', { class: 'summary-text' }, topicSummary(t)),
     el('p', { class: 'muted small' }, 'ⓘ 이 상태는 핵심 정보의 기재 여부를 나타내며, 모든 세부 내용의 확인이나 법적 적합성을 뜻하지 않아요.'));
@@ -967,10 +1265,16 @@ function renderDetail(id) {
 }
 
 // ---------- 라우팅 ----------
-const VIEWS = ['landing', 'input', 'review', 'analyzing', 'error', 'result', 'detail'];
+const VIEWS = ['landing', 'input', 'review', 'analyzing', 'error', 'result', 'detail', 'compare'];
 const RENDER = {
-  input: () => { $('#review-resume').hidden = !state.file; updatePasteState(); },
+  input: (r) => applyMode(r.mode),
+  compare: renderCompare,
   review: () => {
+    // 비교 문서의 추출 텍스트를 확인할 때는 분석하지 않고 그 문서의 내용으로 넣는다
+    const slot = state.ctxKey !== 'contract' ? SLOT_NAME[state.ctxKey] : null;
+    reviewSubmit.textContent = slot ? `이 텍스트를 ${slot}로 쓰기 →` : '내용 확인하고 분석하기 →';
+    $('#review-back').setAttribute('href', inputRoute());
+    $('#review-back-top').setAttribute('href', inputRoute());
     $('#review-stale').hidden = state.file.source !== 'ocr' || state.file.imagesVersion === imagesVersion;
     renderOcrCheck();
     renderExtractIssues();
@@ -985,6 +1289,8 @@ let pendingNotice = null;
 function route() {
   const r = resolveRoute(location.hash, {
     hasResult: Boolean(result),
+    hasCompare: Boolean(compareResult),
+    lastKind: state.last?.kind ?? 'single',
     hasReview: Boolean(state.file),
     analyzing: Boolean(state.inflight),
     hasError: Boolean(state.error),
@@ -1005,7 +1311,7 @@ function route() {
   document.body.dataset.view = r.view;
   $('#topbar-cta').hidden = r.view !== 'landing';
   if (r.view === 'detail') renderDetail(r.id);
-  else RENDER[r.view]?.();
+  else RENDER[r.view]?.(r);
 
   // 한 번만 보여 줄 안내 (결과 없음, 분석 중단 등)
   const notice = { input: $('#route-notice'), review: $('#review-notice') }[r.view];
