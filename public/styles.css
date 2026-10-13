@@ -876,3 +876,14 @@ details.cgroup .ccard { background: transparent; }
   .record-head .btn-primary.btn-auto { width: 100%; }
   .original-dropdown { flex-basis: 100%; }
 }
+
+/* 메인 가상 비교 예시: 두 문서의 담당업무를 명확히 나란히 표시 */
+.sample-diff { margin-top: 14px; }
+.sample-diff-title { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; font-size: 16px; font-weight: 700; }
+.sample-diff-label { font-size: 12px; font-weight: 500; color: var(--annot); }
+.sample-diff-docs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.sample-diff-doc { padding: 13px 12px; min-width: 0; background: var(--desk); border: 1px solid var(--rule-soft); }
+.sample-diff-doc-label { margin: 0 0 7px; color: var(--ink-2); font-size: 12px; }
+.sample-diff-doc p:last-child { margin: 0; line-height: 1.65; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.sample-diff-caption { margin: 9px 0 0; font-size: 13px; color: var(--ink-2); }
+@media (max-width: 520px) { .sample-diff-docs { grid-template-columns: 1fr; } }
