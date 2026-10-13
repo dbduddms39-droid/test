@@ -5,7 +5,7 @@
 
 export const SAMPLE_FILES = [
   { path: 'samples/ildan-sample-1-job-posting.pdf', name: '일단확인_가상문서_1_채용공고.pdf', label: '채용공고 PDF' },
-  { path: 'samples/ildan-sample-2-offer-mail.pdf', name: '일단확인_가상문서_2_처우·근로조건안내(메일).pdf', label: '처우·근로조건 안내 PDF' },
+  { path: 'samples/ildan-sample-2-offer-mail.pdf', name: '일단확인_가상문서_2_처우·근로조건안내.pdf', label: '처우·근로조건 안내 PDF' },
   { path: 'samples/ildan-sample-3-contract.pdf', name: '일단확인_가상문서_3_근로계약서.pdf', label: '근로계약서 PDF' },
 ];
 export const SAMPLE_ZIP_NAME = '일단확인_가상문서_3종.zip';
