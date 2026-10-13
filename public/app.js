@@ -884,7 +884,7 @@ async function startAnalysis(payload, { replace = false } = {}) {
     if (r.ok) {
       try {
         const record = await store.replaceAnalysis(saved.record.id, entry.id, { analysis: analysisOf(r.data), mode: r.data.mode ?? null });
-        state.flash = { kind: 'saved', text: `${payload.target.kind === 'add' ? `새 자료를 이 기록에 추가해 저장했어요(이 브라우저). 이전 자료 ${record.documents.length - 1}건은 그대로 있어요.` : '기록을 이 브라우저에 저장했어요. 다음에 이 브라우저에서 \'내 기록\'으로 다시 열 수 있어요.'}${origText}` };
+        state.flash = { kind: 'saved', text: payload.target.kind === 'add' ? '새 자료가 추가됐어요.' : '기록이 저장됐어요.' };
         return go(ROUTES.record(record.id), true);
       } catch (err) {
         // 자료는 저장됐지만 분석 결과를 저장하지 못함 → 분석 결과를 '저장되지 않았어요' 화면에서 다시 저장
@@ -974,9 +974,7 @@ async function persist(pending, { replace = false } = {}) {
     state.unsaved = null;
     resetContext(payload.ctxKey);
     if (state.file === null) $('#review-resume').hidden = true;
-    state.flash = { kind: 'saved', text: `${payload.target.kind === 'add'
-      ? `새 자료를 이 기록에 추가해 저장했어요(이 브라우저). 이전 자료 ${record.documents.length - 1}건은 그대로 있어요.`
-      : '기록을 이 브라우저에 저장했어요. 다음에 이 브라우저에서 \'내 기록\'으로 다시 열 수 있어요.'}${originalNote(original, entry.originalError)}` };
+    state.flash = { kind: 'saved', text: payload.target.kind === 'add' ? '새 자료가 추가됐어요.' : '기록이 저장됐어요.' };
     go(ROUTES.record(record.id), replace);
   } catch (err) {
     // 기존 기록에 추가하다 실패하면, 이전 기록은 그대로이고 새 자료만 저장되지 않은 상태로 보여 준다
@@ -1356,12 +1354,10 @@ function renderRecord(record, { unsaved = false } = {}) {
 
   $('#record-back').hidden = unsaved;
   $('#record-title').textContent = record.alias;
-  $('#record-meta').textContent = [
-    `등록된 자료 ${record.documents.length}건 (${record.documents.map((d) => labels[d.id]).join(', ')})`,
-    saved ? `마지막 저장 ${formatDateTime(record.updatedAt)}` : '저장 전',
-    record.aliasSource === 'suggested' ? '기록 이름은 문서에서 찾은 회사명이에요. 바꿀 수 있어요.' : null,
-  ].filter(Boolean).join(' · ');
-  $('#record-rename-box').hidden = unsaved;
+  $('#record-meta').textContent = `등록 문서 ${record.documents.length}건${saved ? '' : ' · 저장 전'}`;
+  fill($('#record-doc-chips'), ...record.documents.map((d) => el('span', { class: 'record-doc-chip' }, labels[d.id])));
+  $('#record-more').hidden = unsaved;
+  $('#record-more').open = false;
   $('#rename-form').hidden = true;
   $('#rename-open').hidden = false;
 
@@ -1369,7 +1365,8 @@ function renderRecord(record, { unsaved = false } = {}) {
   releaseOriginalUrls();
   const withOriginal = saved ? record.documents.filter((d) => d.original?.fileId) : [];
   fill($('#original-list'), ...withOriginal.map((d) => originalLinks(d, labels[d.id])));
-  $('#original-list').hidden = !withOriginal.length;
+  $('#original-dropdown').hidden = !withOriginal.length;
+  $('#original-dropdown').open = false;
   $('#record-tools').hidden = unsaved;
   if (saved) $('#add-doc-top').setAttribute('href', ROUTES.add(record.id));
   if (withOriginal.length) attachOriginalUrls($('#original-list'));
@@ -1380,6 +1377,9 @@ function renderRecord(record, { unsaved = false } = {}) {
     ? '데모 결과가 포함돼 있어요. AI 분석이 아니라 개발용 키워드 규칙으로 만든 결과라서 실제 판단에 쓰면 안 돼요.'
     : 'AI가 찾은 내용을 서버가 원문과 대조해 실제로 적힌 문구인지 확인한 뒤 정리했어요. 해석이 맞는지는 원문과 함께 확인해 주세요.';
   source.classList.toggle('analysis-source-demo', demo);
+  $('#demo-warning').hidden = !demo;
+  $('#demo-warning').textContent = demo ? source.textContent : '';
+  source.hidden = demo;
 
   // 분석 확인 불가: 같은 텍스트로 다시 분석 (해당 항목이 있을 때만, 맨 위)
   const sum = fus.summary;
