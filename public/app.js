@@ -8,6 +8,7 @@ import {
 } from './extract-issues.js';
 import { createStore, suggestAlias, StoreError, DEFAULT_ALIAS, NOTE_MAX, newId } from './store.js';
 import { buildFollowUps, BOUNDARY_TEXT, deferral, detailOnly, weeklyCalc } from './followups.js';
+import { contractSummaryGroup, summaryEvidence } from './result-presentation.js';
 import { initSampleDownloads } from './samples.js';
 import { DOC_TYPE_LABEL, RELATION_LABEL, docLabels } from './relate.js';
 
@@ -1133,7 +1134,6 @@ const topicOf = (doc, id) => doc.analysis?.topics?.find((t) => t.id === id) ?? n
 const DISPLAY_LABEL = { '08': '수습 중 임금' };
 const itemLabel = (record, id) => DISPLAY_LABEL[id] ?? record.documents.map((d) => topicOf(d, id)?.label).find(Boolean) ?? id;
 const visibleIn = (record, id) => record.documents.some((d) => topicOf(d, id)?.visible);
-const firstEvidence = (t) => (t.criteria.find((c) => c.required && c.evidence.length) ?? t.criteria.find((c) => c.evidence.length))?.evidence[0] ?? null;
 const notesFor = (record, id) => (record.notes ?? []).filter((n) => n.conditionKey === id);
 
 // '분석 확인 불가'의 원인 (검증 실패 코드 → 사용자 설명). 예전에 저장된 기록에는 코드가 없을 수 있다.
@@ -1429,11 +1429,7 @@ function renderRecord(record, { unsaved = false } = {}) {
     else if (layout === 'brief') group = anyWritten && CARD_IDS.has(id) ? 'preview' : null;
     else if (layout === 'contract') {
       const t = per[0]?.t;
-      if (!t || unavailable) group = null; // 분석 확인 불가는 위 '다시 분석'에서
-      else if (q) group = 'needs'; // 회사에 확인할 질문이 있는 항목
-      else if (weeklyCalc(t)) group = 'calculated'; // 원문 값으로 계산해 확인한 항목 (주 소정근로시간)
-      else if (t.status === 'MAIN_FOUND') group = 'written';
-      else group = 'needs'; // 질문은 없지만 일부만 적혔거나 찾지 못한 항목
+      group = unavailable ? null : contractSummaryGroup(t, Boolean(q)); // 계산값은 질문이 있어도 '계산으로 확인'에 표시
     } else {
       const rel = relItem?.relation;
       if (!anyWritten && !q) group = null;
@@ -1525,7 +1521,7 @@ function renderRecord(record, { unsaved = false } = {}) {
     return el('li', { class: 'condition', 'data-item': id },
       el('div', { class: 'condition-head' }, el('h3', {}, itemLabel(record, id))),
       el('ul', { class: 'condition-docs' }, per.map(({ d, t }) => {
-        const ev = t.status === 'MAIN_UNAVAILABLE' ? null : firstEvidence(t);
+        const ev = t.status === 'MAIN_UNAVAILABLE' ? null : summaryEvidence(t);
         return el('li', { class: 'condition-doc' },
           el('span', { class: 'cd-doc' }, labels[d.id]),
           topicBadge(d, t),
