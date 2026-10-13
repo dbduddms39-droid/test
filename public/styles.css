@@ -844,3 +844,35 @@ details.cgroup .ccard { background: transparent; }
   background: #F8F8F6;
 }
 .view-landing .sample-download { background: #FFFFFF; }
+
+/* 2026-10: 랜딩에서 근로계약서 단독 확인 강조, 기록 상단 정보 간소화 */
+.hero-support { margin: 10px 0 0; max-width: 32em; font-size: 14px; line-height: 1.65; color: var(--ink-2); }
+.hero-support strong { color: var(--ink); font-weight: 600; }
+.sample-note p + p { margin-top: 6px; }
+.record-head { align-items: flex-start; gap: 12px 24px; }
+.record-head-main { flex: 1 1 380px; min-width: 0; }
+.record-meta { margin: 0 0 8px; }
+.record-doc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+.record-doc-chip { display: inline-flex; align-items: center; min-height: 25px; padding: 2px 9px; border: 1px solid var(--rule); background: var(--paper); font-size: 12px; color: var(--ink-2); }
+.record-tools { gap: 8px 10px; margin: 0; }
+.original-dropdown, .record-more { position: relative; font-size: 13px; }
+.original-dropdown > summary, .record-more > summary { cursor: pointer; padding: 9px 12px; border: 1px solid var(--rule); background: var(--paper); min-height: 42px; list-style-position: inside; }
+.original-dropdown[open] { flex-basis: 100%; }
+.original-list { padding: 10px 12px; border: 1px solid var(--rule-soft); border-top: 0; background: var(--paper); }
+.original-item { padding: 7px 0; border-bottom: 1px solid var(--rule-soft); }
+.original-item:last-child { border-bottom: 0; }
+.original-name { flex: 1 1 100%; }
+.record-more > summary { white-space: nowrap; }
+.record-more-panel { padding: 12px; border: 1px solid var(--rule); background: var(--paper); min-width: 260px; }
+.record-more .rename-form { margin-top: 8px; }
+.record-head .btn-primary.btn-auto { width: auto; }
+#analysis-source { margin: 12px 0 0; padding-left: 2px; }
+#demo-warning { margin: 12px 0; }
+@media (max-width: 600px) {
+  .record-head { display: block; }
+  .record-more { margin-top: 8px; }
+  .record-more-panel { min-width: 0; }
+  .record-tools { align-items: stretch; }
+  .record-head .btn-primary.btn-auto { width: 100%; }
+  .original-dropdown { flex-basis: 100%; }
+}
