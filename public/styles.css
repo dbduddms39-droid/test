@@ -917,3 +917,15 @@ a.contract-checklist-link:hover, a.contract-checklist-link:focus-visible { borde
 .compare-pair-fields select { width: 100%; max-width: 100%; min-height: 42px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); padding: 8px; font: inherit; font-size: 14px; }
 .compare-pair > p:last-child { margin: 9px 0 0; }
 @media (max-width:600px) { .compare-pair-fields { grid-template-columns: 1fr; } }
+
+/* QA 피드백: 결과를 숫자와 우선 확인 항목 중심으로 정돈 */
+.result-overview { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:20px 0 24px; padding:20px 16px; border:1px solid var(--rule-soft); background:var(--desk); }
+.result-metric { display:grid; align-content:start; gap:4px; min-width:0; }
+.result-metric strong { font-size:clamp(30px,4vw,42px); font-weight:700; line-height:1.1; font-variant-numeric:tabular-nums; }
+.result-metric span { color:var(--ink-2); font-size:13px; }
+.contract-checklist[open] { margin:16px 0 22px; }
+.contract-checklist-toggle { font-size:14px; font-weight:600; cursor:pointer; }
+.contract-checklist-toggle span { font-size:12px; font-weight:400; color:var(--ink-2); margin-left:8px; }
+.contract-checklist-items { margin-top:16px; }
+.cgroup.is-written, .cgroup.is-calculated { border-top:1px solid var(--rule-soft); padding-top:12px; }
+@media(max-width:600px) { .result-overview { padding:16px 12px; gap:10px; } .contract-checklist-toggle span { display:block; margin:4px 0 0 16px; } }
