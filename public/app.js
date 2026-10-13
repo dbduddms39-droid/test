@@ -1128,6 +1128,7 @@ function topicBadge(doc, t) {
   return statusBadge(t.status, statusLabelFor(doc.docType, t.status));
 }
 const ITEM_IDS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'];
+const TOPIC_CHECKLIST_LABELS = { '01': '임금', '02': '근무시간', '03': '근무장소', '04': '담당업무', '05': '고용형태', '06': '계약기간', '07': '수습기간', '08': '수습 중 임금', '09': '휴일', '10': '연차 유급휴가' };
 const CARD_IDS = new Set(['01', '02', '03', '04', '05', '06', '07', '08']); // 핵심 조건 요약 카드 (휴일·연차는 전체 목록에서)
 const topicOf = (doc, id) => doc.analysis?.topics?.find((t) => t.id === id) ?? null;
 // 화면에 보이는 항목명: 같은 항목은 '임금'으로 통일 (기준표의 주제명은 바꾸지 않고 표시만)
@@ -1406,6 +1407,29 @@ function renderRecord(record, { unsaved = false } = {}) {
     brief: '문서에 적힌 주요 조건이에요. 원문 근거와 전체 조건은 \'자세히 보기\'와 아래에서 볼 수 있어요.',
     none: '',
   }[layout];
+  // 근로계약서 단독 확인: 10개 기준 전체를 원문 기재·계산값·추가 확인으로 구분해 노출.
+  const checklist = $('#contract-checklist');
+  checklist.hidden = layout !== 'contract';
+  if (layout === 'contract') {
+    const contract = analyzedDocs[0];
+    const statuses = {
+      MAIN_FOUND: '기재됨',
+      MAIN_PARTIAL: '내용이 모호함',
+      MAIN_MISSING: '문서에서 확인되지 않음',
+      MAIN_UNAVAILABLE: '분석 확인 불가',
+    };
+    fill($('#contract-checklist-items'), ...ITEM_IDS.map((id) => {
+      const t = topicOf(contract, id);
+      const calculated = t && weeklyCalc(t);
+      const label = calculated ? '계산으로 확인한 조건' : t ? (detailOnly(t) ? '세부 확인 필요' : (statuses[t.status] ?? '분석 확인 불가')) : '분석 확인 불가';
+      const node = el(saved ? 'a' : 'span', {
+        class: 'contract-checklist-link',
+        ...(saved ? { href: ROUTES.item(record.id, id) } : {}),
+      }, el('span', { class: 'contract-checklist-name' }, TOPIC_CHECKLIST_LABELS[id]), el('span', { class: 'contract-checklist-state' }, label));
+      return el('li', { class: 'contract-checklist-item' }, node);
+    }));
+  }
+
   // 등록 완료 (문서 1개)
   const briefDoc = layout === 'brief' ? analyzedDocs[0] : null;
   const done = $('#brief-done');
