@@ -22,13 +22,14 @@ const NEW_CONDITION_ITEMS = new Set(['06', '07', '08']);
 // 정렬·대표 질문 순서 (작을수록 먼저). 실제 적용 조건을 묻는 차이·상충이 먼저다.
 const RANK = {
   different_stated: 0, conflict: 1, contract_unclear: 2, offer_unclear: 3, contract_missing: 4, incomparable: 5,
-  newly_specified: 6, newly_stated: 7, not_mentioned_later: 8, partial_detail: 9, partial: 10, missing: 11,
+  newly_specified: 6, newly_stated: 7, not_mentioned_later: 8, external_reference: 9, partial_detail: 9, partial: 10, missing: 11,
 };
 const PRIMARY_KINDS = new Set(['different_stated', 'conflict', 'contract_unclear', 'offer_unclear', 'contract_missing']);
 const REASON = {
   different_stated: '자료마다 다른 값이 적혀 있어요. 어느 쪽이 실제 적용 조건인지는 판단하지 않았어요.',
   conflict: '한 자료 안에 서로 다른 값이 함께 적혀 있어요.',
   contract_unclear: '근로계약서에 관련 내용은 있지만 구체적인 내용을 확인하기 어려워요.',
+  external_reference: '근로계약서에 연차 부여 기준으로 법령·취업규칙이 명시되어 있어요. 구체적인 일수와 산정방법은 해당 기준에서 확인할 수 있어요.',
   offer_unclear: '안내에 관련 내용은 있지만 정해지지 않았거나 구체적이지 않게 적혀 있어요.',
   contract_missing: '분석한 근로계약서 텍스트에서 관련 내용을 찾지 못했어요. 문서에 실제로 없다거나 잘못됐다는 판단은 아니에요.',
   incomparable: '표기 방식이나 단위가 달라 같은 내용인지 자동으로 판단하지 않았어요. 각 원문을 직접 비교해 주세요.',
@@ -184,6 +185,18 @@ export function deferral(t) {
   };
 }
 
+// 기재된 연차 부여 기준이 다른 규정(법령·취업규칙)을 참조하는 경우.
+// 미기재·불명확 문장으로 오해되지 않도록 표시/확인 질문에서 공통으로 사용한다.
+export function externallyReferencedLeave(t) {
+  if (!t?.visible || t.id !== '10' || t.status !== 'MAIN_PARTIAL') return false;
+  const c = t.criteria?.find((x) => x.id === '10-a');
+  if (!c?.evidence?.length) return false;
+  const quotes = c.evidence.map((e) => e.text).join(' ');
+  return /(법령|근로기준법|법률|취업규칙|사내규정|회사\s*규정)/.test(quotes)
+    && /(따라|준하여|기준으로|의거하여)/.test(quotes)
+    && /(연차|휴가)/.test(quotes);
+}
+
 // ---------- 자료 하나에서 나오는 후보 ----------
 function partialSentence(t, label, docType) {
   const req = t.criteria.filter((c) => c.required && c.status !== 'CONFIRMED' && c.status !== 'NOT_APPLICABLE');
@@ -224,6 +237,7 @@ function docCandidates(doc, label, others) {
       kind = null;
     } else if (t.status === 'MAIN_PARTIAL') {
       if (laterFound && doc.docType !== 'contract') kind = null; // 뒤 자료에 구체적으로 적혀 있으면 앞 자료의 모호함은 묻지 않음
+      else if (externallyReferencedLeave(t)) kind = 'external_reference'; // 기준은 기재됨. 세부 내용 안내만 필요
       else if (detailOnly && weeklyCalc(t)) kind = null; // 원문 값으로 계산해 확인됨(계산값) → 묻지 않는다
       else if (detailOnly) kind = 'partial_detail';
       else if (doc.docType === 'contract') kind = 'contract_unclear';
@@ -239,6 +253,8 @@ function docCandidates(doc, label, others) {
     let sentence;
     if (kind === 'conflict') {
       sentence = `${label}에 ${josa(TOPIC_NAME[t.id], '이/가')} 서로 다르게 적힌 부분이 있습니다${quotes.length ? `(${quotes.slice(0, 2).map((q) => clip(q, 30)).join(' / ')})` : ''}. 실제로 적용되는 내용을 확인 부탁드립니다.`;
+    } else if (kind === 'external_reference') {
+      sentence = '근로계약서에는 연차 유급휴가를 관계 법령과 회사 취업규칙에 따라 부여한다고 적혀 있습니다. 실제 적용되는 부여 일수와 산정방법은 어디에서 확인할 수 있을까요?';
     } else if (t.status === 'MAIN_PARTIAL') {
       sentence = partialSentence(t, label, doc.docType);
     } else {
