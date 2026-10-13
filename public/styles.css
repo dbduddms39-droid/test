@@ -774,3 +774,16 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .doc-original.is-error { color: #8A3B2E; }
 .tag-warn { border-color: #B07A1E; }
 .doc-entry .reanalyze { margin: 8px 0; }
+
+/* v3.2 시작 화면: 저장된 채용 기록 예시 · 이용 방식 카드 (기존 종이 카드·주석 스타일 재사용) */
+.sample-status { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: var(--space-sm) 0 0; font-size: 13px; }
+.sample-status .mono-meta { margin: 0; }
+.sample-file { color: var(--ink-2); } /* 설명용: 링크처럼 보이지 않게 */
+.sample-file::before { content: '▤ '; content: '▤ ' / ''; color: var(--ink-3); }
+.use-cards .flow-doc + .flow-doc::before { content: none; }
+@media (min-width: 768px) { .use-cards { grid-template-columns: repeat(2, 1fr); } }
+.use-card-title { margin: 8px 0 6px; font-size: 18px; font-weight: 600; line-height: 1.45; }
+.use-card-body { font-size: 14px; color: var(--ink-2); }
+.use-together { margin: var(--space-md) 0 0; font-size: 15px; line-height: 24px; }
+.use-together + .flow-foot { margin-top: var(--space-sm); font-size: 13px; }
+.use-together .muted { font-size: 13px; }

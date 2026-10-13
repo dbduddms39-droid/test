@@ -33,12 +33,19 @@ try {
     // A) S01 → S02 직접 입력 → 분석 중 → S04 → S05
     await page.goto(BASE);
     await view('landing'); await shot('S01'); await noOverflow('S01');
-    // S01 시작 화면: 3개 영역(히어로·이어서 확인·마지막 CTA), 첫 화면의 주요 CTA, 자료 하나로 시작, 가상 시연 예시 표시
+    // S01 시작 화면(v3.2): 3개 영역(히어로·이용 방식·마지막 CTA), 첫 화면의 주요 CTA, 자료 하나로 시작, 가상 시연 예시 표시
     const landing = await page.textContent('#view-landing');
-    check(`[${tag}] S01: 헤드라인·설명·보조 문구`, landing.includes('입사 전, 놓치지 말고') && landing.includes('안내받은 내용을 한곳에 기록하고 확인해요') && landing.includes('자료 하나만 있어도 시작할 수 있어요'));
+    check(`[${tag}] S01: 헤드라인·서브 카피·보조 문구`, landing.includes('입사 전, 놓치지 말고') && landing.includes('채용공고를 저장해 두고, 근로계약서까지 안내받은 조건을 이어서 확인해요.') && landing.includes('자료 하나만 있어도 시작할 수 있어요'));
     check(`[${tag}] S01: 주요 CTA가 첫 화면에 보임`, await page.$eval('#landing-start', (e) => e.getBoundingClientRect().bottom <= window.innerHeight));
     check(`[${tag}] S01: 영역 3개 (점검 주제 목록·확인 순서·원문 대조 섹션 없음)`, (await page.$$('#view-landing > *')).length === 3 && !(await page.$('.topic-grid, .steps, figure.compare')));
-    check(`[${tag}] S01: 이어서 확인 예시는 가상 시연 예시로 표시, 하나만 등록해도 된다는 안내`, landing.includes('가상 시연 예시') && landing.includes('실제 분석 결과가 아니에요') && landing.includes('중 하나만 등록해도 괜찮아요') && !/변경됐|변경되었|위반입니다/.test(landing));
+    const hero = await page.textContent('.sample-card');
+    check(`[${tag}] S01: 대표 비주얼은 저장된 채용 기록(가상 시연 예시), 처우 안내를 출발점으로 보이지 않음`, hero.includes('주식회사 파란스텝') && hero.includes('채용공고 저장됨') && hero.includes('원본 PDF 다시 보기') && hero.includes('새 안내 추가하기') && hero.includes('가상 시연 예시') && hero.includes('실제 저장된 기록이 아니에요') && !/합격 안내|처우/.test(hero));
+    check(`[${tag}] S01: 비주얼 안에는 누를 수 있는 요소 없음 (실제 CTA만)`, (await page.$$('.sample-card a, .sample-card button')).length === 0);
+    const flow = await page.textContent('#landing-workflow');
+    check(`[${tag}] S01: 채용공고 저장 / 근로계약서 점검 역할 구분`, flow.includes('채용공고, 저장하고 다시 확인해요.') && flow.includes('주요 근로조건과 PDF 원본을 보관하고') && flow.includes('근로계약서, 중요한 내용을 확인해요.') && flow.includes('필요한 질문을 살펴볼 수 있어요'));
+    check(`[${tag}] S01: 함께 등록했을 때의 가치(비교) 안내`, flow.includes('두 자료를 함께 등록하면 서로 다르게 안내된 조건과 새롭게 구체화된 내용도 확인할 수 있어요.'));
+    check(`[${tag}] S01: 처우 안내는 선택, 순서·필수 표현 없음`, flow.includes('처우·근로조건 안내 문자나 메일은 받은 경우에만 추가하면 돼요.') && !/최종합격 안내|필수|반드시|순서대로/.test(landing) && (await page.$$('#landing-workflow .use-cards > li')).length === 2);
+    check(`[${tag}] S01: 마지막 CTA 보조 문구`, landing.includes('채용공고, 근로계약서 또는 처우 안내 중 하나만 등록해도 괜찮아요.') && !/변경됐|변경되었|위반입니다/.test(landing));
     for (const [sel, hash, v] of [['#landing-records', '#/records', 'records'], ['#landing-start-bottom', '#/new', 'input']]) {
       await page.goto(BASE); await view('landing');
       await page.click(sel); await view(v);
@@ -47,7 +54,7 @@ try {
     await page.goto(BASE); await view('landing');
     await page.click('#landing-how');
     await page.waitForTimeout(600);
-    check(`[${tag}] S01: '어떻게 이어서 확인하나요?' → 이어서 확인 영역으로 이동`, await page.$eval('#landing-workflow', (e) => e.getBoundingClientRect().top < window.innerHeight));
+    check(`[${tag}] S01: '어떻게 이용하나요?' → 이용 방식 영역으로 이동`, await page.$eval('#landing-workflow', (e) => e.getBoundingClientRect().top < window.innerHeight));
     await page.click('#landing-start'); await view('input');
     await page.check('input[name="doc-type"][value="job_posting"]');
     await page.click('#example-btn'); await shot('S02');
