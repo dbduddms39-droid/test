@@ -929,3 +929,6 @@ a.contract-checklist-link:hover, a.contract-checklist-link:focus-visible { borde
 .contract-checklist-items { margin-top:16px; }
 .cgroup.is-written, .cgroup.is-calculated { border-top:1px solid var(--rule-soft); padding-top:12px; }
 @media(max-width:600px) { .result-overview { padding:16px 12px; gap:10px; } .contract-checklist-toggle span { display:block; margin:4px 0 0 16px; } }
+
+/* 숨긴 결과 요약 및 점검표는 author display 규칙보다 hidden을 우선 */
+.result-overview[hidden], .contract-checklist[hidden] { display:none !important; }
