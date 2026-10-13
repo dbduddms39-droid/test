@@ -9,6 +9,7 @@ import {
 import { createStore, suggestAlias, StoreError, DEFAULT_ALIAS, NOTE_MAX, newId } from './store.js';
 import { buildFollowUps, BOUNDARY_TEXT, deferral, detailOnly, weeklyCalc } from './followups.js';
 import { contractSummaryGroup, summaryEvidence, externallyReferencedLeave } from './result-presentation.js';
+import { comparisonPair, comparisonView, replaceComparedDocument } from './comparison-selection.js';
 import { initSampleDownloads } from './samples.js';
 import { DOC_TYPE_LABEL, RELATION_LABEL, docLabels } from './relate.js';
 
@@ -84,6 +85,7 @@ const EXAMPLE_TEXTS = Object.keys(EXAMPLES).map(exampleText);
 // 다른 기록으로 옮겨 가도 입력하던 내용이 다른 기록에 섞이지 않게 한다.
 const blankContext = () => ({ docType: null, text: '', tab: 'paste', file: null, images: [], imagesVersion: 0 });
 const contexts = { new: blankContext() };
+const pairByRecord = new Map();
 
 const state = {
   target: { kind: 'new' }, // 지금 입력 중인 대상: 새 기록 / 기존 기록에 추가 { kind: 'add', recordId }
@@ -1322,11 +1324,15 @@ const formatBytes = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}M
 
 function renderRecord(record, { unsaved = false } = {}) {
   const saved = !unsaved;
-  const fus = buildFollowUps(record);
-  const labels = docLabels(record.documents); // 분석 전·분석 실패 자료도 이름을 붙인다
-  const analyzedDocs = record.documents.filter((d) => d.analysis);
+  const availableDocs = record.documents.filter((d) => d.analysis);
+  const pair = comparisonPair(record.documents, pairByRecord.get(record.id));
+  if (availableDocs.length >= 2 && record.id) pairByRecord.set(record.id, pair);
+  const comparedRecord = availableDocs.length > 2 ? comparisonView(record, pair) : record;
+  const fus = buildFollowUps(comparedRecord);
+  const labels = docLabels(record.documents);
+  const analyzedDocs = comparedRecord.documents.filter((d) => d.analysis);
   const multi = analyzedDocs.length > 1;
-  const mode = recordMode(record);
+  const mode = recordMode(comparedRecord);
   const allFus = [...fus.primary, ...fus.more];
   const fuOf = (topicId) => allFus.find((x) => x.topicIds.includes(topicId));
   const detailLink = (topicId) => (saved ? el('a', { href: ROUTES.item(record.id, topicId), class: 'btn-text sum-more' }, '자세히 →') : null);
@@ -1398,6 +1404,20 @@ function renderRecord(record, { unsaved = false } = {}) {
   fill($('#summary-groups'), reBox);
   $('#now-section').hidden = !reBox;
 
+  const pairBox = $('#compare-pair');
+  pairBox.hidden = availableDocs.length < 3;
+  if (!pairBox.hidden) {
+    for (const [selector, selected] of [['#compare-doc-a', pair[0]], ['#compare-doc-b', pair[1]]]) {
+      const input = $(selector);
+      fill(input, ...availableDocs.map((d) => {
+        const opt = el('option', { value: d.id }, labels[d.id]);
+        opt.selected = d.id === selected;
+        return opt;
+      }));
+      input.value = selected;
+    }
+  }
+
   // 주요 결과 (화면 종류: brief = 채용공고·처우 안내 1개 / contract = 근로계약서 1개 / compare = 자료 2개 이상)
   const hasContract = mode.check;
   // none = 아직 분석된 자료가 없음(분석 전·분석 실패) → 안내만, 아래 '등록된 안내 자료'에서 다시 분석
@@ -1439,11 +1459,11 @@ function renderRecord(record, { unsaved = false } = {}) {
   if (briefDoc) fill(done, el('span', { class: 'tag tag-done' }, saved ? '등록 완료' : '저장 전'), ` ${labels[briefDoc.id]}`, briefDoc.original?.name ? ` · ${briefDoc.original.name}` : '');
 
   const pendingOf = (id) => (sum.pending ?? []).find((x) => x.topicId === id);
-  const ids = ITEM_IDS.filter((id) => visibleIn(record, id));
+  const ids = ITEM_IDS.filter((id) => visibleIn(comparedRecord, id));
   const restIds = [];
   const rows = []; // { id, group, per, relItem, q }
   for (const id of ids) {
-    const per = record.documents.map((d) => ({ d, t: topicOf(d, id) })).filter((x) => x.t?.visible)
+    const per = comparedRecord.documents.map((d) => ({ d, t: topicOf(d, id) })).filter((x) => x.t?.visible)
       // 근로계약서가 없으면 그 항목이 없는 자료는 줄로 넣지 않는다 (자료가 여럿이면 관계 설명에 남음)
       .filter((x) => hasContract || multi || x.t.status !== 'MAIN_MISSING');
     const anyWritten = per.some((x) => x.t.status !== 'MAIN_MISSING');
@@ -1474,7 +1494,7 @@ function renderRecord(record, { unsaved = false } = {}) {
     const calc = calcDoc ? weeklyCalc(calcDoc.t) : null;
     // 카드 아래 한 줄: 자료 사이 관계(비교), 협의 예정(미리보기), 기재 상태(계약서)
     let line = null;
-    if (layout === 'compare') line = relItem?.addedNote ?? cardInsight(record, relItem, labels, fus) ?? pendingOf(id)?.line ?? null;
+    if (layout === 'compare') line = relItem?.addedNote ?? cardInsight(comparedRecord, relItem, labels, fus) ?? pendingOf(id)?.line ?? null;
     else if (layout === 'contract') line = calc ? null : topicExplain(per[0].t, 'contract');
     const calcLine = calc ? el('p', { class: 'ccard-calc small' },
       el('span', { class: 'calc-value' }, `${calc.text} (계산값)`),
@@ -1541,9 +1561,9 @@ function renderRecord(record, { unsaved = false } = {}) {
   fill($('#more-list'), ...extraFus.map((f) => followupCard(f, record, saved)));
   $('#more-box').open = false;
 
-  const writtenIn = (id) => record.documents.some((d) => { const t = topicOf(d, id); return t?.visible && t.status !== 'MAIN_MISSING'; });
-  const allRows = ITEM_IDS.filter((id) => visibleIn(record, id) && (hasContract || writtenIn(id))).map((id) => {
-    const per = record.documents.map((d) => ({ d, t: topicOf(d, id) })).filter((x) => x.t?.visible && (hasContract || multi || x.t.status !== 'MAIN_MISSING'));
+  const writtenIn = (id) => comparedRecord.documents.some((d) => { const t = topicOf(d, id); return t?.visible && t.status !== 'MAIN_MISSING'; });
+  const allRows = ITEM_IDS.filter((id) => visibleIn(comparedRecord, id) && (hasContract || writtenIn(id))).map((id) => {
+    const per = comparedRecord.documents.map((d) => ({ d, t: topicOf(d, id) })).filter((x) => x.t?.visible && (hasContract || multi || x.t.status !== 'MAIN_MISSING'));
     return el('li', { class: 'condition', 'data-item': id },
       el('div', { class: 'condition-head' }, el('h3', {}, itemLabel(record, id))),
       el('ul', { class: 'condition-docs' }, per.map(({ d, t }) => {
@@ -1604,6 +1624,15 @@ function renderRecord(record, { unsaved = false } = {}) {
   $('#record-notice').textContent = `${analyzedDocs[0]?.analysis?.notice ?? ''} 이 기록은 이 브라우저에만 저장돼요. 다른 기기에서는 보이지 않아요.`.trim();
 }
 
+$('#view-record').addEventListener('change', (e) => {
+  if (!currentRecord) return;
+  const input = e.target.closest('#compare-doc-a, #compare-doc-b');
+  if (!input) return;
+  const side = input.id === 'compare-doc-a' ? 0 : 1;
+  const next = replaceComparedDocument(pairByRecord.get(currentRecord.id), side, input.value, currentRecord.documents);
+  pairByRecord.set(currentRecord.id, next);
+  renderRecord(currentRecord);
+});
 $('#view-record').addEventListener('click', async (e) => {
   if (e.target.closest('#save-retry')) {
     e.target.closest('#save-retry').disabled = true;
@@ -1614,6 +1643,8 @@ $('#view-record').addEventListener('click', async (e) => {
     e.target.closest('#copy-confirmed').textContent = ok ? '복사했어요' : '복사하지 못했어요';
     return;
   }
+  const select = e.target.closest('#compare-doc-a, #compare-doc-b');
+  if (select) return;
   const re = e.target.closest('button[data-reanalyze]');
   if (re && currentRecord) return reanalyze(currentRecord, re.dataset.reanalyze, re);
 });
@@ -1688,12 +1719,13 @@ $('#delete-record').addEventListener('click', async () => {
 let memoEditing = null; // 편집 중인 메모 ID 또는 'new'
 
 function renderItem(record, itemId) {
-  const fus = buildFollowUps(record);
+  const comparedRecord = comparisonView(record, pairByRecord.get(record.id));
+  const fus = buildFollowUps(comparedRecord);
   const labels = docLabels(record.documents);
   const rel = fus.relation.items.find((i) => i.id === itemId);
   const label = itemLabel(record, itemId);
-  const multi = record.documents.filter((d) => d.analysis).length > 1;
-  const mode = recordMode(record);
+  const multi = comparedRecord.documents.filter((d) => d.analysis).length > 1;
+  const mode = recordMode(comparedRecord);
   $('#item-back').setAttribute('href', ROUTES.record(record.id));
 
   const head = el('header', { class: 'detail-head' },
@@ -1717,7 +1749,7 @@ function renderItem(record, itemId) {
     '분석 확인 불가: 근거를 원문에서 확인하지 못했거나 글자 인식이 불확실해 확정하지 않았어요. 적혀 있지 않다는 뜻이 아니에요. 기록 화면의 \'등록된 안내 자료\'에서 같은 텍스트로 다시 분석할 수 있어요.') : null;
 
   // 자료별 내용과 원문
-  const docSecs = record.documents.map((d) => {
+  const docSecs = comparedRecord.documents.map((d) => {
     const t = topicOf(d, itemId);
     const title = el('h2', {}, `${labels[d.id]} `, el('span', { class: 'muted small' }, `등록 ${formatDateTime(d.registeredAt)}`));
     if (!d.analysis) {
@@ -1771,7 +1803,7 @@ function renderItem(record, itemId) {
     el('p', { class: 'muted small', id: 'memo-status', role: 'status', 'aria-live': 'polite' }));
 
   // 점검 기준 출처는 근로계약서 점검에만 (채용공고·처우 안내는 기록만 하므로 숨김)
-  const t0 = record.documents.filter((d) => d.docType === 'contract').map((d) => topicOf(d, itemId)).find((t) => t?.visible);
+  const t0 = comparedRecord.documents.filter((d) => d.docType === 'contract').map((d) => topicOf(d, itemId)).find((t) => t?.visible);
   const sourceSec = t0 && mode.check ? el('details', { class: 'source-accordion' },
     el('summary', {}, el('span', { class: 'source-title' }, '이 기준은 어디에서 왔나요?'), el('span', { class: 'toggle-text' }, '자세히 보기')),
     el('div', { class: 'source-body' },
