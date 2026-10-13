@@ -2,7 +2,7 @@
 //   node scripts/e2e-mvpqa.mjs
 // 문서 1개(채용공고·처우 안내 미리보기, 근로계약서 확인), 문서 2개(세 조합), 분석 정확성(임금 차이·같은 금액·계산값·목차 제거),
 // UI(null 노출, 형광펜 범위, 분석 중 문구, 질문 복사, 개인정보 안내 펼치기, 가상 문서 개별·ZIP 다운로드, 가로 넘침).
-// 체험용 가상 문서는 저장소에 없으므로, 다운로드 검사에서는 테스트 중에만 만든 임시 PDF로 응답을 가로채 기능만 확인한다(저장소에 파일을 추가하지 않음).
+// 체험용 가상 문서: 저장소 public/samples/의 원본으로 실제 다운로드·ZIP을 받아 원본과 비교한다 (파일이 없을 때 숨김은 404로 확인).
 import { mkdirSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -39,14 +39,8 @@ const BASE = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch();
 
 try {
-  // 다운로드 검사용 임시 PDF (테스트 중에만, 저장소에 넣지 않음)
-  const maker = await browser.newPage();
-  const fakePdfs = [];
-  for (const f of SAMPLE_FILES) {
-    await maker.setContent(`<p>[가상 테스트 파일] ${f.label}</p>`);
-    fakePdfs.push(await maker.pdf({ format: 'A4' }));
-  }
-  await maker.close();
+  // 체험용 가상 문서 원본 (저장소 public/samples/, 사용자가 제공한 파일 그대로)
+  const originals = SAMPLE_FILES.map((f) => readFileSync(join('public', f.path)));
 
   for (const [w, h, tag] of [[1280, 900, 'desk'], [390, 844, 'mob']]) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, permissions: ['clipboard-read', 'clipboard-write'], acceptDownloads: true });
@@ -202,36 +196,55 @@ try {
     check(`[${tag}] 등록 화면: 가로 넘침 없음, 다운로드 영역 없음`, await noOverflow() && !(await page.$('#view-input #sample-download, #view-input .sample-download')));
 
     // ---- 가상 문서 다운로드 ----
-    // (1) 파일이 없으면 영역을 숨긴다 (깨진 링크 없음)
-    await page.goto(`${BASE}/#/`); await view('landing'); await page.waitForTimeout(400);
+    // (1) 파일이 없으면 영역을 숨긴다 (깨진 링크 없음): 서버 응답을 404로 바꿔 확인
+    await page.route('**/samples/*.pdf', (route) => route.fulfill({ status: 404, body: '' }));
+    await page.goto(`${BASE}/#/`); await page.reload(); await view('landing'); await page.waitForTimeout(400);
     check(`[${tag}] 가상 문서 파일이 없으면 다운로드 영역 숨김`, !(await page.isVisible('#sample-download')));
-    // (2) 파일이 있으면 개별·ZIP 다운로드 (테스트 중에만 만든 임시 PDF로 응답)
-    await page.route('**/samples/*.pdf', (route) => {
-      const k = SAMPLE_FILES.findIndex((f) => route.request().url().endsWith(f.path));
-      return route.fulfill({ status: 200, contentType: 'application/pdf', body: route.request().method() === 'HEAD' ? '' : fakePdfs[k] });
-    });
-    await page.goto(`${BASE}/#/records`); await page.goto(`${BASE}/#/`); await page.reload(); await view('landing');
+    await page.unroute('**/samples/*.pdf');
+    // (2) 실제 파일(public/samples/): 영역 노출, 개별 다운로드, 전체 ZIP — 가로채지 않고 실제 다운로드
+    await page.reload(); await view('landing');
     await page.waitForSelector('#sample-download:not([hidden])', { timeout: 5000 }).catch(() => {});
+    await page.$eval('#sample-download', (e) => e.scrollIntoView());
     const dlBox = await text('#sample-download').catch(() => '');
-    check(`[${tag}] 가상 문서 영역: 제목·가상 문서 안내·CTA 근처, 메인 CTA보다 덜 강조`, await page.isVisible('#sample-download') && dlBox.includes('가상 문서로 직접 체험해 보세요') && dlBox.includes('가상 회사와 가상의 근로조건') && (await text('#sample-zip')) === '전체 다운로드'
+    const inView = await page.$eval('#sample-download', (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= window.innerWidth + 1; });
+    check(`[${tag}] 가상 문서 영역 노출: 제목·가상 문서 안내·링크 3개·전체 다운로드, 화면 안에 들어옴, 메인 CTA보다 덜 강조`, await page.isVisible('#sample-download') && inView && dlBox.includes('가상 문서로 직접 체험해 보세요') && dlBox.includes('가상 회사와 가상의 근로조건')
+      && (await page.$$('#sample-dl-list a')).length === 3 && (await text('#sample-zip')) === '전체 다운로드'
       && await page.$eval('#landing-start-bottom', (b) => getComputedStyle(b).backgroundColor) !== await page.$eval('#sample-zip', (b) => getComputedStyle(b).backgroundColor));
-    // 개별 링크: 헤드리스에서 가로챈 응답의 링크 다운로드는 취소되므로, 링크 주소·저장 이름·받은 바이트를 확인한다
-    const links = await page.$$eval('#sample-dl-list a', (as) => as.map((a) => ({ href: a.getAttribute('href'), name: a.getAttribute('download') })));
+    await page.screenshot({ path: `${OUT}/${tag}-0-download.png` });
+    // 개별 다운로드: 실제로 받은 파일 = 원본 (저장 이름은 링크의 download 속성; 헤드리스는 한글 저장 이름을 'download'로 보고함)
+    const links = await page.$$('#sample-dl-list a');
+    const names = [];
     let singleOk = links.length === 3;
-    for (const [k, l] of links.entries()) {
-      const bytes = await page.evaluate(async (h) => Array.from(new Uint8Array(await (await fetch(h)).arrayBuffer())), l.href);
-      singleOk &&= l.href === SAMPLE_FILES[k].path && l.name === SAMPLE_FILES[k].name && Buffer.compare(Buffer.from(bytes), fakePdfs[k]) === 0;
+    for (const [k, a] of links.entries()) {
+      const [dl] = await Promise.all([page.waitForEvent('download'), a.click()]);
+      names.push(await a.getAttribute('download'));
+      singleOk &&= Buffer.compare(readFileSync(await dl.path()), originals[k]) === 0 && names[k] === SAMPLE_FILES[k].name;
     }
-    check(`[${tag}] 가상 문서 개별 다운로드 3종 (링크·파일 이름·바이트 동일)`, singleOk, links.map((l) => l.name).join(', '));
+    check(`[${tag}] 가상 문서 개별 다운로드 3종: 받은 파일이 원본과 같음`, singleOk, names.join(', '));
+    check(`[${tag}] 두 번째 문서 다운로드 이름 = '처우·근로조건 안내'`, names[1] === '일단확인_가상문서_2_처우·근로조건안내.pdf' && (await text('#sample-dl-list')).includes('처우·근로조건 안내 PDF'), names[1]);
     const [zdl] = await Promise.all([page.waitForEvent('download'), page.click('#sample-zip')]);
     const dir = mkdtempSync(join(tmpdir(), 'ildan-zip-'));
     const zipPath = join(dir, 'samples.zip');
     writeFileSync(zipPath, readFileSync(await zdl.path()));
-    // 표준 ZIP 도구(파이썬 zipfile)로 열어 이름·바이트·CRC 확인 (헤드리스는 한글 저장 이름을 'download'로 보고하므로 이름은 설정값으로 확인)
+    // 표준 ZIP 도구(파이썬 zipfile)로 열어 이름·바이트·CRC 확인
     const listing = JSON.parse(execFileSync('python3', ['-I', '-c', 'import sys,json,zipfile,hashlib\nz=zipfile.ZipFile(sys.argv[1])\nassert z.testzip() is None\nprint(json.dumps([[i.filename, hashlib.sha256(z.read(i)).hexdigest()] for i in z.infolist()]))', zipPath]).toString());
     const sha = (b) => execFileSync('python3', ['-I', '-c', 'import sys,hashlib;print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'], { input: b }).toString().trim();
-    check(`[${tag}] '전체 다운로드' ZIP: 3종 이름·내용 동일, 정상 열림`, SAMPLE_ZIP_NAME.endsWith('.zip') && listing.length === 3 && listing.every(([n, h], k) => n === SAMPLE_FILES[k].name && h === sha(fakePdfs[k])), `${zdl.suggestedFilename()} ${JSON.stringify(listing.map((x) => x[0]))} hashOk=${listing.every(([n, h], k) => h === sha(fakePdfs[k]))}`);
-    await page.unroute('**/samples/*.pdf');
+    const hashOk = listing.length === 3 && listing.every(([, h], k) => h === sha(originals[k]));
+    check(`[${tag}] '전체 다운로드' ZIP: PDF 3개, 안의 파일이 원본과 같음, 정상 열림`, SAMPLE_ZIP_NAME.endsWith('.zip') && hashOk && listing.every(([n], k) => n === SAMPLE_FILES[k].name), `${JSON.stringify(listing.map((x) => x[0]))} hashOk=${hashOk}`);
+    // 받은 PDF를 기존 등록 기능에 올리면 글자를 읽어 확인 화면으로 (분석 요청은 보내지 않음)
+    if (tag === 'desk') {
+      for (const [k, f] of SAMPLE_FILES.entries()) {
+        await page.goto(`${BASE}/#/new`); await view('input');
+        await page.check(`input[name="doc-type"][value="${['job_posting', 'offer', 'contract'][k]}"]`);
+        await page.click('#tab-upload');
+        await page.setInputFiles('#file-input', { name: f.name, mimeType: 'application/pdf', buffer: originals[k] });
+        await view('review');
+        await page.waitForFunction(() => document.querySelector('#review-text').value.length > 50, null, { timeout: 30000 }).catch(() => {});
+        const t = await page.inputValue('#review-text');
+        check(`[${tag}] 가상 문서 ${k + 1} (${f.label}): 업로드하면 글자를 읽어 확인 화면으로`, t.length > 50 && /가상/.test(t), `${t.length}자`);
+      }
+      await page.goto(`${BASE}/#/`); await view('landing');
+    }
 
     // ---- 메인: 이용 방법 두 기능·확인 기준 ----
     const flow = await text('#landing-workflow');
