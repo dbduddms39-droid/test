@@ -25,6 +25,7 @@
           <p class="eyebrow"><span class="mono-meta">§ 입사 전 확인</span><span>채용공고 · 근로계약서</span></p>
           <h1 class="hero-title">입사 전, 놓치지 말고<br><mark class="hero-mark">확인</mark>.</h1>
           <p class="lead">채용공고를 저장해 두고, 근로계약서까지 안내받은 조건을 이어서 확인해요.</p>
+          <p class="hero-support">근로계약서만 있어도 <strong>주요 근로조건의 기재 여부와 구체성</strong>을 확인할 수 있어요.</p>
           <div class="hero-actions">
             <a href="#/new" class="btn-primary btn-auto" id="landing-start">입사조건 확인하기 →</a>
             <a href="#/records" class="btn-editorial btn-auto" id="landing-records">내 기록 보기</a>
@@ -37,13 +38,14 @@
           <p class="sample-status"><span class="mono-meta">채용공고 저장됨</span><span class="sample-file">원본 PDF 다시 보기</span></p>
           <dl class="sample-rows">
             <div><dt>연봉</dt><dd>3,400만~3,800만 원</dd></div>
-            <div><dt>근무시간</dt><dd>주 5일, 09:00~18:00</dd></div>
+            <div><dt>담당업무</dt><dd>브랜드 공식 SNS 채널 운영 및 콘텐츠 기획</dd></div>
             <div><dt>근무지</dt><dd>서울 성동구 (가상 주소)</dd></div>
             <div class="is-marked"><dt>수습 중 급여</dt><dd><mark>최종 합격 시 별도 안내</mark></dd></div>
           </dl>
           <div class="margin-note sample-note">
-            <p class="mono-meta">새 안내 추가하기</p>
-            <p>근로계약서를 받으면 이 기록에 추가해 이어서 확인해요. <span class="muted">(실제 저장된 기록이 아니에요)</span></p>
+            <p class="mono-meta">처우 안내를 추가한 뒤 확인할 내용</p>
+            <p>채용공고에는 <strong>콘텐츠 기획</strong>까지 적혀 있지만, 처우 안내에는 <strong>SNS 채널 운영</strong>만 적혀 있어요. 실제 담당업무 범위를 확인할 수 있어요.</p>
+            <p class="muted small">가상 예시 · 업무가 변경됐다고 단정하지 않아요.</p>
           </div>
         </figure>
       </div>
@@ -65,8 +67,8 @@
           </li>
           <li class="flow-doc use-card">
             <p class="flow-doc-type"><span class="mono-index">B</span> 근로계약서 단독 확인</p>
-            <h3 class="use-card-title">근로계약서 하나로도 확인해요.</h3>
-            <p class="use-card-body">근로계약서 하나만 등록해도 주요 근로조건이 적혀 있는지, 내용이 구체적인지 확인할 수 있어요.</p>
+            <h3 class="use-card-title">근로계약서 단독 확인도 가능해요.</h3>
+            <p class="use-card-body">다른 문서 없이도 주요 근로조건의 기재 여부와 내용의 구체성을 확인해요. 직접 적힌 값과 계산한 값은 구분해서 보여줘요.</p>
           </li>
         </ul>
         <div class="margin-note use-together" id="landing-criteria">
@@ -299,26 +301,34 @@
       <a href="#/records" class="back" id="record-back">← 내 기록 목록</a>
       <p id="save-status" class="save-status" role="status" hidden></p>
       <div class="record-head">
-        <div>
+        <div class="record-head-main">
           <p class="crumb">내 입사조건 기록</p>
           <h1 id="record-title"></h1>
           <p class="record-meta muted small" id="record-meta"></p>
+          <div class="record-doc-chips" id="record-doc-chips" aria-label="등록한 문서 종류"></div>
           <div class="record-tools" id="record-tools">
-            <ul class="original-list" id="original-list" aria-label="원본 PDF"></ul>
-            <a class="btn-editorial btn-auto" id="add-doc-top">새 안내 추가하기 →</a>
+            <a class="btn-primary btn-auto" id="add-doc-top">새 안내 추가하기 →</a>
+            <details class="original-dropdown" id="original-dropdown">
+              <summary>등록 문서·원본 보기</summary>
+              <ul class="original-list" id="original-list" aria-label="등록 문서와 원본 PDF"></ul>
+            </details>
           </div>
         </div>
-        <div class="record-rename" id="record-rename-box">
-          <button type="button" class="btn-text" id="rename-open">기록 이름 바꾸기</button>
-          <form id="rename-form" class="rename-form" hidden>
-            <label for="rename-input" class="small">기록 이름 (회사명·직무 등, 선택)</label>
-            <input id="rename-input" maxlength="40" autocomplete="off">
-            <div class="rename-actions"><button type="submit" class="icon-btn">저장</button><button type="button" class="btn-text" id="rename-cancel">취소</button></div>
-            <p class="error small" id="rename-error" role="alert" hidden></p>
-          </form>
-        </div>
+        <details class="record-more" id="record-more">
+          <summary>⋯ 더보기</summary>
+          <div class="record-more-panel" id="record-rename-box">
+            <button type="button" class="btn-text" id="rename-open">기록 이름 바꾸기</button>
+            <form id="rename-form" class="rename-form" hidden>
+              <label for="rename-input" class="small">기록 이름 (회사명·직무 등, 선택)</label>
+              <input id="rename-input" maxlength="40" autocomplete="off">
+              <div class="rename-actions"><button type="submit" class="icon-btn">저장</button><button type="button" class="btn-text" id="rename-cancel">취소</button></div>
+              <p class="error small" id="rename-error" role="alert" hidden></p>
+            </form>
+          </div>
+        </details>
       </div>
-      <p id="analysis-source" class="analysis-source"></p>
+      <p id="demo-warning" class="analysis-source analysis-source-demo" role="note" hidden></p>
+
 
       <!-- 분석 확인 불가 (같은 텍스트로 다시 분석). 해당 항목이 있을 때만 -->
       <section class="record-section now-check" id="now-section" aria-labelledby="now-title" hidden>
@@ -339,6 +349,7 @@
           <a class="btn-primary btn-auto" id="add-second">비교할 두 번째 문서 추가하기 →</a>
         </div>
       </section>
+      <p id="analysis-source" class="analysis-source"></p>
 
       <!-- C. 상세 확인 (기본으로 접힘) -->
       <section class="record-section details-section" aria-labelledby="details-title">
