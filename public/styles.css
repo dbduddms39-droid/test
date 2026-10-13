@@ -932,3 +932,18 @@ a.contract-checklist-link:hover, a.contract-checklist-link:focus-visible { borde
 
 /* 숨긴 결과 요약 및 점검표는 author display 규칙보다 hidden을 우선 */
 .result-overview[hidden], .contract-checklist[hidden] { display:none !important; }
+
+/* 단독 근로계약서: 추가 확인 0건이어도 원문에서 찾은 핵심을 먼저 노출 */
+.contract-glance { margin: 16px 0 18px; }
+.contract-glance h3 { margin: 0 0 6px; font-size: 17px; }
+.contract-glance-context { margin: 0 0 12px; }
+.contract-glance-list { padding: 0; margin: 0; list-style: none; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+.contract-glance-item { min-width: 0; padding: 14px; border: 1px solid var(--rule-soft); background: var(--paper); }
+.contract-glance-topic { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 3px 8px; font-size: 14px; }
+.contract-glance-state { font-size: 12px; color: var(--ink-2); }
+.contract-glance-value { margin: 8px 0; overflow-wrap: anywhere; word-break: keep-all; font-size: 14px; line-height: 1.6; }
+.contract-glance-reference { margin-top: 12px; padding: 12px 14px; background: var(--desk); border-left: 2px solid var(--annot); }
+.contract-glance-reference strong { font-size: 14px; }
+.contract-glance-reference p { margin: 5px 0; font-size: 13px; color: var(--ink-2); }
+.contract-glance[hidden], .contract-glance-reference[hidden] { display: none !important; }
+@media (max-width: 700px) { .contract-glance-list { grid-template-columns: 1fr; } }
