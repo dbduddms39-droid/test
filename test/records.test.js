@@ -133,9 +133,10 @@ test('T06 공고에 급여 없음 → 오퍼에 처음 등장: 새롭게 적힘,
   const f = buildFollowUps({ documents: [posting, offer] });
   assert.ok(!allFollowUps(f).some((x) => x.topicIds.includes('01') && x.kind === 'different_stated'));
   assert.ok(!allFollowUps(f).some((x) => /변경/.test(x.question ?? '')));
-  // 계약기간·수습처럼 뒤 자료에 처음 적힌 조건은 확정 여부를 묻는 추가 확인 후보
+  // 뒤 자료에 처음 적힌 수습은 상태로 안내하고(새롭게 적힌 조건), 질문이 없으므로 질문 목록에는 넣지 않는다
   assert.equal(item(rel, '07').relation, 'newly_stated');
-  assert.ok(allFollowUps(f).some((x) => x.topicIds.includes('07') && x.kinds.includes('newly_stated')));
+  assert.ok(!allFollowUps(f).some((x) => x.topicIds.includes('07')));
+  assert.ok(f.summary.specified.some((x) => x.topicId === '07'));
 });
 
 test('T07 단위가 불분명한 월 300과 연 3,600만원은 같다고 추측하지 않는다 (비교하기 어려움)', async () => {

@@ -13,6 +13,7 @@ import { createRateLimiter } from '../src/rateLimit.js';
 import { buildExtraction } from '../test/v22-fixtures.js';
 import { QA_POSTING, QA_OFFER, QA_CONTRACT, QA_POSTING_SPECS, QA_OFFER_SPECS, QA_CONTRACT_SPECS, WAGE_FAILURE_MODES } from '../test/qa-docs.js';
 import { DEMO_POSTING, DEMO_OFFER, DEMO_CONTRACT, DEMO_POSTING_SPECS, DEMO_OFFER_SPECS, DEMO_CONTRACT_SPECS } from '../test/demo-docs.js';
+import { GQ_POSTING, GQ_CONTRACT, GQ_POSTING_SPECS, GQ_CONTRACT_SPECS } from '../test/gemini-qa-docs.js';
 
 const OUT = 'e2e-artifacts/qa';
 await mkdir(OUT, { recursive: true });
@@ -29,7 +30,8 @@ const ai = {
   async analyze({ segments, criterionIds }) {
     const text = segments.map((s) => s.text).join('\n');
     const doc = [[QA_POSTING, QA_POSTING_SPECS], [QA_OFFER, QA_OFFER_SPECS], [QA_CONTRACT, QA_CONTRACT_SPECS],
-      [DEMO_POSTING, DEMO_POSTING_SPECS], [DEMO_OFFER, DEMO_OFFER_SPECS], [DEMO_CONTRACT, DEMO_CONTRACT_SPECS]]
+      [DEMO_POSTING, DEMO_POSTING_SPECS], [DEMO_OFFER, DEMO_OFFER_SPECS], [DEMO_CONTRACT, DEMO_CONTRACT_SPECS],
+      [GQ_POSTING, GQ_POSTING_SPECS], [GQ_CONTRACT, GQ_CONTRACT_SPECS]]
       .find(([t]) => segmentText(t).map((s) => s.text).join('\n') === text);
     if (!doc) throw Object.assign(new Error('unknown'), { code: 'api_error' });
     const specs = doc[0] === QA_CONTRACT && wageFailure ? WAGE_FAILURE_MODES.rewritten_value(doc[1]) : doc[1];
@@ -152,6 +154,31 @@ try {
     await page.goto(`${BASE}/#/records/${oldId}`);
     await view('record');
     check(`[${tag}] 예전 형식 기록도 열림·요약 표시`, (await text('#record-title')) === '예전 형식 기록' && (await groupText('different')).includes('급여') && (await text('#condition-list [data-item="02"]')).length > 0);
+
+    // 실제 Gemini QA 결과 재현(모의 응답, test/gemini-qa-docs.js): 공고 → 계약서 바로
+    await page.goto(`${BASE}/#/new`);
+    await register('job_posting', GQ_POSTING);
+    await page.click('#add-doc');
+    await register('contract', GQ_CONTRACT);
+    await page.waitForTimeout(200);
+    const gqDiff = await groupText('different');
+    check(`[${tag}] GQ 유지: 급여·근무시간 서로 다른 안내, 수습 급여 구체화, 계약기간 처음 적힘, 수습기간 같음`, gqDiff.includes('급여') && gqDiff.includes('근무시간') && (await groupText('specified')).includes('수습 중 급여')
+      && (await text('#condition-list [data-item="06"]')).includes('새롭게 적혔어요') && (await text('#condition-list [data-item="07"] .badge-relation')) === '같은 내용으로 안내됐어요');
+    const gq02 = await text('#condition-list [data-item="02"]');
+    check(`[${tag}] GQ 근무시간 카드: 두 자료의 시간 차이가 먼저, '내용이 모호함' 대신 세부 확인 안내`, gq02.includes('09:00~18:00') && gq02.includes('10:00~19:00') && gq02.includes('서로 다른 안내가 있어요')
+      && !gq02.includes('내용이 모호함') && gq02.includes('세부 확인 필요') && gq02.includes('출퇴근 시각·휴게시간은 적혀 있어요. 주 소정근로시간은 별도로 확인이 필요해요.')
+      && gq02.indexOf('자료마다') < gq02.indexOf('주 소정근로시간은 별도로'), gq02.slice(0, 200));
+    const allRow02 = await text('#all-condition-list [data-item="02"]');
+    check(`[${tag}] GQ 전체 목록: 근로계약서 근무시간도 '세부 확인 필요'`, !allRow02.includes('내용이 모호함') && allRow02.includes('세부 확인 필요'));
+    const moreItems = await page.$$eval('#more-list > li', (els) => els.map((e) => ({ text: e.innerText, q: e.querySelectorAll('.q-text').length })));
+    const moreCount = Number((await text('#more-count')).replace(/\D/g, ''));
+    check(`[${tag}] GQ 추가 질문 수 = 실제 질문이 있는 항목 수, 휴일(질문 없음) 제외`, moreCount === moreItems.length && moreItems.every((x) => x.q >= 1) && !moreItems.some((x) => x.text.includes('휴일')), JSON.stringify(moreItems.map((x) => x.text.split('\n')[0])));
+    const dutyQ = await page.$$eval('#view-record .q-text', (els) => els.map((e) => e.value).find((v) => v.includes('업무 범위')) ?? '');
+    check(`[${tag}] GQ 담당업무: 원문 조각으로 구체적인 질문 (같은 조건인지 묻지 않음)`, dutyQ === "채용공고에는 '브랜드 공식 SNS 채널 운영'이, 근로계약서에는 'SNS 콘텐츠 기획·제작 일정 관리'도 적혀 있습니다. 근로계약서에 적힌 업무 범위를 담당하는 것으로 이해하면 될까요?"
+      && !(await text('#view-record')).includes('같은 조건인지 확인 부탁드립니다'), dutyQ);
+    check(`[${tag}] GQ 휴일: 핵심 요약·전체 목록에서 계속 확인 가능`, (await text('#all-condition-list')).includes('휴일') && (await text('#all-condition-list [data-item="09"]')).includes('주휴일 매주 일요일'));
+    check(`[${tag}] GQ 가로 넘침 없음`, await noOverflow());
+    await page.screenshot({ path: `${OUT}/${tag}-gq-posting-contract.png`, fullPage: true });
 
     // 계약서 임금 분석 확인 불가 (QA 증상 재현: 기재값을 바꿔 쓴 AI 응답) → 원인 표시, 값·질문 없음
     wageFailure = true;

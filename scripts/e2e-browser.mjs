@@ -10,6 +10,7 @@ import { mkdir } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { FIXTURES } from '../test/v22-fixtures.js';
+import { detailOnly } from '../public/followups.js';
 
 const PORT = Number(process.env.E2E_PORT) || 3210;
 const REMOTE = process.env.E2E_BASE_URL ? new URL(process.env.E2E_BASE_URL).origin : null;
@@ -96,7 +97,9 @@ try {
   })));
   // 근로계약서의 상위 상태 라벨 (판정 코드는 v2.2 그대로, 화면 라벨만 서비스 기획에 맞춤)
   const SHOWN_LABEL = { MAIN_FOUND: '기재됨', MAIN_PARTIAL: '내용이 모호함', MAIN_MISSING: '문서에서 확인되지 않음', MAIN_UNAVAILABLE: '분석 확인 불가' };
-  const rowsMatch = rows.length === visible.length && rows.every((r, k) => r.id === visible[k].id && r.status === SHOWN_LABEL[visible[k].status]);
+  // 핵심 내용은 적혀 있고 세부 숫자(주 소정근로시간 등)만 직접 적혀 있지 않은 일부 확인은 '세부 확인 필요'로 구분해 보여 준다 (판정은 그대로)
+  const labelFor = (t) => (detailOnly(t) ? '세부 확인 필요' : SHOWN_LABEL[t.status]);
+  const rowsMatch = rows.length === visible.length && rows.every((r, k) => r.id === visible[k].id && r.status === labelFor(visible[k]));
   check('주요 근로조건 = 표시 대상 항목 (계약서는 모든 항목의 기재 상태)', rowsMatch, `표시 ${rows.length}개`);
   for (const t of data.topics) console.log(`      ${t.visible ? '표시' : '숨김'}  ${t.id} ${t.label}: ${t.statusLabel ?? '-'}`);
   check('붙여넣기 결과에는 추출 텍스트 안내가 없음', (await page.$$('#doc-list .input-source-note')).length === 0);

@@ -736,6 +736,7 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .ccard-doc .cd-value { font-weight: 600; word-break: break-word; }
 .cd-value.is-vague { font-weight: 400; color: var(--ink-2); }
 .ccard-insight { margin: 0; font-size: 13px; color: var(--ink-2); }
+.ccard-note { margin: 4px 0 0; color: var(--ink-2); }
 .cd-explain { flex-basis: 100%; color: var(--ink-2); }
 .details-section .fold { border-top: 1px solid var(--rule-soft); padding: 10px 0; }
 .details-section .fold:first-of-type { border-top: 0; }

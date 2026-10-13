@@ -216,6 +216,32 @@ export function normalizeText(text, { place = false } = {}) {
   t = t.replace(/(^|\s)및(?=\s)/g, ',');
   return t.replace(/[\s.,·()[\]{}'"“”‘’\-–~/]/g, '').toLowerCase();
 }
+// 글로 적힌 업무·조건의 나열 비교: 각 자료에 적힌 항목(쉼표·'및'·줄바꿈으로 나뉜 원문 조각)이 상대 자료에도 있는지 본다.
+// 반환 조각은 모두 원문 그대로의 부분 문자열이다(바꿔 쓰지 않음). 안전하게 특정할 수 없으면 null.
+//   { kind: 'same' } / { kind: 'added', onlyB } (뒤 자료에 더 적힘) / { kind: 'removed', onlyA } / { kind: 'different', onlyA, onlyB }
+const TEXT_ITEM_SPLIT = /\s*(?:[,，、;/\n]|\s및\s|\s그리고\s)\s*/;
+const TEXT_FILLER = /(업무|등|전반|담당|수행)+$/; // '운영 업무'·'운영 등'은 '운영'과 같은 표현으로 본다
+const stripItemLabel = (t) => String(t ?? '').replace(/^\s*(?:\d+\.\s*)?[^:：\n]{1,15}[:：]\s*/, '').trim();
+const textItems = (t) => stripItemLabel(t).split(TEXT_ITEM_SPLIT).map((x) => x.trim().replace(/[.。]+$/, '').trim()).filter(Boolean);
+const normItem = (t) => normalizeText(t).replace(TEXT_FILLER, '');
+export function textScope(textA, textB) {
+  const ia = textItems(textA); const ib = textItems(textB);
+  if (!ia.length || !ib.length || ia.length > 6 || ib.length > 6) return null;
+  const wa = ia.map(normItem).join(''); const wb = ib.map(normItem).join('');
+  if (!wa || !wb) return null;
+  if (wa === wb) return { kind: 'same' };
+  const covered = (item, whole) => { const n = normItem(item); return n.length > 0 && whole.includes(n); };
+  const onlyA = ia.filter((x) => !covered(x, wb));
+  const onlyB = ib.filter((x) => !covered(x, wa));
+  if (!onlyA.length && !onlyB.length) return { kind: 'same' };
+  // 너무 긴 조각은 질문에 그대로 넣기 어렵다 → 특정하지 않음
+  if ([...onlyA, ...onlyB].some((x) => x.length > 40)) return null;
+  if (!onlyA.length) return { kind: 'added', onlyB };
+  if (!onlyB.length) return { kind: 'removed', onlyA };
+  return { kind: 'different', onlyA, onlyB };
+}
+const quoteList = (xs) => xs.map((x) => `'${x}'`).join(', ');
+
 // 고용형태 분류
 const EMPLOYMENT = [
   ['정규직', /(정규직|정규\s*채용|무기\s*계약)/],
@@ -328,6 +354,14 @@ function compareConcrete(kind, a, b, docA, docB, L) {
     case 'text': {
       const na = normalizeText(a.text, { place: kind === 'place' }); const nb = normalizeText(b.text, { place: kind === 'place' });
       if (na && na === nb) return SAME('같은 내용으로 적혀 있어요.');
+      if (kind === 'text') {
+        // 나열된 항목 단위로 다시 본다: 표현 차이만 있으면 같음, 한쪽에만 적힌 항목이 있으면 그 원문 조각을 남긴다 (바뀌었다고 단정하지 않음)
+        const scope = textScope(a.text, b.text);
+        if (scope?.kind === 'same') return SAME('표현만 조금 다르고 같은 내용으로 적혀 있어요.');
+        if (scope?.kind === 'added') return { ...UNCLEAR(`${L.B}에는 ${L.A}의 내용에 더해 ${quoteList(scope.onlyB)}도 적혀 있어요. 조건이 바뀌었는지는 판단하지 않아요.`), scope };
+        if (scope?.kind === 'removed') return { ...UNCLEAR(`${L.A}에 적힌 ${quoteList(scope.onlyA)}는 ${L.B}에 따로 적혀 있지 않아요. 없어졌다는 뜻은 아니에요.`), scope };
+        if (scope?.kind === 'different') return { ...UNCLEAR(`${L.A}에는 ${quoteList(scope.onlyA)}, ${L.B}에는 ${quoteList(scope.onlyB)}가 적혀 있어요. 같은 내용인지 자동으로 판단하지 않았어요.`), scope };
+      }
       return UNCLEAR('표현이 달라 같은 조건인지 자동으로 판단하지 않았어요. 두 원문을 비교해 확인해 주세요.');
     }
     case 'employment': {
@@ -424,7 +458,7 @@ export function compareFacet(facet, docA, docB, L) {
   }
   const side = (s) => ({ status: s.status, value: s.kind === 'missing' || s.kind === 'unavailable' ? null : s.raw, evidence: s.evidence, finding: s.finding });
   // 질문·요약에 쓰는 짧은 원문: 원문 기재값, 없으면 첫 인용 줄
-  return { id: facet.id, label: facet.label, state: r.state, stateLabel: STATE_LABEL[r.state], note: r.note, a: side(a), b: side(b) };
+  return { id: facet.id, label: facet.label, state: r.state, stateLabel: STATE_LABEL[r.state], note: r.note, scope: r.scope ?? null, a: side(a), b: side(b) };
 }
 
 // docs: [{ docType, result }] 두 개 (result는 analyzeDocument(..., withCriteria: true) 결과). 순서는 상관없다.

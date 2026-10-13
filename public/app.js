@@ -7,7 +7,7 @@ import {
   buildIssues, resolveIssue, unresolve, blockingIssues, resetTextDependent, resultNotes, isResolved, setSupplement, shiftAnchors, assembleText,
 } from './extract-issues.js';
 import { createStore, suggestAlias, StoreError, DEFAULT_ALIAS, NOTE_MAX, newId } from './store.js';
-import { buildFollowUps, BOUNDARY_TEXT, deferral } from './followups.js';
+import { buildFollowUps, BOUNDARY_TEXT, deferral, detailOnly } from './followups.js';
 import { DOC_TYPE_LABEL, RELATION_LABEL, docLabels } from './relate.js';
 
 // 일단확인 클라이언트 (PRD v3.1: 자료 한 건으로 시작 → 지금 확인할 내용 → 입사 건별 기록 → 새 안내 추가).
@@ -1040,6 +1040,7 @@ function topicSummary(t) {
     const ok = core.filter((c) => c.status === 'CONFIRMED');
     return `핵심 기준(${labelsOf(ok)})이 문서에서 확인돼요.${extra}`;
   }
+  if (detailOnly(t)) return `${detailOnlyText(t)}${extra}`;
   if (t.status === 'MAIN_PARTIAL') {
     const lacking = core.filter((c) => c.status !== 'CONFIRMED' && c.status !== 'NOT_APPLICABLE');
     const conflict = lacking.filter((c) => c.basis === 'conflict');
@@ -1117,6 +1118,8 @@ function topicBadge(doc, t) {
   const def = doc.docType !== 'contract' ? deferral(t) : null;
   if (def) return el('span', { class: 'badge badge-missing badge-deferred', 'data-status': 'DEFERRED' }, def.label);
   if (doc.docType !== 'contract' && t.status === 'MAIN_PARTIAL') return statusBadge('MAIN_FOUND', BRIEF_STATUS_LABEL.MAIN_PARTIAL);
+  // 근로계약서: 핵심 내용은 적혀 있고 세부 숫자(주 소정근로시간 등)만 직접 적혀 있지 않으면 '내용이 모호함' 대신 (판정은 그대로)
+  if (detailOnly(t)) return statusBadge(t.status, '세부 확인 필요');
   return statusBadge(t.status, statusLabelFor(doc.docType, t.status));
 }
 const ITEM_IDS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'];
@@ -1146,8 +1149,17 @@ function unavailableCause(codes = []) {
 }
 
 // 상태 설명: '일부만 적혔어요'로 뭉뚱그리지 않고 무엇이 적혀 있고 무엇이 빠졌는지 말한다
+// 세부 숫자만 빠진 '일부 확인': 적힌 내용과 따로 확인할 세부 항목을 나눠 말한다
+// 예) '출퇴근 시각·휴게시간은 적혀 있어요. 주 소정근로시간은 별도로 확인이 필요해요.'
+function detailOnlyText(t) {
+  const d = detailOnly(t);
+  if (!d) return null;
+  const lacking = t.id === '02' ? '주 소정근로시간' : d.lacking.join('·');
+  return `${d.written.length ? `${josa(d.written.join('·'), '은/는')} 적혀 있어요. ` : ''}${josa(lacking, '은/는')} 별도로 확인이 필요해요.`;
+}
 function topicExplain(t, docType = 'contract') {
   if (!t?.visible) return null;
+  if (docType === 'contract' && detailOnly(t)) return detailOnlyText(t);
   // 채용공고·처우 안내: 협의 예정·분석 확인 불가·한 문서 안의 서로 다른 값만 설명 (빠진 세부 정보는 말하지 않음)
   if (docType !== 'contract' && !deferral(t) && t.status !== 'MAIN_UNAVAILABLE') {
     const conflict = t.criteria.find((c) => c.required && c.basis === 'conflict');
@@ -1433,6 +1445,13 @@ function renderRecord(record, { unsaved = false } = {}) {
           !v || (t.status !== 'MAIN_FOUND' && (d.docType === 'contract' || deferral(t) || t.status === 'MAIN_UNAVAILABLE')) ? topicBadge(d, t) : null);
       })),
       (() => { const line = cardInsight(record, relItem, labels, fus); return line ? el('p', { class: 'ccard-insight' }, line) : null; })(),
+      // 자료 사이 차이를 먼저 보여 주고, 근로계약서의 세부 확인 안내는 그 아래에 따로 (예: 주 소정근로시간)
+      (() => {
+        if (!multi || !relItem?.relation) return null;
+        const c = [...per].reverse().find(({ d }) => d.docType === 'contract');
+        const note = c ? detailOnlyText(c.t) : null;
+        return note ? el('p', { class: 'ccard-note small' }, `${labels[c.d.id]}: ${note}`) : null;
+      })(),
       saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-text' }, '자세히 보기 →') : null));
   }
   $('#condition-list').replaceChildren(...cards);

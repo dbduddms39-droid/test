@@ -116,6 +116,7 @@ function relateFacet(facet, documents, labels) {
   const notes = [];
   const found = new Set();
   let range = null; // { docId, rangeText, unitLabel, inside, inDocs: [docId] }
+  const scopes = []; // [{ a, b, scope }] 비교하기 어려운 자료 쌍과 그 이유(항목 차이)
   // 적혀 있는 자료끼리 등록 순서대로 비교. 구체적인 값끼리는 같음·다름·비교 어려움을 보고,
   // 앞 자료는 구체적이지 않고 뒤 자료가 구체적이면 '구체적으로 적힘'(아래), 둘 다 구체적이지 않으면 관계를 만들지 않는다.
   for (let i = 0; i < present.length; i += 1) {
@@ -143,6 +144,8 @@ function relateFacet(facet, documents, labels) {
       const r = compareFacet(facet, A.view, B.view, { A: labels[A.doc.id], B: labels[B.doc.id] });
       const rel = PAIR_RELATION[r.state] ?? (r.state === 'same' ? 'same' : null);
       if (rel) found.add(rel);
+      // 글로 적힌 항목의 차이(한쪽에만 적힌 원문 조각). 비교하기 어려운 경우의 구체적인 질문에 쓴다
+      if (rel === 'incomparable') scopes.push({ a: A.doc.id, b: B.doc.id, scope: r.scope ?? null });
       if (rel) notes.push(present.length > 2 || rel !== 'same' ? `${labels[A.doc.id]} ↔ ${labels[B.doc.id]}: ${r.note}` : r.note);
     }
   }
@@ -173,7 +176,7 @@ function relateFacet(facet, documents, labels) {
     }
   }
   const relation = RELATION_ORDER.find((r) => found.has(r)) ?? null;
-  return { id: facet.id, label: facet.label, kind: facet.kind, relation, relationLabel: relation ? RELATION_LABEL[relation] : null, notes, sides, specifiedIn, range };
+  return { id: facet.id, label: facet.label, kind: facet.kind, relation, relationLabel: relation ? RELATION_LABEL[relation] : null, notes, sides, specifiedIn, range, scopes };
 }
 
 // documents: 등록 순서대로의 자료 [{ id, docType, analysis: { criteria, ... } }]

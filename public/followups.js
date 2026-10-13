@@ -62,6 +62,19 @@ export const BOUNDARY_TEXT = {
   calc_malformed: '주 소정근로시간 숫자(예: 주 40시간)가 직접 적혀 있지 않아요',
 };
 const DETAIL_ONLY = new Set(['hours_not_quoted', 'calc_missing', 'calc_malformed', 'calc_time_not_quoted', 'calc_break_not_quoted', 'calc_mismatch']);
+// 핵심 내용(출퇴근 시각·휴게시간 등)은 적혀 있고 세부 숫자(주 소정근로시간 등)만 직접 적혀 있지 않아 '일부 확인'인 항목.
+// 판정(MAIN_PARTIAL)은 그대로 두고 화면에서 '전체가 모호함'과 구분해 보여 줄 때 쓴다. 반환: { written: [라벨], lacking: [라벨] } 또는 null
+export function detailOnly(t) {
+  if (t?.status !== 'MAIN_PARTIAL') return null;
+  const lacking = t.criteria.filter((c) => c.required && c.status !== 'CONFIRMED' && c.status !== 'NOT_APPLICABLE');
+  // 예전 기록에는 이유 코드(boundary) 키 자체가 없다: 구체적으로 적혔다고 한(coarse가 아닌) 근무시간 숫자 문제만 같은 경우로 본다
+  const boundaryOf = (c) => (c.boundary !== undefined ? c.boundary
+    : c.id === '02-a' && c.status === 'PARTIAL' && !c.basis && c.finding !== 'coarse' ? 'hours_not_quoted' : null);
+  if (!lacking.length || !lacking.every((c) => DETAIL_ONLY.has(boundaryOf(c)))) return null;
+  const written = t.criteria.filter((c) => c.status === 'CONFIRMED' && c.evidence?.length).map((c) => c.label);
+  if (!written.length) return null; // 적힌 핵심 내용이 없으면 '세부만 빠짐'이 아니다
+  return { written, lacking: lacking.map((c) => c.label) };
+}
 
 const clip = (t, n = 50) => {
   const s = String(t ?? '').replace(/\s+/g, ' ').trim();
@@ -187,6 +200,30 @@ function docCandidates(doc, label, others) {
   return { out, reanalyze, pending };
 }
 
+// 글로 적힌 조건의 차이 질문 (원문 조각만 사용, 업무가 바뀌었거나 늘었다고 단정하지 않음)
+const quoted = (xs) => xs.map((x) => `'${x}'`).join(', ');
+const particle = (word, pair) => josa(word, pair).slice(word.length);
+function scopeQuestion(f, labels, noun) {
+  const last = f.scopes?.at(-1);
+  const sc = last?.scope;
+  if (!sc) return null; // 차이를 안전하게 특정할 수 없음 → 원문 비교 안내만 (질문 없음)
+  const A = labels[last.a]; const B = labels[last.b];
+  const tail = (xs) => particle(xs.at(-1), '이/가');
+  if (f.id === '04-a') {
+    if (sc.kind === 'added') {
+      const aDisp = f.sides.find((x) => x.docId === last.a)?.display;
+      if (!aDisp) return null;
+      return `${A}에는 '${aDisp}'${particle(aDisp, '이/가')}, ${B}에는 ${quoted(sc.onlyB)}도 적혀 있습니다. ${B}에 적힌 업무 범위를 담당하는 것으로 이해하면 될까요?`;
+    }
+    if (sc.kind === 'removed') return `${A}에 적힌 ${quoted(sc.onlyA)}${particle(sc.onlyA.at(-1), '은/는')} ${B}에 따로 적혀 있지 않습니다. 이 업무도 담당하게 되는지 확인 부탁드립니다.`;
+    if (sc.kind === 'different') return `${A}에는 ${quoted(sc.onlyA)}, ${B}에는 ${quoted(sc.onlyB)}${tail(sc.onlyB)} 적혀 있습니다. 실제로 담당하게 될 업무 범위를 확인 부탁드립니다.`;
+    return null;
+  }
+  // 그 밖의 글로 적힌 조건: 양쪽에 서로 다른 내용이 적힌 경우에만
+  if (sc.kind === 'different') return `${A}에는 ${quoted(sc.onlyA)}, ${B}에는 ${quoted(sc.onlyB)}${tail(sc.onlyB)} 적혀 있습니다. 실제 적용되는 ${josa(noun, '을/를')} 확인 부탁드립니다.`;
+  return null;
+}
+
 // ---------- 자료 사이 관계에서 나오는 후보 ----------
 function relationCandidates(rel, labels, documents) {
   const typeOf = Object.fromEntries(documents.map((d) => [d.id, d.docType]));
@@ -209,7 +246,8 @@ function relationCandidates(rel, labels, documents) {
         kind = 'incomparable';
         const groups = groupByValue(present, labels);
         line = groups.map((g) => `${g.docs.join('·')} ${g.value}`).join(' / ');
-        sentence = `${valuePhrase(groups, noun)} 적혀 있습니다. 같은 조건인지 확인 부탁드립니다.`;
+        // 글로 적힌 조건(담당업무 등): 한쪽에만 적힌 원문 조각으로 구체적으로 묻는다. 특정할 수 없으면 묻지 않는다
+        sentence = f.kind === 'text' ? scopeQuestion(f, labels, noun) : `${valuePhrase(groups, noun)} 적혀 있습니다. 같은 조건인지 확인 부탁드립니다.`;
       } else if (f.relation === 'newly_specified' && f.specifiedIn) {
         kind = 'newly_specified';
         const s = f.sides.find((x) => x.docId === f.specifiedIn);
@@ -317,9 +355,12 @@ export function buildFollowUps(record) {
     g07.cands.push(...g08.cands);
   }
   const all = groups.map(finalize).sort((a, b) => (a.tier === b.tier ? 0 : a.tier === 'primary' ? -1 : 1) || RANK[a.kind] - RANK[b.kind] || a.topicIds[0].localeCompare(b.topicIds[0]));
-  const primaryAll = all.filter((x) => x.tier === 'primary');
+  // 질문 목록(우선 확인·추가 질문)에는 실제 질문 문장이 있는 항목만. 처음 적힘·구체화처럼 질문이 없는 상태 안내는
+  // 맨 위 요약·핵심 조건 카드·전체 목록에서 보여 주고 질문 개수에 넣지 않는다.
+  const asked = all.filter((x) => x.question);
+  const primaryAll = asked.filter((x) => x.tier === 'primary');
   const primary = primaryAll.slice(0, PRIMARY_LIMIT);
-  const more = [...primaryAll.slice(PRIMARY_LIMIT), ...all.filter((x) => x.tier !== 'primary')];
+  const more = [...primaryAll.slice(PRIMARY_LIMIT), ...asked.filter((x) => x.tier !== 'primary')];
 
   // 맨 위 요약: 항목마다 한 줄. 자료 사이 관계(다름·구체화)는 확인 질문 여부와 무관하게 보여 준다.
   const firstRel = (topicId, kindsWanted) => relCands.find((c) => c.topicId === topicId && kindsWanted.includes(c.kind));
