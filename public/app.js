@@ -1527,7 +1527,7 @@ function renderRecord(record, { unsaved = false } = {}) {
   };
   const GROUPS = {
     compare: [['different', '서로 다른 조건'], ['specified', '새롭게 기재되거나 확인이 필요한 조건'], ['same', '같은 조건']],
-    contract: [['needs', '추가 확인이 필요한 조건'], ['written', '문서에 기재된 주요 근로조건'], ['calculated', '계산으로 확인한 조건']],
+    contract: [['needs', '추가 확인이 필요한 조건']], // 나머지 10개 조건은 점검표·원문 상세로 확인
     brief: [['preview', null]],
     none: [],
   }[layout];
@@ -1544,6 +1544,39 @@ function renderRecord(record, { unsaved = false } = {}) {
     $('#result-label-main').textContent = layout === 'contract' ? '확인 기준' : '서로 다른 조건';
     $('#result-count-extra').textContent = String(layout === 'contract' ? needsCount : focusCount);
     $('#result-label-extra').textContent = layout === 'contract' ? '추가 확인 항목' : '새로 기재·확인할 조건';
+  }
+  // 추가 확인 0건이면 '0'만 남겨 빈 결과처럼 보이지 않게,
+  // 원문에 적힌 대표 3개 조건과 법령 참조 안내를 짧게 보여준다.
+  const glance = $('#contract-glance');
+  const needsCountContract = layout === 'contract'
+    ? rows.filter((r) => r.group === 'needs').length + sum.unavailable.length
+    : 0;
+  glance.hidden = layout !== 'contract' || needsCountContract !== 0;
+  if (!glance.hidden) {
+    const doc = analyzedDocs[0];
+    $('#contract-glance-context').textContent =
+      '추가 확인 대상으로 분류된 조건은 없어요. 이는 법률 위반 여부나 계약의 적법성을 판정한 결과는 아니에요.';
+    const featured = ['01', '04', '02'].map((id) => rows.find((r) => r.id === id))
+      .filter((r) => r && r.per[0]?.t && !['MAIN_MISSING', 'MAIN_UNAVAILABLE'].includes(r.per[0].t.status));
+    fill($('#contract-glance-list'), ...featured.map((r) => {
+      const t = r.per[0].t;
+      const value = (r.relItem && cardValue(r.relItem, doc.id)?.text) || summaryEvidence(t)?.text || '원문에서 해당 내용을 확인했어요.';
+      const calc = weeklyCalc(t);
+      return el('li', { class: 'contract-glance-item' },
+        el('div', { class: 'contract-glance-topic' },
+          el('strong', {}, TOPIC_CHECKLIST_LABELS[r.id]),
+          el('span', { class: 'contract-glance-state' }, calc ? '원문 기준 계산' : '원문에서 확인')),
+        el('p', { class: 'contract-glance-value' }, value, calc ? ` · ${calc.text}(계산값)` : ''),
+        saved ? el('a', { href: ROUTES.item(record.id, r.id), class: 'btn-text' }, '원문 보기 →') : null);
+    }));
+    const refBox = $('#contract-glance-reference');
+    const refLeave = externallyReferencedLeave(topicOf(doc, '10'));
+    refBox.hidden = !refLeave;
+    fill(refBox, ...(refLeave ? [
+      el('strong', {}, '참고 · 연차 유급휴가'),
+      el('p', {}, '법령·취업규칙을 참조하는 기준이 기재돼 있어요. 구체적인 부여 일수와 운영 방식은 해당 기준에서 별도 확인할 수 있어요.'),
+      saved ? el('a', { class: 'btn-text', href: ROUTES.item(record.id, '10') }, '연차 원문 보기 →') : null,
+    ] : []));
   }
   const groupEls = GROUPS.map(([key, title]) => {
     const list = rows.filter((r) => r.group === key);
@@ -1594,7 +1627,7 @@ function renderRecord(record, { unsaved = false } = {}) {
   fill($('#all-condition-list'), ...allRows);
   $('#all-count').textContent = `${allRows.length}개 항목${restIds.length ? ` · 요약에 없는 항목 ${restIds.length}개 포함` : ''}`;
   $('#all-conditions').open = false;
-  $('#all-conditions').hidden = !allRows.length;
+  $('#all-conditions').hidden = layout === 'contract' || !allRows.length; // 단독 확인에서 10개 점검표와 중복되지 않게
 
   $('#docs-count').textContent = `${record.documents.length}건`;
   fill($('#doc-list'), ...record.documents.map((d, i) => {
