@@ -22,10 +22,10 @@
       <!-- 1. 히어로 -->
       <div class="hero">
         <div class="hero-copy">
-          <p class="eyebrow"><span class="mono-meta">§ 입사 전 확인</span><span>채용공고 · 근로계약서</span></p>
+          <p class="eyebrow"><span class="mono-meta">§ 입사 전 확인</span><span>근로조건 비교 · 계약서 단독 확인</span></p>
           <h1 class="hero-title">입사 전, 놓치지 말고<br><mark class="hero-mark">확인</mark>.</h1>
-          <p class="lead">채용공고를 저장해 두고, 근로계약서까지 안내받은 조건을 이어서 확인해요.</p>
-          <p class="hero-support">근로계약서만 있어도 <strong>주요 근로조건의 기재 여부와 구체성</strong>을 확인할 수 있어요.</p>
+          <p class="lead">채용공고·처우 안내·근로계약서 중 원하는 두 문서의 <strong>근로조건 차이와 원문 근거</strong>를 비교해요.</p>
+          <p class="hero-support">근로계약서 한 장만 있어도 <strong>10개 주요 조건의 기재 상태와 구체성</strong>을 확인할 수 있어요. 문서 등록 순서는 자유로워요.</p>
           <div class="hero-actions">
             <a href="#/new" class="btn-primary btn-auto" id="landing-start">입사조건 확인하기 →</a>
             <a href="#/records" class="btn-editorial btn-auto" id="landing-records">내 기록 보기</a>
@@ -345,6 +345,10 @@
         <p class="brief-done" id="brief-done" hidden></p>
         <h2 id="conditions-title">핵심 조건 요약</h2>
         <p class="muted small" id="conditions-help"></p>
+        <div class="result-overview" id="result-overview" aria-label="주요 결과 숫자 요약" hidden>
+          <div class="result-metric"><strong id="result-count-main">0</strong><span id="result-label-main"></span></div>
+          <div class="result-metric"><strong id="result-count-extra">0</strong><span id="result-label-extra"></span></div>
+        </div>
         <div class="compare-pair" id="compare-pair" hidden>
           <p class="compare-pair-title">비교할 문서 2개 선택</p>
           <div class="compare-pair-fields">
@@ -353,14 +357,11 @@
           </div>
           <p class="small muted">선택한 두 문서만 비교해요. 등록한 문서와 분석 결과는 그대로 보관돼요.</p>
         </div>
-        <section class="contract-checklist" id="contract-checklist" aria-labelledby="contract-checklist-title" hidden>
-          <div class="contract-checklist-head">
-            <h3 id="contract-checklist-title">10개 기준 점검표</h3>
-            <p class="small muted">기재 여부와 구체성을 구분해 확인했어요. 항목을 누르면 원문 근거를 볼 수 있어요.</p>
-          </div>
+        <details class="contract-checklist" id="contract-checklist" hidden>
+          <summary class="contract-checklist-toggle">10개 기준 점검표 전체 보기 <span>기재 여부·구체성·계산값 구분</span></summary>
           <ol class="contract-checklist-items" id="contract-checklist-items"></ol>
-          <p class="small muted contract-checklist-note">계산값은 문서에 직접 적힌 값과 구분했어요. 법률 위반 여부는 판단하지 않아요.</p>
-        </section>
+          <p class="small muted contract-checklist-note">항목을 누르면 원문 근거를 볼 수 있어요. 계산값은 원문에 직접 적힌 값과 구분했으며 법률 위반 여부는 판단하지 않아요.</p>
+        </details>
         <div class="condition-groups" id="condition-list"></div>
         <p class="now-empty" id="conditions-empty" hidden></p>
         <div class="next-step" id="next-step" hidden>
