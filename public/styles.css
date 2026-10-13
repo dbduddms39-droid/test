@@ -4,7 +4,7 @@
 
 /* ---------- 디자인 토큰 (design-handoff/design/DESIGN.md 'Editorial Verification') ---------- */
 :root {
-  --desk: #FCFBF8;          /* 따뜻하고 밝은 종이 배경 */
+  --desk: #FAFAF9;          /* 밝고 중립적인 종이 배경 */
   --paper: #FFFFFF;         /* 선명한 흰 종이 면 */
   --ink: #26251F;           /* 본문 */
   --ink-hover: #3F3D36;
@@ -12,9 +12,9 @@
   --ink-3: #77746C;         /* 메타·힌트 */
   --annot: #426A9B;         /* 교정 주석 파랑 */
   --mark: rgba(249, 220, 108, 0.58); /* 종이 위 형광펜 노랑 */
-  --rule: #E1DDD3;          /* 구획선 */
-  --rule-soft: #EEEAE1;     /* 목록 구분선·문서 테두리 */
-  --wash: #F9F7F0;          /* 옅은 종이 바탕 */
+  --rule: #DEDFDB;          /* 중립 구획선 */
+  --rule-soft: #EAEBE7;     /* 목록 구분선·문서 테두리 */
+  --wash: #F6F6F4;          /* 채도 낮은 보조 바탕 */
   --paper-edge: 0 1px 3px 0 rgba(38, 38, 38, 0.04);
   --sheet-lift: 0 1px 2px rgba(38, 38, 38, 0.05), 0 12px 28px -16px rgba(38, 38, 38, 0.22); /* 책상 위에 놓인 종이 */
   /* 책상 바탕의 은은한 종이 결 (글자 영역인 종이 면에는 쓰지 않음) */
@@ -821,27 +821,26 @@ details.cgroup .ccard { background: transparent; }
 .privacy-more > summary { cursor: pointer; color: var(--annot); }
 .privacy-more p { margin: 6px 0 0 !important; color: var(--ink-2) !important; }
 
-/* ---------- 홈페이지: 종이 질감은 유지하고 밝은 톤과 노란 포인트만 보강 ---------- */
-/* 결과 화면/기록/분석 UI의 정보 위계와 동작은 변경하지 않는다. */
-.view-landing .hero {
-  border-radius: 12px;
-  background: radial-gradient(ellipse at 13% 25%, rgba(248, 216, 106, 0.16), transparent 60%);
+/* ---------- 홈페이지: 밝은 무채색 종이 + 작은 노란 형광펜 포인트 ---------- */
+/* 종이 질감과 콘텐츠/레이아웃은 유지, 넓은 노란 면과 노란 버튼은 사용하지 않는다. */
+.view-landing .hero { border-radius: 12px; background: transparent; }
+.view-landing .eyebrow { background: #FFFFFF; border-color: var(--rule); }
+.view-landing .hero-mark {
+  background: linear-gradient(transparent 66%, rgba(247, 213, 93, 0.55) 66%);
 }
-.view-landing .eyebrow { background: #FFF9E9; border-color: #EDE3C9; }
-.view-landing .hero-mark { background: linear-gradient(transparent 61%, rgba(247, 213, 93, 0.7) 61%); }
 .view-landing .hero .btn-primary,
 .view-landing .landing-cta .btn-primary {
-  background: #F7DD7A; border-color: #E7CC66; color: #26251F; border-radius: 6px;
+  background: var(--ink); border-color: var(--ink); color: #FFFFFF; border-radius: 6px;
 }
 .view-landing .hero .btn-primary:hover,
-.view-landing .landing-cta .btn-primary:hover { background: #F1D36A; }
+.view-landing .landing-cta .btn-primary:hover { background: var(--ink-hover); }
 .view-landing .hero .btn-editorial { background: #FFFFFF; border-radius: 6px; }
-.view-landing .sample-card { background: #FFFFFF; border-color: #E3DED3; }
-.view-landing .sample-note { background: #FFF9E9; border-left-color: #D4B75A; }
-.view-landing .landing-flow { background: #FFFDF7; border-color: #EEE7D8; }
-.view-landing .use-card { background: #FFFFFF; border-top-color: #D4BC61; }
+.view-landing .sample-card { background: #FFFFFF; border-color: var(--rule); }
+.view-landing .sample-note { background: #F8F8F5; border-left-color: var(--annot); }
+.view-landing .landing-flow { background: #FFFFFF; border-color: var(--rule-soft); }
+.view-landing .use-card { background: #FFFFFF; border-top-color: var(--ink); }
 .view-landing .landing-cta {
   border-radius: 12px;
-  background: linear-gradient(180deg, transparent, #FFF9EA);
+  background: #F8F8F6;
 }
 .view-landing .sample-download { background: #FFFFFF; }
