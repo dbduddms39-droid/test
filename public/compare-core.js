@@ -15,7 +15,7 @@
 // 문서 유형 이름 (src/criteria.js의 DOC_TYPES와 같음. 브라우저에서도 쓰려고 이 파일에 둔다)
 const DOC_TYPES = {
   job_posting: { label: '채용공고' },
-  offer: { label: '오퍼·합격 안내' },
+  offer: { label: '처우·근로조건 안내' },
   contract: { label: '근로계약서' },
 };
 

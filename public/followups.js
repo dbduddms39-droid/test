@@ -94,7 +94,7 @@ function groupByValue(sides, labels) {
   }
   return groups;
 }
-// '채용공고에는 09:00~18:00, 오퍼·합격 안내와 근로계약서에는 10:00~19:00'
+// '채용공고에는 09:00~18:00, 처우·근로조건 안내와 근로계약서에는 10:00~19:00'
 function valuePhrase(groups, noun) {
   return groups.map((g, i) => {
     const subject = i === 0 ? `${josa(noun, '이/가')} ` : '';
@@ -158,6 +158,9 @@ function docCandidates(doc, label, others) {
     else if (def && doc.docType !== 'contract') {
       // 협의·추후 안내 예정: 질문 대신 상태를 안내하고, 뒤 자료에서 구체적으로 적혔는지 본다 (근로계약서는 아래에서 질문 후보)
       if (!laterFound) pending.push({ topicId: t.id, docId: doc.id, docLabel: label, label: t.label, def });
+    } else if (doc.docType !== 'contract') {
+      // v3.2: 채용공고·처우 안내는 단독 점검(미기재·불명확 질문)을 하지 않는다. 적힌 조건의 기록과 자료 사이 비교에만 쓴다.
+      kind = null;
     } else if (t.status === 'MAIN_PARTIAL') {
       if (laterFound && doc.docType !== 'contract') kind = null; // 뒤 자료에 구체적으로 적혀 있으면 앞 자료의 모호함은 묻지 않음
       else if (detailOnly) kind = 'partial_detail';
@@ -290,7 +293,8 @@ function finalize(g) {
 // 반환: { primary, more, reanalyze, relation, summary }
 //   summary: 결과 화면 맨 위 요약 — different(서로 다르게 안내됨) / specified(새롭게 구체화·처음 적힘) / needsCheck(여전히 확인 필요) / unavailable
 export function buildFollowUps(record) {
-  const documents = (record.documents ?? []).map((d, i) => ({ ...d, registeredIndex: i }));
+  // 분석 결과가 있는 자료만 (분석 전·분석 실패 자료는 기록에만 있고 비교·질문에 쓰지 않는다)
+  const documents = (record.documents ?? []).filter((d) => d.analysis).map((d, i) => ({ ...d, registeredIndex: i }));
   const rel = relateRecord(documents);
   const cands = [];
   const reanalyze = [];

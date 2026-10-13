@@ -8,7 +8,8 @@
 // - 같은 문서 유형끼리도(예: 오퍼 안내 두 건) 비교한다.
 import { COMPARE_ITEMS, compareFacet, parseTimeRanges, parsePayRange, formatWonRange, parseAmounts, payUnit, formatWon } from './compare-core.js';
 
-export const DOC_TYPE_LABEL = { job_posting: '채용공고', offer: '오퍼·합격 안내', contract: '근로계약서' };
+// 처우·근로조건 안내: 합격 안내 문자·메일 등에 적힌 처우 (선택 자료)
+export const DOC_TYPE_LABEL = { job_posting: '채용공고', offer: '처우·근로조건 안내', contract: '근로계약서' };
 
 export const RELATION_LABEL = {
   same: '같은 내용으로 안내됐어요',
@@ -30,7 +31,7 @@ export const RELATE_ITEMS = [
   { id: '10', label: '연차 유급휴가', facets: [{ id: '10-a', label: '연차 부여', kind: 'text' }] },
 ];
 
-// 자료 이름: 같은 유형이 둘 이상이면 몇 번째 자료인지 붙인다 (예: '오퍼·합격 안내 2')
+// 자료 이름: 같은 유형이 둘 이상이면 몇 번째 자료인지 붙인다 (예: '처우·근로조건 안내 2')
 export function docLabels(documents) {
   const total = {};
   for (const d of documents) total[d.docType] = (total[d.docType] ?? 0) + 1;

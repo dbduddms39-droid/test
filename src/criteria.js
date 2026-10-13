@@ -6,7 +6,7 @@ export const CRITERIA_VERSION = 'v2.2';
 
 export const DOC_TYPES = {
   job_posting: { label: '채용공고' },
-  offer: { label: '오퍼·합격 안내' }, // 합격·오퍼 안내 문자·이메일 포함
+  offer: { label: '처우·근로조건 안내' }, // 합격·오퍼 안내 문자·이메일 포함
   contract: { label: '근로계약서' },
 };
 

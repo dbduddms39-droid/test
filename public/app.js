@@ -8,7 +8,7 @@ import {
 } from './extract-issues.js';
 import { createStore, suggestAlias, StoreError, DEFAULT_ALIAS, NOTE_MAX, newId } from './store.js';
 import { buildFollowUps, BOUNDARY_TEXT, deferral } from './followups.js';
-import { DOC_TYPE_LABEL, RELATION_LABEL } from './relate.js';
+import { DOC_TYPE_LABEL, RELATION_LABEL, docLabels } from './relate.js';
 
 // 일단확인 클라이언트 (PRD v3.1: 자료 한 건으로 시작 → 지금 확인할 내용 → 입사 건별 기록 → 새 안내 추가).
 // - 입력 중인 원문·추출 텍스트는 분석이 끝나 기록으로 저장되기 전까지 이 창의 메모리에만 둔다.
@@ -25,7 +25,8 @@ const ROUTE_NOTICE = {
   aborted: '분석을 중단했어요. 입력한 내용은 그대로 있어요.',
   record_missing: '기록을 찾을 수 없어요. 삭제됐거나 다른 브라우저·기기에서 만든 기록일 수 있어요. 기록은 만든 브라우저에만 저장돼요.',
   store_unavailable: '이 브라우저에서는 기록 저장소를 열 수 없어요(시크릿 창이거나 저장이 막혀 있을 수 있어요). 분석은 할 수 있지만 기록이 저장되지 않아요.',
-  deleted: '기록을 삭제했어요. 자료·확인 텍스트·분석 결과·원문 근거·메모가 함께 지워졌어요.',
+  deleted: '기록을 삭제했어요. 자료·확인 텍스트·분석 결과·원문 근거·원본 PDF·메모가 함께 지워졌어요.',
+  deleted_files_left: '기록은 삭제했지만 이 기록의 원본 PDF 일부를 지우지 못했어요. \'이 브라우저의 모든 기록 삭제\'로 정리할 수 있어요.',
   deleted_all: '이 브라우저의 모든 기록을 삭제했어요.',
 };
 const SUBMIT_HINT = {
@@ -380,7 +381,8 @@ $('#clear-images').addEventListener('click', () => {
 // 추출 결과를 S-03 확인 텍스트로 둔다. 확인·수정하던 텍스트가 있으면 바꿀지 먼저 묻는다(취소하면 그대로 둠).
 // 직접 입력란(S-02)의 내용은 건드리지 않는다.
 // issues: 추출 실패·일부 누락 의심 (extract-issues.js). 처리하기 전에는 S-03에서 분석할 수 없다.
-function applyExtracted(text, source, previews, ownUrls = [], words = [], issues = []) {
+// pdfFile: 올린 PDF 원본 (기록에 원본으로 저장한다. 이미지는 원본을 저장하지 않음)
+function applyExtracted(text, source, previews, ownUrls = [], words = [], issues = [], pdfFile = null) {
   const reviewText = $('#review-text');
   if (state.file && reviewText.value.trim() && reviewText.value !== state.file.original
     && !confirm('확인·수정하던 추출 텍스트를 새로 추출한 내용으로 바꿀까요?')) {
@@ -389,7 +391,7 @@ function applyExtracted(text, source, previews, ownUrls = [], words = [], issues
   }
   const old = state.file;
   // OCR이 알려 준 불확실한 글자의 위치를 추적한다 (사용자가 고치거나 원본과 대조해 확인한 곳만 해제)
-  state.file = { source, original: text, previews, imagesVersion, ownUrls, words, tracker: createTracker(text, words), lastText: text, issues };
+  state.file = { source, original: text, previews, imagesVersion, ownUrls, words, tracker: createTracker(text, words), lastText: text, issues, pdfFile };
   if (old) {
     old.ownUrls.forEach((u) => URL.revokeObjectURL(u));
     // 목록에서 이미 지운 이미지의 URL은 이제 해제한다
@@ -440,7 +442,7 @@ async function extractPdf(file, notes = []) {
     const previews = urls.map((url) => ({ url, name: file.name }));
     // 원본 미리보기가 있는 쪽만 '빈 쪽 확인'을 할 수 있다 (미리보기를 못 그리면 원본 대조가 어려움)
     const issues = buildIssues({ failed: out.failedPages ?? [], suspect: out.suspectPages ?? [], unit: 'pdf', previewed: (page) => page <= urls.length });
-    if (!applyExtracted(out.text, out.method === 'pdf-text' ? 'pdf' : 'ocr', previews, urls, out.uncertainAll ?? [], issues)) {
+    if (!applyExtracted(out.text, out.method === 'pdf-text' ? 'pdf' : 'ocr', previews, urls, out.uncertainAll ?? [], issues, file)) {
       return showUploadStatus('확인·수정하던 추출 텍스트를 그대로 두었어요. 새로 추출한 텍스트로 바꾸려면 다시 추출해 주세요.', 'warn');
     }
     const what = out.method === 'pdf-text' ? `PDF ${out.pages}쪽에서 텍스트를 추출했어요.`
@@ -787,7 +789,7 @@ reviewSubmit.addEventListener('click', () => {
   const c = checkText(text);
   if (!c.ok) return showMsg(reviewError, c.code === 'too_long' ? '문서는 20,000자 이하로 줄여 주세요.' : '분석할 문서 내용을 입력해 주세요.');
   // 사용자가 '이 내용으로 계속하기'를 누른 시점의 확인 텍스트(confirmed_text)만 분석·인용·저장에 쓴다
-  startAnalysis({ target: state.target, ctxKey: state.ctxKey, docType: state.docType, text, inputSource: state.file.source, lowConfidence: ranges, extractNotes: resultNotes(state.file.issues ?? []) });
+  startAnalysis({ target: state.target, ctxKey: state.ctxKey, docType: state.docType, text, inputSource: state.file.source, lowConfidence: ranges, extractNotes: resultNotes(state.file.issues ?? []), originalFile: state.file.pdfFile ?? null });
 });
 
 // ---------- 분석 → 기록 저장 ----------
@@ -825,6 +827,9 @@ const analysisOf = (data) => ({
   lines: data.lines, sourceGuide: data.sourceGuide, notice: data.notice,
 });
 
+// 등록 순서 (v3.2): ① 원본 PDF 저장 → ② 기록·확인 텍스트 저장 → ③ AI 분석 → ④ 분석 결과 저장.
+// 분석에 실패해도 ①②는 남기고 문서 상태를 '분석 실패'로 둔다(같은 텍스트로 재분석, 원본은 다시 저장하지 않음).
+// 기록 저장 자체가 실패하면 예전처럼 분석 결과를 '저장되지 않았어요' 화면에서 보여 주고 다시 저장할 수 있다.
 // 분석은 사용자가 버튼을 눌렀을 때만 시작한다. 라우트 변경·화면 다시 그리기로는 요청하지 않는다.
 async function startAnalysis(payload, { replace = false } = {}) {
   if (state.inflight) return; // 중복 요청 방지
@@ -832,57 +837,149 @@ async function startAnalysis(payload, { replace = false } = {}) {
   state.inflight = { controller };
   state.last = payload;
   state.error = null;
-  $('#analyzing-title').textContent = `${DOC_TYPE_LABEL[payload.docType]}의 근로조건을 정리하고 있어요.`;
+  // 다시 시도해도 같은 자료·기록 ID를 쓴다 (같은 자료를 두 번 만들지 않음)
+  payload.docId ??= newId('doc');
+  if (payload.target.kind === 'new') payload.recordId ??= newId('rec');
+  $('#analyzing-title').textContent = `${DOC_TYPE_LABEL[payload.docType]}을(를) 저장하고 근로조건을 정리하고 있어요.`;
   setAnalyzing();
   go(ROUTES.analyzing, replace);
 
-  const r = await requestAnalysis(payload, controller.signal);
-  state.inflight = null;
-  setAnalyzing();
-  if (controller.signal.aborted || r.aborted) return; // 사용자가 분석 화면을 떠남
-
-  if (!r.ok) {
-    if (classifyAnalyzeFailure(r.status) === 'input') {
-      showMsg(payload.inputSource === 'paste' ? inputError : reviewError, r.message);
-      return go(editRouteFor(payload.inputSource, payload.target), true);
-    }
-    state.error = { message: r.message };
-    return go(ROUTES.error, true);
-  }
   const entry = {
-    id: newId('doc'), // 다시 저장할 때 같은 자료로 보도록 처음에 정한다
+    id: payload.docId,
     docType: payload.docType,
     confirmedText: payload.text,
     inputSource: payload.inputSource,
     extractNotes: payload.extractNotes ?? [],
     lowConfidence: payload.lowConfidence ?? [],
-    mode: r.data.mode ?? null,
-    analysis: analysisOf(r.data),
+    status: 'pending',
   };
-  const pending = { payload, document: entry };
-  if (payload.target.kind === 'new') Object.assign(pending, suggestAliasFor(payload.text), { recordId: newId('rec') });
-  await persist(pending, { replace: true });
+  const naming = payload.target.kind === 'new' ? suggestAliasFor(payload.text) : {};
+  const saved = await saveDocument(payload, entry, naming);
+  const r = await requestAnalysis(payload, controller.signal);
+  state.inflight = null;
+  setAnalyzing();
+
+  if (saved.record) {
+    if (controller.signal.aborted || r.aborted) {
+      // 사용자가 분석을 중단함: 등록을 취소한 것으로 보고 방금 저장한 자료를 되돌린다 (입력은 그대로)
+      await store.removeDocument(saved.record.id, entry.id).catch(() => {});
+      delete entry.original;
+      return;
+    }
+    if (!r.ok && classifyAnalyzeFailure(r.status) === 'input') {
+      // 입력 형식 오류: 같은 텍스트로는 다시 분석할 수 없으므로 방금 저장한 자료를 되돌리고 입력 화면에서 안내 (입력 유지)
+      await store.removeDocument(saved.record.id, entry.id).catch(() => {});
+      delete entry.original;
+      showMsg(payload.inputSource === 'paste' ? inputError : reviewError, r.message);
+      return go(editRouteFor(payload.inputSource, payload.target), true);
+    }
+    // 저장은 끝났다: 입력란은 비우고(같은 자료 중복 등록 방지) 기록 화면으로
+    resetContext(payload.ctxKey);
+    if (state.file === null) $('#review-resume').hidden = true;
+    const origText = originalNote(saved.original, entry.originalError);
+    if (r.ok) {
+      try {
+        const record = await store.replaceAnalysis(saved.record.id, entry.id, { analysis: analysisOf(r.data), mode: r.data.mode ?? null });
+        state.flash = { kind: 'saved', text: `${payload.target.kind === 'add' ? `새 자료를 이 기록에 추가해 저장했어요(이 브라우저). 이전 자료 ${record.documents.length - 1}건은 그대로 있어요.` : '기록을 이 브라우저에 저장했어요. 다음에 이 브라우저에서 \'내 기록\'으로 다시 열 수 있어요.'}${origText}` };
+        return go(ROUTES.record(record.id), true);
+      } catch (err) {
+        // 자료는 저장됐지만 분석 결과를 저장하지 못함 → 분석 결과를 '저장되지 않았어요' 화면에서 다시 저장
+        state.unsaved = { payload, document: { ...entry, analysis: analysisOf(r.data), mode: r.data.mode ?? null, status: 'analyzed' }, ...naming, recordId: payload.recordId, baseRecord: payload.target.kind === 'add' ? withoutDoc(saved.record, entry.id) : null, error: err instanceof StoreError ? err.code : 'save_failed' };
+        return go(ROUTES.unsaved, true);
+      }
+    }
+    await store.markAnalysisFailed(saved.record.id, entry.id, r.status === 0 ? 'network' : r.status).catch(() => {});
+    state.flash = { kind: 'warn', text: `자료는 이 브라우저에 저장했어요.${origText} 분석은 완료하지 못했어요. ${r.message} 아래 '등록된 안내 자료'에서 같은 텍스트로 다시 분석할 수 있어요.` };
+    return go(ROUTES.record(saved.record.id), true);
+  }
+
+  // 기록 저장 실패: 예전 흐름 (분석 결과를 보여 주고 다시 저장)
+  if (controller.signal.aborted || r.aborted) return;
+  if (!r.ok) {
+    if (classifyAnalyzeFailure(r.status) === 'input') {
+      showMsg(payload.inputSource === 'paste' ? inputError : reviewError, r.message);
+      return go(editRouteFor(payload.inputSource, payload.target), true);
+    }
+    state.error = { message: `${r.message} 자료도 저장하지 못했어요(${saved.error === 'quota' ? '저장 공간 부족' : '브라우저 저장 실패'}).` };
+    return go(ROUTES.error, true);
+  }
+  const pending = { payload, document: { ...entry, analysis: analysisOf(r.data), mode: r.data.mode ?? null, status: 'analyzed' }, ...naming, recordId: payload.recordId };
+  let baseRecord = null;
+  if (payload.target.kind === 'add') baseRecord = await store.get(payload.target.recordId).catch(() => null);
+  state.unsaved = { ...pending, baseRecord, error: saved.error };
+  go(ROUTES.unsaved, true);
 }
 const suggestAliasFor = (text) => { const s = suggestAlias(text); return { alias: s.alias, aliasSource: s.source }; };
+const withoutDoc = (record, docId) => (record ? { ...record, documents: record.documents.filter((d) => d.id !== docId) } : null);
+const ORIGINAL_ERROR_TEXT = {
+  quota: '브라우저 저장 공간이 부족해',
+  not_pdf: 'PDF 파일이 아니라서',
+  too_large: '파일이 10MB를 넘어',
+};
+function originalNote(meta, error) {
+  if (meta?.reused) return ' 같은 PDF 원본이 이미 이 기록에 있어 다시 저장하지 않고 연결했어요.';
+  if (meta) return ' 원본 PDF도 이 브라우저에 저장했어요.';
+  if (error) return ` 원본 PDF는 ${ORIGINAL_ERROR_TEXT[error] ?? '저장 중 문제가 생겨'} 저장하지 못했어요(확인한 텍스트는 저장했어요).`;
+  return '';
+}
 
-// 분석 결과를 기록으로 저장한다. 저장을 다시 읽어 확인한 뒤에만 '저장했어요'. 실패하면 저장하지 않은 결과 화면에서 다시 저장할 수 있다.
+// ①② 원본 PDF와 자료 저장. 반환: { record, original } 또는 { error }
+async function saveDocument(payload, entry, naming = {}) {
+  const recordId = payload.target.kind === 'add' ? payload.target.recordId : payload.recordId;
+  let original = null;
+  if (payload.originalFile && !entry.original) {
+    try {
+      original = await store.saveOriginal({ recordId, docId: entry.id, blob: payload.originalFile, name: payload.originalFile.name });
+      const { reused, ...meta } = original;
+      entry.original = meta;
+      entry.originalError = null;
+    } catch (e) {
+      entry.originalError = e instanceof StoreError ? e.code : 'save_failed';
+    }
+  }
+  try {
+    const record = payload.target.kind === 'add'
+      ? await store.addDocument(recordId, entry)
+      : await store.create({ alias: naming.alias, aliasSource: naming.aliasSource, document: { ...entry, recordId } });
+    return { record, original };
+  } catch (err) {
+    // 기록을 저장하지 못했으면 방금 저장한 원본도 남기지 않는다 (다시 저장할 때 새로 저장)
+    if (original && !original.reused) await store.deleteOriginal(original.fileId).catch(() => {});
+    entry.original = null;
+    return { error: err instanceof StoreError ? err.code : 'save_failed' };
+  }
+}
+
+// 저장하지 못한 결과를 다시 저장한다 (원본 PDF도 함께). 저장을 다시 읽어 확인한 뒤에만 '저장했어요'.
 async function persist(pending, { replace = false } = {}) {
   const { payload, document: entry } = pending;
+  let original = null;
   try {
+    if (payload.originalFile && !entry.original) {
+      const recordId = payload.target.kind === 'add' ? payload.target.recordId : pending.recordId;
+      try {
+        original = await store.saveOriginal({ recordId, docId: entry.id, blob: payload.originalFile, name: payload.originalFile.name });
+        const { reused, ...meta } = original;
+        entry.original = meta;
+        entry.originalError = null;
+      } catch (e) { entry.originalError = e instanceof StoreError ? e.code : 'save_failed'; }
+    }
     const record = payload.target.kind === 'add'
       ? await store.addDocument(payload.target.recordId, entry)
       : await store.create({ alias: pending.alias, aliasSource: pending.aliasSource, document: { ...entry, recordId: pending.recordId } });
     state.unsaved = null;
     resetContext(payload.ctxKey);
     if (state.file === null) $('#review-resume').hidden = true;
-    state.flash = { kind: 'saved', text: payload.target.kind === 'add'
+    state.flash = { kind: 'saved', text: `${payload.target.kind === 'add'
       ? `새 자료를 이 기록에 추가해 저장했어요(이 브라우저). 이전 자료 ${record.documents.length - 1}건은 그대로 있어요.`
-      : '기록을 이 브라우저에 저장했어요. 다음에 이 브라우저에서 \'내 기록\'으로 다시 열 수 있어요.' };
+      : '기록을 이 브라우저에 저장했어요. 다음에 이 브라우저에서 \'내 기록\'으로 다시 열 수 있어요.'}${originalNote(original, entry.originalError)}` };
     go(ROUTES.record(record.id), replace);
   } catch (err) {
     // 기존 기록에 추가하다 실패하면, 이전 기록은 그대로이고 새 자료만 저장되지 않은 상태로 보여 준다
+    // 이번에 새로 저장한 원본만 지운다 (이미 기록에 연결된 원본은 그대로)
+    if (original && !original.reused) { await store.deleteOriginal(original.fileId).catch(() => {}); entry.original = null; }
     let baseRecord = null;
-    if (payload.target.kind === 'add') baseRecord = await store.get(payload.target.recordId).catch(() => null);
+    if (payload.target.kind === 'add') baseRecord = await store.get(payload.target.recordId).then((r) => withoutDoc(r, entry.id)).catch(() => null);
     state.unsaved = { ...pending, baseRecord, error: err instanceof StoreError ? err.code : 'save_failed' };
     go(ROUTES.unsaved, replace);
   }
@@ -1010,14 +1107,16 @@ const clipText = (t, n = 80) => {
   return s.length > n ? `${s.slice(0, n)}…` : s;
 };
 // 문서 유형별 상위 상태 라벨: 근로계약서는 기재 상태를, 채용공고·오퍼는 적힌 사실 중심으로 (판정 규칙은 v2.2 그대로)
+// v3.2: 채용공고·처우 안내는 단독 점검을 하지 않으므로 '일부만'·'빠짐' 같은 기재 상태 대신 적혔는지만 보여 준다
 const BRIEF_STATUS_LABEL = {
-  MAIN_FOUND: '적혀 있어요', MAIN_PARTIAL: '일부만 확인돼요', MAIN_MISSING: '이 자료에서는 확인되지 않아요', MAIN_UNAVAILABLE: '분석 확인 불가',
+  MAIN_FOUND: '적혀 있어요', MAIN_PARTIAL: '적혀 있어요', MAIN_MISSING: '이 자료에는 없어요', MAIN_UNAVAILABLE: '분석 확인 불가',
 };
 const statusLabelFor = (docType, status) => (docType === 'contract' ? CONTRACT_STATUS_LABEL : BRIEF_STATUS_LABEL)[status];
 // 항목 상태 배지: 채용공고·오퍼의 협의·추후 안내 예정은 문제처럼 보이지 않게 그 상태 그대로 (근로계약서는 기재 상태 라벨 유지)
 function topicBadge(doc, t) {
   const def = doc.docType !== 'contract' ? deferral(t) : null;
   if (def) return el('span', { class: 'badge badge-missing badge-deferred', 'data-status': 'DEFERRED' }, def.label);
+  if (doc.docType !== 'contract' && t.status === 'MAIN_PARTIAL') return statusBadge('MAIN_FOUND', BRIEF_STATUS_LABEL.MAIN_PARTIAL);
   return statusBadge(t.status, statusLabelFor(doc.docType, t.status));
 }
 const ITEM_IDS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'];
@@ -1047,8 +1146,13 @@ function unavailableCause(codes = []) {
 }
 
 // 상태 설명: '일부만 적혔어요'로 뭉뚱그리지 않고 무엇이 적혀 있고 무엇이 빠졌는지 말한다
-function topicExplain(t) {
+function topicExplain(t, docType = 'contract') {
   if (!t?.visible) return null;
+  // 채용공고·처우 안내: 협의 예정·분석 확인 불가·한 문서 안의 서로 다른 값만 설명 (빠진 세부 정보는 말하지 않음)
+  if (docType !== 'contract' && !deferral(t) && t.status !== 'MAIN_UNAVAILABLE') {
+    const conflict = t.criteria.find((c) => c.required && c.basis === 'conflict');
+    return conflict ? `${conflict.label}에 서로 다른 값이 함께 적혀 있어요.` : null;
+  }
   if (t.status === 'MAIN_FOUND') return null;
   if (t.status === 'MAIN_MISSING') return '관련 내용을 찾지 못했어요.';
   const req = t.criteria.filter((c) => c.required && c.status !== 'CONFIRMED' && c.status !== 'NOT_APPLICABLE');
@@ -1149,8 +1253,8 @@ function cardInsight(record, relItem, labels, fus) {
     if (rel === 'unavailable') return '일부 자료의 근거를 확인하지 못해 비교하지 않았어요. 적혀 있지 않다는 뜻이 아니에요.';
     return f.notes[0] ?? '표기 방식이 달라 같은 조건인지 자동으로 판단하지 않았어요.';
   }
-  const last = [...record.documents].reverse().map((d) => topicOf(d, relItem.id)).find((t) => t?.visible);
-  return topicExplain(last);
+  const lastDoc = [...record.documents].reverse().find((d) => topicOf(d, relItem.id)?.visible);
+  return lastDoc ? topicExplain(topicOf(lastDoc, relItem.id), lastDoc.docType) : null;
 }
 
 function summaryGroup(key, title, items, render) {
@@ -1160,11 +1264,53 @@ function summaryGroup(key, title, items, render) {
     el('ul', { class: 'sum-list' }, items.map(render)));
 }
 
+// 기록 화면의 문서 역할: 근로계약서가 있으면 기재 상태 점검, 채용공고·처우 안내만 있으면 적힌 조건의 기록
+function recordMode(record) {
+  const analyzed = record.documents.filter((d) => d.analysis);
+  const types = new Set(analyzed.map((d) => d.docType));
+  if (types.has('contract')) return { check: true, title: '핵심 조건 요약' };
+  if (types.size === 1 && types.has('job_posting')) return { check: false, title: '저장된 채용조건' };
+  if (types.size === 1 && types.has('offer')) return { check: false, title: '안내된 근로조건' };
+  return { check: false, title: types.size ? '저장된 채용·근로조건' : '저장된 근로조건' };
+}
+const docStatusOf = (d) => d.status ?? (d.analysis ? 'analyzed' : 'pending');
+const DOC_STATUS_TEXT = { pending: '분석 전', analysis_failed: '분석 실패' };
+
+// 원본 PDF 보기·다운로드: 저장된 Blob 그대로 연결한다. 화면을 다시 그릴 때 이전 주소는 해제.
+let originalUrls = [];
+function releaseOriginalUrls() { for (const u of originalUrls) URL.revokeObjectURL(u); originalUrls = []; }
+function originalLinks(d, label) {
+  const o = d.original;
+  return el('li', { class: 'original-item', 'data-file': o.fileId },
+    el('span', { class: 'original-name' }, `${label} 원본 · ${o.name}`, el('span', { class: 'muted small' }, ` (${formatBytes(o.size)})`)),
+    el('a', { class: 'btn-text original-view', target: '_blank', rel: 'noopener', 'aria-disabled': 'true' }, '원본 PDF 보기'),
+    el('a', { class: 'btn-text original-download', download: o.name, 'aria-disabled': 'true' }, '다운로드'),
+    el('span', { class: 'muted small original-status', role: 'status' }));
+}
+async function attachOriginalUrls(root) {
+  for (const li of root.querySelectorAll('.original-item[data-file]')) {
+    let blob = null;
+    try { blob = (await store.getOriginal(li.dataset.file))?.blob ?? null; } catch { blob = null; }
+    if (!li.isConnected) return;
+    if (!blob) {
+      li.querySelectorAll('a').forEach((a) => a.remove());
+      li.querySelector('.original-status').textContent = '원본 파일을 이 브라우저에서 찾지 못했어요(브라우저 데이터가 지워졌을 수 있어요).';
+      continue;
+    }
+    const url = URL.createObjectURL(blob);
+    originalUrls.push(url);
+    li.querySelectorAll('a').forEach((a) => { a.href = url; a.removeAttribute('aria-disabled'); });
+  }
+}
+const formatBytes = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.max(1, Math.round(n / 1024))}KB`);
+
 function renderRecord(record, { unsaved = false } = {}) {
   const saved = !unsaved;
   const fus = buildFollowUps(record);
-  const labels = fus.relation.labels;
-  const multi = record.documents.length > 1;
+  const labels = docLabels(record.documents); // 분석 전·분석 실패 자료도 이름을 붙인다
+  const analyzedDocs = record.documents.filter((d) => d.analysis);
+  const multi = analyzedDocs.length > 1;
+  const mode = recordMode(record);
   const allFus = [...fus.primary, ...fus.more];
   const fuOf = (topicId) => allFus.find((x) => x.topicIds.includes(topicId));
   const detailLink = (topicId) => (saved ? el('a', { href: ROUTES.item(record.id, topicId), class: 'btn-text sum-more' }, '자세히 →') : null);
@@ -1204,6 +1350,15 @@ function renderRecord(record, { unsaved = false } = {}) {
   $('#rename-form').hidden = true;
   $('#rename-open').hidden = false;
 
+  // 기록 상단: 원본 PDF 보기·다운로드 · 새 안내 추가
+  releaseOriginalUrls();
+  const withOriginal = saved ? record.documents.filter((d) => d.original?.fileId) : [];
+  $('#original-list').replaceChildren(...withOriginal.map((d) => originalLinks(d, labels[d.id])));
+  $('#original-list').hidden = !withOriginal.length;
+  $('#record-tools').hidden = unsaved;
+  if (saved) $('#add-doc-top').setAttribute('href', ROUTES.add(record.id));
+  if (withOriginal.length) attachOriginalUrls($('#original-list'));
+
   const demo = record.documents.some((d) => d.mode === 'demo');
   const source = $('#analysis-source');
   source.textContent = demo
@@ -1236,21 +1391,30 @@ function renderRecord(record, { unsaved = false } = {}) {
         el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null) : null,
   ].filter(Boolean);
   $('#summary-groups').replaceChildren(...groups);
+  // 채용공고·처우 안내만 있는 기록: 적힌 조건(카드)을 먼저, 확인할 내용은 자료 사이 차이가 있을 때만
+  const nowSec = $('#now-section'); const condSec = $('#conditions-section');
+  if (mode.check) condSec.before(nowSec); else nowSec.before(condSec);
+  nowSec.hidden = !mode.check && groups.length === 0;
   $('#now-empty').hidden = groups.length > 0;
   $('#now-empty').textContent = fus.more.length
     ? '지금 바로 확인할 내용은 없어요. 필요하면 아래 \'상세 확인\'의 추가 질문을 살펴보세요.'
     : '이번 자료에서 별도로 제안할 확인 사항이 없어요. 아래 핵심 조건과 원문을 함께 확인해 주세요.';
 
   // B. 핵심 조건 요약 카드 (값은 검증된 원문만, 원문 근거·세부 판정은 '자세히 보기'에서)
-  const hasContract = record.documents.some((d) => d.docType === 'contract');
+  const hasContract = mode.check;
+  $('#conditions-title').textContent = mode.title;
   $('#conditions-help').textContent = multi
     ? '항목마다 자료별 값과 자료 사이 관계를 보여 드려요. 관계는 적힌 문구의 차이이며 회사가 조건을 바꿨다는 판단이 아니에요.'
-    : '항목마다 문서에 적힌 값을 보여 드려요. 원문 근거와 세부 판정은 \'자세히 보기\'에서 확인할 수 있어요.';
+    : hasContract
+      ? '항목마다 문서에 적힌 값을 보여 드려요. 원문 근거와 세부 판정은 \'자세히 보기\'에서 확인할 수 있어요.'
+      : '문서에 실제로 적힌 조건만 원문 그대로 정리했어요. 적히지 않은 조건을 따로 표시하지 않아요. 원문 근거는 \'자세히 보기\'에서 확인할 수 있어요.';
   const cards = [];
   const restIds = [];
   for (const id of ITEM_IDS) {
     if (!visibleIn(record, id)) continue;
-    const per = record.documents.map((d) => ({ d, t: topicOf(d, id) })).filter((x) => x.t?.visible);
+    const per = record.documents.map((d) => ({ d, t: topicOf(d, id) })).filter((x) => x.t?.visible)
+      // 채용공고·처우 안내만 있는 기록에서는 그 항목이 없는 자료를 카드에 줄로 넣지 않는다 (자료가 여럿이면 관계 설명에 남음)
+      .filter((x) => hasContract || multi || x.t.status !== 'MAIN_MISSING');
     const anyWritten = per.some((x) => x.t.status !== 'MAIN_MISSING');
     if (!CARD_IDS.has(id) || (!anyWritten && !hasContract)) { restIds.push(id); continue; }
     const relItem = fus.relation.items.find((i) => i.id === id);
@@ -1265,12 +1429,19 @@ function renderRecord(record, { unsaved = false } = {}) {
         return el('li', { class: 'ccard-doc' },
           el('span', { class: 'cd-doc' }, labels[d.id]),
           v ? el('span', { class: `cd-value${v.vague ? ' is-vague' : ''}` }, v.text) : null,
-          !v || t.status !== 'MAIN_FOUND' ? topicBadge(d, t) : null);
+          // 값이 보이면 '적혀 있어요' 배지는 생략 (채용공고·처우 안내는 협의 예정·분석 확인 불가만 표시)
+          !v || (t.status !== 'MAIN_FOUND' && (d.docType === 'contract' || deferral(t) || t.status === 'MAIN_UNAVAILABLE')) ? topicBadge(d, t) : null);
       })),
       (() => { const line = cardInsight(record, relItem, labels, fus); return line ? el('p', { class: 'ccard-insight' }, line) : null; })(),
       saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-text' }, '자세히 보기 →') : null));
   }
   $('#condition-list').replaceChildren(...cards);
+  // 적힌 근로조건이 하나도 없으면 (예: 근로조건 없이 합격만 알린 안내) 오류가 아니라 그 사실만 알린다
+  const condEmpty = $('#conditions-empty');
+  condEmpty.hidden = cards.length > 0;
+  condEmpty.textContent = !analyzedDocs.length
+    ? '아직 분석된 자료가 없어요. 아래 \'등록된 안내 자료와 원문\'에서 같은 텍스트로 다시 분석할 수 있어요.'
+    : hasContract ? '요약할 근로조건 항목이 없어요.' : '근로조건이 발견되지 않았어요. 등록한 자료에 급여·근무시간 같은 조건이 적혀 있지 않았어요. 원문은 아래에서 볼 수 있어요.';
 
   // C. 상세 확인 (접힘): 추가 질문 / 전체 근로조건 목록 / 등록 자료와 원문
   const shownInSummary = new Set([...sum.different, ...sum.specified, ...sum.needsCheck].map((x) => x.topicId));
@@ -1280,8 +1451,9 @@ function renderRecord(record, { unsaved = false } = {}) {
   $('#more-list').replaceChildren(...extraFus.map((f) => followupCard(f, record, saved)));
   $('#more-box').open = false;
 
-  const allRows = ITEM_IDS.filter((id) => visibleIn(record, id)).map((id) => {
-    const per = record.documents.map((d) => ({ d, t: topicOf(d, id) })).filter((x) => x.t?.visible);
+  const writtenIn = (id) => record.documents.some((d) => { const t = topicOf(d, id); return t?.visible && t.status !== 'MAIN_MISSING'; });
+  const allRows = ITEM_IDS.filter((id) => visibleIn(record, id) && (hasContract || writtenIn(id))).map((id) => {
+    const per = record.documents.map((d) => ({ d, t: topicOf(d, id) })).filter((x) => x.t?.visible && (hasContract || multi || x.t.status !== 'MAIN_MISSING'));
     return el('li', { class: 'condition', 'data-item': id },
       el('div', { class: 'condition-head' }, el('h3', {}, itemLabel(record, id))),
       el('ul', { class: 'condition-docs' }, per.map(({ d, t }) => {
@@ -1290,37 +1462,53 @@ function renderRecord(record, { unsaved = false } = {}) {
           el('span', { class: 'cd-doc' }, labels[d.id]),
           topicBadge(d, t),
           ev ? el('q', { class: 'cd-quote' }, clipText(ev.text)) : null,
-          (() => { const x = topicExplain(t); return x ? el('span', { class: 'cd-explain small' }, x) : null; })());
+          (() => { const x = topicExplain(t, d.docType); return x ? el('span', { class: 'cd-explain small' }, x) : null; })());
       })),
       saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-text' }, '자세히 보기 →') : null);
   });
   $('#all-condition-list').replaceChildren(...allRows);
   $('#all-count').textContent = `${allRows.length}개 항목${restIds.length ? ` · 요약에 없는 항목 ${restIds.length}개 포함` : ''}`;
   $('#all-conditions').open = false;
+  $('#all-conditions').hidden = !allRows.length;
 
   $('#docs-count').textContent = `${record.documents.length}건`;
   $('#doc-list').replaceChildren(...record.documents.map((d, i) => {
     const pendingDoc = unsaved && i === record.documents.length - 1;
-    return el('li', { class: 'doc-entry', 'data-doc': d.id },
-      el('p', { class: 'doc-entry-head' }, el('span', { class: 'mono-index' }, `자료 ${i + 1}`), el('strong', {}, labels[d.id]), pendingDoc ? el('span', { class: 'tag' }, '저장 안 됨') : null),
+    const st = docStatusOf(d);
+    const lines = d.analysis?.lines ?? (d.confirmedText ?? '').split('\n').map((text, k) => ({ id: k + 1, text }));
+    return el('li', { class: 'doc-entry', 'data-doc': d.id, 'data-status': st },
+      el('p', { class: 'doc-entry-head' }, el('span', { class: 'mono-index' }, `자료 ${i + 1}`), el('strong', {}, labels[d.id]),
+        pendingDoc ? el('span', { class: 'tag' }, '저장 안 됨') : null,
+        !pendingDoc && DOC_STATUS_TEXT[st] ? el('span', { class: 'tag tag-warn doc-status' }, DOC_STATUS_TEXT[st]) : null),
+      // 원본 PDF 상태: 저장 완료 / 저장하지 못함 / 예전 기록(원본 없음)
+      d.original ? el('p', { class: 'small doc-original' }, `원본 저장 완료 · ${d.original.name}${st === 'analysis_failed' ? ' · 분석 실패' : ''}`)
+        : d.originalError ? el('p', { class: 'small doc-original is-error' }, `원본 PDF는 ${ORIGINAL_ERROR_TEXT[d.originalError] ?? '저장 중 문제가 생겨'} 저장하지 못했어요. 확인한 텍스트는 저장돼 있어요.`)
+          : d.inputSource === 'pdf' && !pendingDoc ? el('p', { class: 'muted small doc-original is-legacy' }, '이전에 등록한 자료는 원본 파일이 보관되어 있지 않아요.') : null,
+      saved && st !== 'analyzed' ? el('div', { class: 'reanalyze' },
+        el('p', { class: 'small' }, st === 'analysis_failed' ? `분석을 완료하지 못했어요. 저장된 텍스트${d.original ? '와 원본' : ''}은 그대로예요.` : '아직 분석하지 않은 자료예요.'),
+        el('button', { type: 'button', class: 'icon-btn', 'data-reanalyze': d.id }, st === 'analysis_failed' ? '같은 텍스트로 다시 분석하기' : '분석하기'),
+        el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null,
       el('p', { class: 'muted small' }, [
         INPUT_SOURCE_LABEL[d.inputSource] ?? '확인한 텍스트',
         pendingDoc ? null : `등록 ${formatDateTime(d.registeredAt)}`,
-        d.analyzedAt && d.registeredAt && d.analyzedAt > d.registeredAt && !pendingDoc ? `다시 분석 ${formatDateTime(d.analyzedAt)}` : null,
+        // v3.2부터 분석 결과는 등록 직후 저장되므로, 1분 넘게 지난 뒤의 분석만 '다시 분석'으로 표시
+        d.analyzedAt && d.registeredAt && Date.parse(d.analyzedAt) - Date.parse(d.registeredAt) > 60_000 && !pendingDoc && st === 'analyzed' ? `다시 분석 ${formatDateTime(d.analyzedAt)}` : null,
       ].filter(Boolean).join(' · ')),
       d.inputSource !== 'paste' ? el('p', { class: 'small input-source-note' }, [EXTRACTED_NOTE[d.inputSource] ?? '', ...(d.extractNotes ?? [])].join(' ')) : null,
       el('details', { class: 'doc-text' },
-        el('summary', {}, `확인한 텍스트 보기 (${d.analysis?.lines?.length ?? 0}줄)`),
-        sourcePanelLines(d.analysis?.lines ?? [], new Map())));
+        el('summary', {}, `확인한 텍스트 보기 (${lines.length}줄)`),
+        sourcePanelLines(lines, new Map())));
   }));
-  $('#docs-box').open = unsaved; // 저장하지 못한 결과는 자료를 바로 볼 수 있게
+  $('#original-notice').hidden = !record.documents.some((d) => d.original || d.inputSource === 'pdf');
+  // 저장하지 못한 결과·분석이 끝나지 않은 자료·채용공고/처우 안내만 있는 기록은 자료와 원문을 펼쳐 둔다
+  $('#docs-box').open = unsaved || !mode.check || record.documents.some((d) => docStatusOf(d) !== 'analyzed');
 
   // D. 필요할 때 하기
   $('#view-record .record-actions').hidden = unsaved;
   if (saved) $('#add-doc').setAttribute('href', ROUTES.add(record.id));
   $('#copy-all-questions').hidden = !allFus.some((f) => f.question);
   $('#actions-status').textContent = '';
-  $('#record-notice').textContent = `${record.documents[0]?.analysis?.notice ?? ''} 이 기록은 이 브라우저에만 저장돼요. 다른 기기에서는 보이지 않아요.`;
+  $('#record-notice').textContent = `${analyzedDocs[0]?.analysis?.notice ?? ''} 이 기록은 이 브라우저에만 저장돼요. 다른 기기에서는 보이지 않아요.`.trim();
 }
 
 $('#view-record').addEventListener('click', async (e) => {
@@ -1346,7 +1534,8 @@ async function reanalyze(record, docId, btn) {
   const r = await requestAnalysis({ docType: doc.docType, text: doc.confirmedText, lowConfidence: doc.lowConfidence });
   if (!r.ok) {
     btn.disabled = false;
-    status.textContent = `다시 분석하지 못했어요. ${r.message} 이전 결과는 그대로예요.`;
+    status.textContent = doc.analysis ? `다시 분석하지 못했어요. ${r.message} 이전 결과는 그대로예요.` : `분석하지 못했어요. ${r.message} 저장된 자료는 그대로예요.`;
+    if (!doc.analysis) await store.markAnalysisFailed(record.id, docId, r.status === 0 ? 'network' : r.status).catch(() => {});
     return;
   }
   try {
@@ -1389,14 +1578,15 @@ $('#copy-all-questions').addEventListener('click', async () => {
 });
 $('#delete-record').addEventListener('click', async () => {
   if (!currentRecord) return;
-  if (!confirm(`'${currentRecord.alias}' 기록을 삭제할까요? 등록한 자료·확인한 텍스트·분석 결과·원문 근거·답변 메모가 모두 지워지고 되돌릴 수 없어요.`)) return;
+  if (!confirm(`'${currentRecord.alias}' 기록을 삭제할까요? 등록한 자료·확인한 텍스트·분석 결과·원문 근거·원본 PDF·답변 메모가 모두 지워지고 되돌릴 수 없어요.`)) return;
   try {
-    await store.remove(currentRecord.id);
+    pendingNotice = 'deleted';
+    try { await store.remove(currentRecord.id); } catch (err) { if (err?.code !== 'files_cleanup_failed') throw err; pendingNotice = 'deleted_files_left'; }
     delete contexts[currentRecord.id];
     currentRecord = null;
-    pendingNotice = 'deleted';
     go(ROUTES.records);
   } catch {
+    pendingNotice = null;
     $('#actions-status').textContent = '기록을 삭제하지 못했어요. 잠시 후 다시 시도해 주세요.';
   }
 });
@@ -1406,10 +1596,11 @@ let memoEditing = null; // 편집 중인 메모 ID 또는 'new'
 
 function renderItem(record, itemId) {
   const fus = buildFollowUps(record);
-  const labels = fus.relation.labels;
+  const labels = docLabels(record.documents);
   const rel = fus.relation.items.find((i) => i.id === itemId);
   const label = itemLabel(record, itemId);
-  const multi = record.documents.length > 1;
+  const multi = record.documents.filter((d) => d.analysis).length > 1;
+  const mode = recordMode(record);
   $('#item-back').setAttribute('href', ROUTES.record(record.id));
 
   const head = el('header', { class: 'detail-head' },
@@ -1436,20 +1627,31 @@ function renderItem(record, itemId) {
   const docSecs = record.documents.map((d) => {
     const t = topicOf(d, itemId);
     const title = el('h2', {}, `${labels[d.id]} `, el('span', { class: 'muted small' }, `등록 ${formatDateTime(d.registeredAt)}`));
+    if (!d.analysis) {
+      return el('section', { class: 'doc-block', 'data-doc': d.id }, title,
+        el('p', { class: 'muted' }, `${DOC_STATUS_TEXT[docStatusOf(d)] ?? '분석 전'}: 이 자료는 아직 분석 결과가 없어요. 기록 화면의 '등록된 안내 자료'에서 분석할 수 있어요.`));
+    }
     if (!t?.visible) {
       return el('section', { class: 'doc-block', 'data-doc': d.id }, title,
         el('p', { class: 'muted' }, itemId === '08' ? '이 자료에는 수습이 적용된다고 적혀 있지 않아 수습 중 급여를 따로 확인하지 않았어요.' : '이 자료에서는 이 항목을 확인하지 않았어요.'));
     }
     const marks = topicMarks(t);
-    const core = t.criteria.filter((c) => c.role === 'C');
-    const extra = t.criteria.filter((c) => c.role === 'D');
+    // 채용공고·처우 안내: 원문 근거가 있는 세부 기준만 (적히지 않은 기준을 '미기재'로 늘어놓지 않음)
+    const brief = d.docType !== 'contract';
+    const shown = (c) => !brief || c.evidence.length > 0 || c.status === 'UNAVAILABLE';
+    const core = t.criteria.filter((c) => c.role === 'C' && shown(c));
+    const extra = t.criteria.filter((c) => c.role === 'D' && shown(c));
+    if (brief && t.status === 'MAIN_MISSING') {
+      return el('section', { class: 'doc-block', 'data-doc': d.id }, title,
+        el('p', { class: 'muted' }, '이 자료에는 이 조건이 적혀 있지 않아요.'));
+    }
     const notes = [];
     if (t.notes.neutral) notes.push(el('div', { class: 'note note-neutral' }, el('p', { class: 'note-title' }, '적힌 내용에 대한 안내'), el('p', {}, t.notes.neutral)));
     if (t.notes.applicability) notes.push(el('div', { class: 'note note-applicability' }, el('p', { class: 'note-title' }, '법령 적용 범위 안내'), el('p', {}, t.notes.applicability), linkList(t.applicabilityLinks)));
     if (t.notes.probationHold) notes.push(el('div', { class: 'note note-hold' }, el('p', { class: 'note-title' }, '수습 중 급여 항목을 판정하지 않은 이유'), el('p', {}, t.notes.probationHold)));
     return el('section', { class: 'doc-block', 'data-doc': d.id },
       title,
-      el('p', { class: 'doc-block-status' }, topicBadge(d, t), el('span', { class: 'small' }, d.docType !== 'contract' && deferral(t) ? topicExplain(t) : topicSummary(t))),
+      el('p', { class: 'doc-block-status' }, topicBadge(d, t), el('span', { class: 'small' }, brief ? (topicExplain(t, d.docType) ?? '') : topicSummary(t))),
       el('div', { class: 'card-list' }, core.map(criterionCard)),
       extra.length ? el('details', { class: 'extra-criteria' }, el('summary', {}, `추가 세부 기준 ${extra.length}개`), el('div', { class: 'card-list is-compact' }, extra.map(criterionCard))) : null,
       ...notes,
@@ -1475,8 +1677,9 @@ function renderItem(record, itemId) {
     memoEditing === 'new' ? memoForm(null) : el('button', { type: 'button', class: 'btn-editorial btn-auto', id: 'memo-add' }, '답변 메모 추가'),
     el('p', { class: 'muted small', id: 'memo-status', role: 'status', 'aria-live': 'polite' }));
 
-  const t0 = record.documents.map((d) => topicOf(d, itemId)).find((t) => t?.visible);
-  const sourceSec = t0 ? el('details', { class: 'source-accordion' },
+  // 점검 기준 출처는 근로계약서 점검에만 (채용공고·처우 안내는 기록만 하므로 숨김)
+  const t0 = record.documents.filter((d) => d.docType === 'contract').map((d) => topicOf(d, itemId)).find((t) => t?.visible);
+  const sourceSec = t0 && mode.check ? el('details', { class: 'source-accordion' },
     el('summary', {}, el('span', { class: 'source-title' }, '이 기준은 어디에서 왔나요?'), el('span', { class: 'toggle-text' }, '자세히 보기')),
     el('div', { class: 'source-body' },
       el('p', {}, '일단확인의 점검 기준은 관련 법령과 공식 서식을 참고해 설계한 자체 확인 기준이며, 법률 자문이나 유권해석이 아니에요.'),
@@ -1570,18 +1773,19 @@ $('#record-list').addEventListener('click', async (e) => {
   const b = e.target.closest('button[data-delete]');
   if (!b) return;
   const name = b.closest('.record-card').querySelector('.record-name').textContent;
-  if (!confirm(`'${name}' 기록을 삭제할까요? 등록한 자료·확인한 텍스트·분석 결과·원문 근거·답변 메모가 모두 지워지고 되돌릴 수 없어요.`)) return;
+  if (!confirm(`'${name}' 기록을 삭제할까요? 등록한 자료·확인한 텍스트·분석 결과·원문 근거·원본 PDF·답변 메모가 모두 지워지고 되돌릴 수 없어요.`)) return;
   try {
-    await store.remove(b.dataset.delete);
+    let notice = ROUTE_NOTICE.deleted;
+    try { await store.remove(b.dataset.delete); } catch (err) { if (err?.code !== 'files_cleanup_failed') throw err; notice = ROUTE_NOTICE.deleted_files_left; }
     delete contexts[b.dataset.delete];
     await renderRecords();
-    showMsg($('#records-notice'), ROUTE_NOTICE.deleted);
+    showMsg($('#records-notice'), notice);
   } catch {
     $('#records-status').textContent = '기록을 삭제하지 못했어요. 잠시 후 다시 시도해 주세요.';
   }
 });
 $('#delete-all').addEventListener('click', async () => {
-  if (!confirm('이 브라우저에 저장된 모든 입사 기록을 삭제할까요? 자료·확인 텍스트·분석 결과·원문 근거·메모가 모두 지워지고 되돌릴 수 없어요.')) return;
+  if (!confirm('이 브라우저에 저장된 모든 입사 기록을 삭제할까요? 자료·확인 텍스트·분석 결과·원문 근거·원본 PDF·메모가 모두 지워지고 되돌릴 수 없어요.')) return;
   try {
     await store.removeAll();
     for (const k of Object.keys(contexts)) if (k !== 'new') delete contexts[k];

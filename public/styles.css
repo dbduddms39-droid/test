@@ -761,3 +761,15 @@ button.evidence-chip:hover { border-color: var(--annot); }
 .flow-foot { margin: var(--space-lg) 0 0; font-size: 15px; }
 .sum-group.is-pending { border-left: 3px dotted var(--ink-3); }
 .badge-deferred { text-decoration: none; }
+
+/* v3.2: 기록 상단 도구(원본 PDF·새 안내 추가), 자료 상태 */
+.record-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: var(--space-sm, 8px); }
+.original-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.original-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 14px; min-width: 0; }
+.original-name { overflow-wrap: anywhere; min-width: 0; }
+.original-item a[aria-disabled="true"] { pointer-events: none; opacity: .5; }
+.save-status.is-warn { background: var(--paper); border: 1px solid var(--ink); border-left: 3px solid #B07A1E; }
+.doc-original { margin: 4px 0; overflow-wrap: anywhere; }
+.doc-original.is-error { color: #8A3B2E; }
+.tag-warn { border-color: #B07A1E; }
+.doc-entry .reanalyze { margin: 8px 0; }

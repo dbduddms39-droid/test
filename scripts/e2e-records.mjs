@@ -140,7 +140,7 @@ try {
   const wageRow = page.locator('#condition-list [data-item="01"]');
   check('T05 급여: 서로 다른 안내가 있어요', (await wageRow.locator('.badge-relation').textContent()) === '서로 다른 안내가 있어요');
   const nowText = await text('#summary-groups');
-  check('T05 지금 확인할 내용에 두 출처·원문을 함께', nowText.includes('3,400만원') && nowText.includes('3,600만원') && nowText.includes('채용공고') && nowText.includes('오퍼·합격 안내'));
+  check('T05 지금 확인할 내용에 두 출처·원문을 함께', nowText.includes('3,400만원') && nowText.includes('3,600만원') && nowText.includes('채용공고') && nowText.includes('처우·근로조건 안내'));
   check('T05 \'변경됨\'으로 단정하지 않음', !/변경됐|변경되었|조건이 변경/.test(await text('#view-record')));
   const stored = (await idbRecords()).find((r) => r.id === rec1);
   check('T05 이전 자료(공고) 텍스트·근거가 그대로 저장돼 있음', stored.documents[0].confirmedText === POSTING_3400 && JSON.stringify(stored.documents[0].analysis).includes('3,400만원'));
@@ -214,7 +214,7 @@ try {
   await waitView('records');
   const cards = await page.$$('#record-list > li');
   check('S06 기록 목록: 지원 건별 5개', cards.length === 5, String(cards.length));
-  check('S06 저장 위치·범위·손실 조건·외부 AI 전달 안내', /이 브라우저\(이 기기\)/.test(await text('.storage-note')) && /다른 기기/.test(await text('.storage-note')) && /원본 사진·PDF 파일은 저장하지 않아요/.test(await text('.storage-note')));
+  check('S06 저장 위치·범위·손실 조건·외부 AI 전달 안내', /이 브라우저\(이 기기\)/.test(await text('.storage-note')) && /다른 기기/.test(await text('.storage-note')) && /사진 원본은 저장하지 않아요/.test(await text('.storage-note')) && /파일은 현재 브라우저에 저장됩니다/.test(await text('.storage-note')));
   check('390px 가로 넘침 없음 (목록)', await noHScroll());
 
   // ---- T10 브라우저 종료 후 다시 열기 ----
@@ -267,13 +267,15 @@ try {
   await page.check('input[name="doc-type"][value="offer"]');
   await page.fill('#doc-text', OFFER_3600);
   await page.click('#submit-btn');
-  await waitView('error');
-  check('AI 오류: 분석 실패로 안내 (미기재 결과로 바꾸지 않음)', (await text('#error-message')).includes('한도') && !(await page.isVisible('#view-record')));
-  check('AI 오류: 기록을 만들지 않음', (await idbRecords()).length === 6);
-  aiMode = 'normal';
-  await page.click('#retry-btn');
   await waitView('record');
-  check('AI 오류 후 같은 텍스트로 재시도 → 저장', (await text('#save-status')).includes('저장했어요') && (await idbRecords()).length === 7);
+  // v3.2: 저장과 분석을 나눈다 — 자료는 저장되고 '분석 실패'로 남는다 (미기재 결과로 바꾸지 않음)
+  check('AI 오류: 분석 실패로 안내 (미기재 결과로 바꾸지 않음)', (await text('#save-status')).includes('한도') && (await text('#save-status')).includes('분석은 완료하지 못했어요') && (await page.$$('#condition-list .ccard')).length === 0);
+  const failedRec = (await idbRecords()).find((r) => r.documents.some((d) => d.status === 'analysis_failed'));
+  check('AI 오류: 자료는 저장, 상태는 분석 실패, 분석 결과 없음', (await idbRecords()).length === 7 && failedRec?.documents[0].analysis === null && failedRec.documents[0].confirmedText === OFFER_3600);
+  aiMode = 'normal';
+  await page.click('#doc-list button[data-reanalyze]');
+  await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'));
+  check('AI 오류 후 같은 텍스트로 다시 분석 → 같은 기록에 저장 (새 기록 없음)', (await idbRecords()).length === 7 && (await idbRecords()).find((r) => r.id === failedRec.id).documents[0].status === 'analyzed');
 
   // ---- 근거 검증 실패 → 분석 확인 불가 → 재분석 ----
   aiMode = 'forge';

@@ -67,7 +67,7 @@ const CONTRACT_SPECS = {
 
 test('자료 이름: 같은 유형이 둘 이상이면 번호를 붙인다', () => {
   const labels = docLabels([{ id: 'a', docType: 'offer' }, { id: 'b', docType: 'job_posting' }, { id: 'c', docType: 'offer' }]);
-  assert.deepEqual(labels, { a: '오퍼·합격 안내 1', b: '채용공고', c: '오퍼·합격 안내 2' });
+  assert.deepEqual(labels, { a: '처우·근로조건 안내 1', b: '채용공고', c: '처우·근로조건 안내 2' });
 });
 
 test('T01 채용공고 하나: 결과가 완결되고, 공고에서 찾지 못한 항목을 질문으로 쏟아내지 않는다', async () => {
@@ -78,7 +78,7 @@ test('T01 채용공고 하나: 결과가 완결되고, 공고에서 찾지 못�
   assert.ok(relateRecord([posting]).items.every((i) => i.relation === null), '자료가 하나면 자료 사이 관계를 만들지 않는다');
 });
 
-test('T02 짧은 오퍼 하나: 수습 중 급여 \'별도 협의\'는 질문 대신 협의 예정 상태로, 빠진 항목은 접힌 추가 확인으로', async () => {
+test('T02 짧은 처우 안내 하나: 수습 중 급여 \'별도 협의\'는 질문 대신 협의 예정 상태로, 빠진 항목은 질문하지 않음', async () => {
   const offer = await entry('offer', OFFER_3600, OFFER_3600_SPECS);
   const f = buildFollowUps({ documents: [offer] });
   assert.ok(f.primary.length <= PRIMARY_LIMIT);
@@ -86,9 +86,9 @@ test('T02 짧은 오퍼 하나: 수습 중 급여 \'별도 협의\'는 질문 �
   const p08 = f.summary.pending.find((x) => x.topicId === '08');
   assert.equal(p08?.kind, 'negotiate');
   assert.match(p08.line, /라고 적혀 있어요\(협의 예정\)\. 다음 안내에서 구체적인 조건이 적히는지 이어서 확인해요/);
-  assert.ok(!f.primary.some((x) => x.kind === 'missing'), '오퍼에 빠진 조건은 우선 확인으로 올리지 않는다');
-  assert.ok(f.more.some((x) => x.topicIds.includes('02') && x.kind === 'missing'), '근무시간 미기재는 접힌 추가 확인');
-  assert.ok(!allFollowUps(f).some((x) => x.topicIds.includes('09') || x.topicIds.includes('10')), '오퍼의 휴일·연차 미기재는 질문하지 않는다');
+  // v3.2: 처우·근로조건 안내 하나만으로는 미기재·불명확 질문을 만들지 않는다 (적힌 조건만 기록)
+  assert.deepEqual(allFollowUps(f), [], '처우 안내 단독은 확인 질문 없음');
+  assert.deepEqual(f.summary.needsCheck, [], '빠진 조건을 확인 필요로 올리지 않는다');
 });
 
 test('T03·T15 근로계약서 하나: 모호한 근로시간은 우선 확인, 수습 없음이면 수습 중 급여 질문 없음, 법 판단 문구 없음', async () => {
@@ -117,8 +117,8 @@ test('T05 공고 3,400만원 → 오퍼 3,600만원: 서로 다른 안내, 두 �
   const q = f.primary.filter((x) => x.topicIds.includes('01'));
   assert.equal(q.length, 1, '급여 질문은 하나');
   assert.equal(q[0].kind, 'different_stated');
-  assert.deepEqual(q[0].sources.map((s) => s.docLabel), ['채용공고', '오퍼·합격 안내']);
-  assert.equal(q[0].question, '채용공고에는 급여가 3,400만원, 오퍼·합격 안내에는 3,600만원으로 기재되어 있습니다. 실제 적용되는 급여를 확인 부탁드립니다.');
+  assert.deepEqual(q[0].sources.map((s) => s.docLabel), ['채용공고', '처우·근로조건 안내']);
+  assert.equal(q[0].question, '채용공고에는 급여가 3,400만원, 처우·근로조건 안내에는 3,600만원으로 기재되어 있습니다. 실제 적용되는 급여를 확인 부탁드립니다.');
   assert.doesNotMatch(q[0].question, /변경/);
   // 이전 자료의 값은 그대로 (덮어쓰지 않음)
   assert.equal(posting.analysis.criteria['01-a'].sourceValue, '3,400만원');

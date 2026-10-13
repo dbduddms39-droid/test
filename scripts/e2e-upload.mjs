@@ -278,16 +278,16 @@ try {
     await page.fill('#extract-issues-list [data-issue-input="failed-3"]', '[3번째 이미지 직접 입력] 지원방법: 이메일 (가상 예시)');
     await page.click('#extract-issues-list [data-issue-id="failed-3"] [data-issue-resolve=manual_input]');
     check(`[${label}] 각 장을 모두 복구하면 분석 가능`, !(await page.isDisabled('#review-submit')) && !(await page.isVisible('#review-blocked')));
-    // 요청 내용만 확인하려고 이번 분석은 실패(503)로 돌려 S03 상태를 그대로 둔다 (저장되면 입력이 비워짐)
-    await page.route('**/api/analyze', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '가상 오류', code: 'missing_key' }) }));
+    // 요청 내용만 확인하려고 이번 분석은 입력 형식 오류(400)로 돌려 S03 상태를 그대로 둔다
+    // (v3.2: 저장 후 분석이므로 다른 실패는 자료가 저장되고 입력이 비워진다. 400은 방금 저장한 자료를 되돌리고 S03으로)
+    await page.route('**/api/analyze', (route) => route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: '가상 입력 오류' }) }));
     const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
     await page.click('#review-submit');
     const sent = JSON.parse((await reqP).postData());
-    await page.waitForSelector('#view-error:not([hidden])', { timeout: 30_000 });
+    await page.waitForSelector('#review-error:not([hidden])', { timeout: 30_000 });
     await page.unroute('**/api/analyze');
     const i1 = sent.text.indexOf('250'), i2 = sent.text.indexOf('[2번째 이미지 직접 입력]'), i3 = sent.text.indexOf('[3번째 이미지 직접 입력]');
     check(`[${label}] 분석 요청: 고친 1번째 이미지 텍스트 뒤에 2·3번째 직접 입력 내용이 순서대로`, i1 >= 0 && i1 < i2 && i2 < i3);
-    await page.click('#error-edit');
     await page.waitForSelector('#view-review:not([hidden])');
     // 처음 추출한 내용으로 되돌리면 직접 입력 내용과 표시도 지워져 다시 분석 불가
     await page.click('#review-restore');
@@ -422,14 +422,14 @@ try {
     for (const x of suspects) await page.click(`#extract-issues-list [data-issue-id="${x.id}"] [data-issue-resolve=range_checked]`);
     check(`[${label}] 원본과 비교해 범위를 확인했다고 표시하면 분석 가능`, !(await page.isDisabled('#review-submit')) && (await issueList()).every((x) => x.resolved));
     const submitAndCapture = async () => {
-      // 요청 내용만 확인하려고 분석은 실패(503)로 돌려 S03 상태(확인 표시)를 그대로 둔다
-      await page.route('**/api/analyze', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '가상 오류', code: 'missing_key' }) }));
+      // 요청 내용만 확인하려고 분석은 입력 형식 오류(400)로 돌려 S03 상태(확인 표시)를 그대로 둔다
+      await page.route('**/api/analyze', (route) => route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: '가상 입력 오류' }) }));
       const reqP = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
       await page.click('#review-submit');
       const sent = JSON.parse((await reqP).postData());
-      await page.waitForSelector('#view-error:not([hidden])', { timeout: 30_000 });
+      await page.waitForSelector('#review-error:not([hidden])', { timeout: 30_000 });
       await page.unroute('**/api/analyze');
-      await page.click('#error-edit');
+      await page.evaluate(() => { document.querySelector('#review-error').hidden = true; });
       await page.waitForSelector('#view-review:not([hidden])');
       return (sent.lowConfidence ?? []).map((r) => sent.text.slice(r.start, r.end));
     };

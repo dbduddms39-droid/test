@@ -1,7 +1,7 @@
 // S01~S07 화면 검수: 실제 브라우저에서 주요 경로를 데스크톱(1280)·모바일(390) 폭으로 순회하고 화면을 저장한다.
 //   node scripts/e2e-screens.mjs        (데모 모드 로컬 서버만 사용, Gemini 호출 없음. 결과: e2e-artifacts/screens/)
 // 경로: S01 → S02 직접 입력 → 분석 중 → S04 기록 → S05 항목 상세 → S07 새 안내 추가 → S04, S06 목록,
-//       분석 실패 → 재시도·원문 수정, 사진 업로드 → S03 → 분석, 폭 전환
+//       분석 실패(자료는 저장) → 같은 텍스트로 다시 분석, 사진 업로드 → S03 → 분석, 폭 전환
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
@@ -85,20 +85,17 @@ try {
     await page.click('#nav-records'); await view('records'); await shot('S06'); await noOverflow('S06');
     check(`[${tag}] S06: 기록 카드`, (await page.$$('#record-list > li')).length >= 1);
 
-    // C) 분석 실패 → 오류 화면 → 재시도 / 원문 수정
+    // C) 분석 실패 → 자료는 저장, '분석 실패' 상태 → 같은 텍스트로 다시 분석 (v3.2: 저장과 분석 분리)
     await page.goto(`${BASE}/#/new`); await view('input');
     await page.check('input[name="doc-type"][value="contract"]');
     await page.click('#example-btn');
     await page.route('**/api/analyze', (route) => route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'AI 분석 서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요.' }) }));
-    const textBefore = await page.inputValue('#doc-text');
-    await page.click('#submit-btn'); await view('error'); await shot('error'); await noOverflow('오류 화면');
-    check(`[${tag}] 오류 화면: 오류 안내`, (await page.textContent('#error-message')).includes('응답하지'));
-    await page.click('#error-edit'); await view('input');
-    check(`[${tag}] 오류 → 원문 수정: S02, 입력 유지`, (await page.inputValue('#doc-text')) === textBefore);
-    await page.click('#submit-btn'); await view('error');
+    await page.click('#submit-btn'); await view('record'); await page.waitForTimeout(300); await shot('analysis-failed'); await noOverflow('분석 실패 기록');
+    check(`[${tag}] 분석 실패: 자료는 저장, 분석 실패 안내`, (await page.textContent('#save-status')).includes('자료는 이 브라우저에 저장했어요') && (await page.textContent('#save-status')).includes('분석은 완료하지 못했어요') && (await page.textContent('#doc-list')).includes('분석 실패'));
     await page.unroute('**/api/analyze');
-    await page.click('#retry-btn'); await view('record');
-    check(`[${tag}] 오류 → 재시도 성공 시 기록`, await page.isVisible('#view-record'));
+    await page.click('#doc-list button[data-reanalyze]');
+    await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'));
+    check(`[${tag}] 분석 실패 → 같은 텍스트로 다시 분석 → 기록`, (await page.$$('#condition-list .ccard')).length > 0 && (await page.$$('#doc-list > li')).length === 1);
 
     // B) 사진 업로드 → S03 → 분석
     await page.goto(`${BASE}/#/new`); await view('input');

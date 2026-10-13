@@ -53,7 +53,8 @@ test('정적 파일 제공 및 경로 이탈 차단', async () => {
   assert.ok(html.includes('주민등록번호, 주소 등 확인에 필요 없는 개인정보는 가리고 입력해 주세요.'));
   assert.ok(html.includes('일단확인 서버를 거쳐 외부 AI 모델(Google Gemini API)에 전달돼요'));
   assert.ok(html.includes('외부 AI 제공자의 데이터 처리 방침이 적용돼요'));
-  assert.ok(html.includes('원본 사진·PDF 파일은 저장하지 않아요'));
+  assert.ok(html.includes('사진 원본은 저장하지 않아요'));
+  assert.ok(html.includes('파일은 현재 브라우저에 저장됩니다. 다른 기기에서는 확인할 수 없으며 브라우저 데이터 삭제 시 함께 사라질 수 있습니다.'));
   assert.ok(!/암호화|보안 모드|영구 보관합니다|원본 파일을 보관/.test(html));
   assert.equal((await fetch(`${base}/..%2Fserver.js`)).status, 404);
 });

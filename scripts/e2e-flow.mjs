@@ -2,7 +2,8 @@
 //   node scripts/e2e-flow.mjs
 // 항상 로컬 서버를 데모 모드로 띄우고 GEMINI_API_KEY를 넘기지 않는다 → 실제 AI 호출·과금 없음.
 // 분석 실패·지연은 브라우저에서 /api/analyze 응답을 가로채 만든다.
-// 검사: 직접 입력 S-02→S-04→결과, 뒤로 가기·다시 입력 시 텍스트 유지, 분석 실패 → S-07 → 수정/재시도,
+// 검사: 직접 입력 S-02→S-04→결과, 뒤로 가기·다시 입력 시 텍스트 유지, 분석 실패(저장됨) → 분석 실패 자료·다시 분석,
+//       저장·분석 모두 실패 → S-07 → 수정/재시도,
 //       중복 요청 방지, 분석 중 뒤로 가기(취소), 데이터 없는 결과·상세 주소 접근, 주소에 문서 내용 없음,
 //       탭 키보드 조작·비활성 버튼, 390px·1440px 가로 스크롤 없음.
 import { spawn } from 'node:child_process';
@@ -39,6 +40,14 @@ try {
 
   browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  // 저장소 쓰기 실패 흉내 (sessionStorage 'e2e-fail-put'=1일 때만): 저장도 분석도 실패한 경우의 오류 화면(S-07) 확인용
+  await context.addInitScript(() => {
+    const orig = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function put(...a) {
+      if (sessionStorage.getItem('e2e-fail-put') === '1') throw new DOMException('mock quota exceeded', 'QuotaExceededError');
+      return orig.apply(this, a);
+    };
+  });
   const page = await context.newPage();
   const pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push(e.message));
@@ -129,9 +138,25 @@ try {
   check('라우트 이동·재렌더링으로 분석 재요청 없음', requests.length === 1, `${requests.length}번`);
   await page.check('input[name="doc-type"][value="job_posting"]');
 
-  // 5) 분석 실패 → S-07 → 문서 내용 확인(S-02) / 다시 분석
+  // 5-0) v3.2 분석 실패(저장은 됨) → 기록 화면에 '분석 실패' 자료로 남고, 같은 텍스트로 다시 분석
   const EDITED = `${sample.text}\n문의: 인사팀 (가상 예시)`;
   await page.fill('#doc-text', EDITED);
+  await page.route('**/api/analyze', (route) => route.fulfill({ status: 504, contentType: 'application/json', body: JSON.stringify({ error: 'AI 응답이 늦어져 분석을 중단했어요. 잠시 후 다시 시도해 주세요.', code: 'timeout' }) }));
+  await page.click('#submit-btn');
+  await waitView('record');
+  check('분석 실패(저장 성공) → 기록 화면, 자료는 저장·분석 실패 표시', (await page.textContent('#save-status')).includes('AI 응답이 늦어져') && (await page.textContent('#doc-list')).includes('분석 실패'));
+  await page.unroute('**/api/analyze');
+  const beforeRe = requests.length;
+  await page.click('#doc-list button[data-reanalyze]');
+  await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'));
+  check('분석 실패 자료 → 같은 텍스트로 다시 분석 → 결과 저장', requests.length === beforeRe + 1 && requests.at(-1).text === EDITED && !(await page.textContent('#doc-list')).includes('분석 실패'));
+
+  // 5) 저장과 분석이 모두 실패 → S-07 → 문서 내용 확인(S-02) / 다시 분석
+  await page.goto(`${BASE}/#/new`);
+  await waitView('input');
+  await page.check('input[name="doc-type"][value="job_posting"]');
+  await page.fill('#doc-text', EDITED);
+  await page.evaluate(() => sessionStorage.setItem('e2e-fail-put', '1'));
   await page.route('**/api/analyze', (route) => route.fulfill({ status: 504, contentType: 'application/json', body: JSON.stringify({ error: 'AI 응답이 늦어져 분석을 중단했어요. 잠시 후 다시 시도해 주세요.', code: 'timeout' }) }));
   await page.click('#submit-btn');
   await waitView('error');
@@ -144,6 +169,7 @@ try {
   await page.click('#submit-btn');
   await waitView('error');
   await page.unroute('**/api/analyze');
+  await page.evaluate(() => sessionStorage.removeItem('e2e-fail-put'));
   const before = requests.length;
   await page.click('#retry-btn');
   await waitView('record');
@@ -154,11 +180,14 @@ try {
   await waitView('input');
   await page.check('input[name="doc-type"][value="job_posting"]');
   await page.fill('#doc-text', EDITED);
+  await page.evaluate(() => sessionStorage.setItem('e2e-fail-put', '1'));
   await page.route('**/api/analyze', (route) => route.abort('failed'));
   await page.click('#submit-btn');
   await waitView('error');
   check('네트워크 실패 → S-07', (await page.textContent('#error-message')).includes('서버에 연결하지 못했어요'));
   await page.unroute('**/api/analyze');
+  await page.evaluate(() => sessionStorage.removeItem('e2e-fail-put'));
+  const recordsBefore400 = await page.evaluate(() => new Promise((res) => { const q = indexedDB.open('ildan-hwagin'); q.onsuccess = () => { const g = q.result.transaction('records').objectStore('records').getAll(); g.onsuccess = () => res(g.result.length); }; }));
   await page.click('#error-edit');
   await waitView('input');
   await page.route('**/api/analyze', (route) => route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: '문서 유형을 선택해 주세요.' }) }));
@@ -167,7 +196,8 @@ try {
   await res400; // 이미 S-02에 있으므로 화면만 기다리면 응답 전에 검사하게 된다
   await waitView('input');
   await page.waitForSelector('#input-error:not([hidden])', { timeout: 5000 }).catch(() => {});
-  check('입력 형식 오류(400) → S-02에서 바로 안내, 텍스트 유지', (await page.isVisible('#input-error')) && (await page.inputValue('#doc-text')) === EDITED);
+  const recordsAfter400 = await page.evaluate(() => new Promise((res) => { const q = indexedDB.open('ildan-hwagin'); q.onsuccess = () => { const g = q.result.transaction('records').objectStore('records').getAll(); g.onsuccess = () => res(g.result.length); }; }));
+  check('입력 형식 오류(400) → S-02에서 바로 안내, 텍스트 유지, 방금 저장한 자료는 되돌림', (await page.isVisible('#input-error')) && (await page.inputValue('#doc-text')) === EDITED && recordsAfter400 === recordsBefore400, `${recordsBefore400}→${recordsAfter400}`);
   await page.unroute('**/api/analyze');
 
   // 6) 분석 중 뒤로 가기 → 요청 취소, 결과로 넘어가지 않음, 텍스트 유지
@@ -209,6 +239,7 @@ try {
   await page.click('#review-resume a');
   await waitView('review');
   check("S-03 → 이전으로(S-02) → '추출 텍스트 확인 화면으로 돌아가기': 수정한 추출 텍스트 유지", (await page.inputValue('#review-text')) === FILE_EDITED);
+  await page.evaluate(() => sessionStorage.setItem('e2e-fail-put', '1'));
   await page.route('**/api/analyze', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'AI 분석이 아직 설정되지 않았어요.', code: 'missing_key' }) }));
   await page.click('#review-submit');
   await waitView('error');
@@ -216,6 +247,7 @@ try {
   await waitView('review');
   check('파일 경로 S-07 문서 내용 확인 → S-03, 마지막 텍스트 유지', (await page.inputValue('#review-text')) === FILE_EDITED);
   await page.unroute('**/api/analyze');
+  await page.evaluate(() => sessionStorage.removeItem('e2e-fail-put'));
   await page.click('#review-submit');
   await waitView('record');
   check('S03 → 분석 → 기록: 수정한 텍스트로 요청', requests.at(-1).text === FILE_EDITED);

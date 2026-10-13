@@ -42,7 +42,12 @@ test('오류 1: 출퇴근 시각이 적힌 근무시간 — 상태(기준표 그
   assert.equal(topic(c, '02').status, 'MAIN_FOUND');
   assert.equal(topic(c, '02').criteria.find((x) => x.id === '02-a').derived[0].value, '주 40시간');
   // 질문·이유는 '일부만 적혀 있거나 정해지지 않았어요'가 아니라 빠진 세부 정보를 말한다
-  const f = buildFollowUps({ documents: [{ id: 'p', docType: 'job_posting', analysis: p }] });
+  // v3.2: 채용공고 하나만으로는 확인 질문을 만들지 않는다 (기록만)
+  const fp = buildFollowUps({ documents: [{ id: 'p', docType: 'job_posting', analysis: p }] });
+  assert.ok(!all(fp).some((x) => x.topicIds.includes('02')), '채용공고 단독은 질문 없음');
+  // 같은 문구가 근로계약서에 적혀 있으면 빠진 세부 정보를 묻는다
+  const pc = await analyze('contract', QA_POSTING, QA_POSTING_SPECS);
+  const f = buildFollowUps({ documents: [{ id: 'pc', docType: 'contract', analysis: pc }] });
   const w = all(f).find((x) => x.topicIds.includes('02'));
   assert.equal(w.kind, 'partial_detail');
   assert.equal(w.tier, 'more', '세부 숫자만 빠진 경우는 우선 확인으로 올리지 않는다');
@@ -141,7 +146,7 @@ test('시나리오 1~3: 공고 → 오퍼 → 계약서. 요약(다름·구체�
   assert.equal(item(f2.relation, '03').relation, 'same', '근무장소 공통');
   assert.equal(item(f2.relation, '05').relation, 'same', '고용형태 공통');
   const hours = all(f2).find((x) => x.topicIds.includes('02'));
-  assert.equal(hours.question, '채용공고에는 근무시간이 09:00~18:00, 오퍼·합격 안내에는 10:00~19:00으로 기재되어 있습니다. 실제 적용되는 근무시간을 확인 부탁드립니다.');
+  assert.equal(hours.question, '채용공고에는 근무시간이 09:00~18:00, 처우·근로조건 안내에는 10:00~19:00으로 기재되어 있습니다. 실제 적용되는 근무시간을 확인 부탁드립니다.');
   assert.ok(hours.extraQuestions.length <= 2, '추가 질문은 선택형으로 최대 2개');
   assert.ok(!hours.extraQuestions.some((q) => q === hours.question), '대표 질문과 같은 추가 질문 없음');
   assert.ok(hours.extraQuestions.some((q) => /휴게시간/.test(q)), '휴게 시각 차이는 추가 질문으로');
@@ -155,7 +160,7 @@ test('시나리오 1~3: 공고 → 오퍼 → 계약서. 요약(다름·구체�
   assert.equal(JSON.stringify([posting, offer]), before, '이전 자료는 바뀌지 않음');
   const wage = all(f3).find((x) => x.topicIds.includes('01'));
   assert.equal(wage.kind, 'different_stated');
-  assert.match(wage.question, /^채용공고에는 급여가 3,400만원, 오퍼·합격 안내에는 3,600만원, 근로계약서에는 연봉 36,000,000원\(세전\)/);
+  assert.match(wage.question, /^채용공고에는 급여가 3,400만원, 처우·근로조건 안내에는 3,600만원, 근로계약서에는 연봉 36,000,000원\(세전\)/);
   assert.equal(topic(contract.analysis, '01').status, 'MAIN_FOUND', '올바른 응답에서 계약서 임금은 확인됨');
   // 수습 중 급여: 처음 구체화
   assert.equal(item(f3.relation, '08').relation, 'newly_specified');

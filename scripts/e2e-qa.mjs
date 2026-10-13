@@ -70,7 +70,9 @@ try {
     check(`[${tag}] 1) 공고: 급여 3,400만원`, c01.includes('3,400만원'));
     check(`[${tag}] 1) 공고: 근무시간 09:00~18:00 (휴게 12:00~13:00)`, (await text('#condition-list [data-item="02"]')).includes('09:00~18:00 · 휴게 12:00~13:00'));
     const c02 = await text('#condition-list [data-item="02"]');
-    check(`[${tag}] 1) 근무시간: '일부만 적혔거나 정해지지 않았어요' 대신 빠진 세부 정보를 설명`, c02.includes('주 소정근로시간 숫자') && !c02.includes('정해지지 않았어요'), c02.slice(0, 120));
+    // v3.2: 채용공고는 기록만 — 빠진 세부 정보(주 소정근로시간 숫자)를 지적하지 않고 적힌 값만, 확인 질문 없음
+    check(`[${tag}] 1) 공고 단독: 적힌 근무시간만, 미기재·불명확 표시와 질문 없음`, c02.includes('09:00~18:00') && !c02.includes('주 소정근로시간') && !c02.includes('일부만') && !c02.includes('정해지지 않았어요') && !(await groupText('needs')) && (await page.$$('#view-record .q-text')).length === 0, c02.slice(0, 120));
+    check(`[${tag}] 1) 공고 단독: '저장된 채용조건'이 먼저, 원문 펼침`, (await text('#conditions-title')) === '저장된 채용조건' && await page.$eval('#conditions-section', (e) => !e.previousElementSibling || e.compareDocumentPosition(document.querySelector('#now-section')) & Node.DOCUMENT_POSITION_FOLLOWING) && await page.$eval('#docs-box', (d) => d.open));
     const c08 = await text('#condition-list [data-item="08"]');
     check(`[${tag}] 1) 수습 급여 '별도 안내'를 금액으로 보지 않음`, c08.includes('최종합격 시 별도 안내') && !/\d+만원|\d+%/.test(c08));
     check(`[${tag}] 1) 계약기간: 공고의 정규직 문구를 계약기간으로 쓰지 않음`, !(await page.$('#condition-list [data-item="06"]')) || !(await text('#condition-list [data-item="06"]')).includes('정규직'));
@@ -82,7 +84,7 @@ try {
     check(`[${tag}] 2) 서로 다르게 안내된 조건: 급여·근무시간`, diff2.includes('급여') && diff2.includes('근무시간') && diff2.includes('3,400만원') && diff2.includes('3,600만원'), diff2.slice(0, 160));
     check(`[${tag}] 2) 근무장소·고용형태 공통`, (await text('#condition-list [data-item="03"] .badge-relation')) === '같은 내용으로 안내됐어요' && (await text('#condition-list [data-item="05"] .badge-relation')) === '같은 내용으로 안내됐어요');
     const hoursQ = await page.$eval('[data-group="different"] [data-topic="02"] .q-block > .question .q-text', (e) => e.value);
-    check(`[${tag}] 2) 근무시간 대표 질문 1개`, hoursQ === '채용공고에는 근무시간이 09:00~18:00, 오퍼·합격 안내에는 10:00~19:00으로 기재되어 있습니다. 실제 적용되는 근무시간을 확인 부탁드립니다.', hoursQ);
+    check(`[${tag}] 2) 근무시간 대표 질문 1개`, hoursQ === '채용공고에는 근무시간이 09:00~18:00, 처우·근로조건 안내에는 10:00~19:00으로 기재되어 있습니다. 실제 적용되는 근무시간을 확인 부탁드립니다.', hoursQ);
     const qCount = await page.$$eval('[data-group="different"] [data-topic="02"] .q-block > .question', (e) => e.length);
     check(`[${tag}] 2) 근무시간 질문은 대표 1개 + 접힌 추가 질문`, qCount === 1 && (await page.$$('[data-group="different"] [data-topic="02"] details.extra-q')).length <= 1);
 
@@ -175,7 +177,7 @@ try {
       await page.click('#add-doc');
       await register('contract', DEMO_CONTRACT);
       const spec = await groupText('specified');
-      check('[demo] 급여: 범위 안에서 구체화 (서로 다른 안내 아님)', spec.includes('채용공고에는 협의 가능한 연봉 범위(3,400만~3,800만원)가 적혀 있고, 오퍼·합격 안내와 근로계약서에는 연봉 3,600만 원으로 기재되어 있어요.') && !(await groupText('different')).includes('급여'));
+      check('[demo] 급여: 범위 안에서 구체화 (서로 다른 안내 아님)', spec.includes('채용공고에는 협의 가능한 연봉 범위(3,400만~3,800만원)가 적혀 있고, 처우·근로조건 안내와 근로계약서에는 연봉 3,600만 원으로 기재되어 있어요.') && !(await groupText('different')).includes('급여'));
       check('[demo] 수습 중 급여: 근로계약서에서 처음 구체화, 질문 없음', spec.includes('근로계약서에는 월 270만 원(세전, 정규 급여의 90%)으로 적혀 있어요') && !(await page.$('[data-group="specified"] [data-topic="08"] .q-text')));
       check('[demo] 서로 다른 안내는 근무시간 하나', (await page.$$('[data-group="different"] .sum-item')).length === 1 && (await groupText('different')).includes('근무시간'));
       check('[demo] 협의 완료·확정 단정 표현 없음', !/(협의 완료|확정된 합의|협의가 끝났)/.test(await text('#view-record')));
