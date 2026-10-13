@@ -57,6 +57,11 @@ try {
     check(`[${tag}] S01: '어떻게 이용하나요?' → 이용 방식 영역으로 이동`, await page.$eval('#landing-workflow', (e) => e.getBoundingClientRect().top < window.innerHeight));
     await page.click('#landing-start'); await view('input');
     await page.check('input[name="doc-type"][value="job_posting"]');
+    // S02 안내 문구가 실제 문서 유형 선택지와 일치 (오퍼 등 예전 명칭 없음)
+    const lead = await page.textContent('#input-lead');
+    const typeNames = await page.$$eval('.doc-type-name', (els) => els.map((e) => e.textContent.trim()));
+    check(`[${tag}] S02: 안내 문구 = 최신 문서 유형 (선택지와 일치)`, lead.startsWith('채용공고, 근로계약서, 처우·근로조건 안내(문자·메일 등) 중 받은 자료 하나부터 등록할 수 있어요.')
+      && typeNames.every((t) => lead.includes(t)) && typeNames.length === 3 && !/오퍼|합격 안내/.test(lead), typeNames.join(', '));
     await page.click('#example-btn'); await shot('S02');
     await noOverflow('S02');
     let release; const gate = new Promise((r) => { release = r; });
