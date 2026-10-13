@@ -1432,6 +1432,7 @@ function renderRecord(record, { unsaved = false } = {}) {
   // 근로계약서 단독 확인: 10개 기준 전체를 원문 기재·계산값·추가 확인으로 구분해 노출.
   const checklist = $('#contract-checklist');
   checklist.hidden = layout !== 'contract';
+  checklist.open = false;
   if (layout === 'contract') {
     const contract = analyzedDocs[0];
     const statuses = {
@@ -1530,14 +1531,28 @@ function renderRecord(record, { unsaved = false } = {}) {
     brief: [['preview', null]],
     none: [],
   }[layout];
+  const overview = $('#result-overview');
+  overview.hidden = !['compare', 'contract'].includes(layout);
+  if (!overview.hidden) {
+    const needsCount = layout === 'contract'
+      ? rows.filter((r) => r.group === 'needs').length + sum.unavailable.length
+      : rows.filter((r) => r.group === 'different').length;
+    const focusCount = layout === 'contract'
+      ? rows.filter((r) => r.group === 'needs').length + sum.unavailable.length
+      : rows.filter((r) => r.group === 'specified').length;
+    $('#result-count-main').textContent = layout === 'contract' ? String(ITEM_IDS.length) : String(needsCount);
+    $('#result-label-main').textContent = layout === 'contract' ? '확인 기준' : '서로 다른 조건';
+    $('#result-count-extra').textContent = String(layout === 'contract' ? needsCount : focusCount);
+    $('#result-label-extra').textContent = layout === 'contract' ? '추가 확인 항목' : '새로 기재·확인할 조건';
+  }
   const groupEls = GROUPS.map(([key, title]) => {
     const list = rows.filter((r) => r.group === key);
     if (!list.length) return null;
     const cards = el('ol', { class: `condition-cards${key === 'preview' ? ' is-preview' : ''}` }, list.map(card));
     if (!title) return el('div', { class: `cgroup is-${key}`, 'data-group': key }, cards);
     const head = [title, el('span', { class: 'sum-count' }, `${list.length}`)];
-    // 같은 조건은 덜 강조: 접어 둔다
-    if (key === 'same') return el('details', { class: `cgroup is-${key}`, 'data-group': key }, el('summary', { class: 'cgroup-title' }, ...head), cards);
+    // 핵심과 차이만 바로 보여주고, 기재된 조건·계산값·동일 조건은 펼쳐보도록 분리한다.
+    if (['same', 'written', 'calculated'].includes(key)) return el('details', { class: `cgroup is-${key}`, 'data-group': key }, el('summary', { class: 'cgroup-title' }, ...head), cards);
     return el('section', { class: `cgroup is-${key}`, 'data-group': key }, el('h3', { class: 'cgroup-title' }, ...head), cards);
   });
   fill($('#condition-list'), ...groupEls);
