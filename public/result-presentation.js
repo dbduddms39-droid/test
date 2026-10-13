@@ -25,3 +25,15 @@ export function summaryEvidence(t) {
     ?? t.criteria.find((c) => c.evidence?.length);
   return selected?.evidence?.[0] ?? null;
 }
+
+// 연차의 '법령·취업규칙에 따라 부여'는 외부 기준을 명시한 기재 방식이다.
+// 분석 결과의 PARTIAL 판정은 유지하고, 외부 참조 표현을 확인할 때만 별도 안내한다.
+export function externallyReferencedLeave(t) {
+  if (!t?.visible || t.id !== '10' || t.status !== 'MAIN_PARTIAL') return false;
+  const c = t.criteria?.find((x) => x.id === '10-a');
+  if (!c?.evidence?.length) return false;
+  const quotes = c.evidence.map((e) => e.text).join(' ');
+  return /(법령|근로기준법|법률|취업규칙|사내규정|회사\s*규정)/.test(quotes)
+    && /(따라|준하여|기준으로|의거하여)/.test(quotes)
+    && /(연차|휴가)/.test(quotes);
+}
