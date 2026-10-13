@@ -901,3 +901,10 @@ a.contract-checklist-link:hover, a.contract-checklist-link:focus-visible { borde
 .contract-checklist-state { font-size: 12px; color: var(--ink-2); }
 .contract-checklist-note { margin: 12px 0 0; }
 @media (max-width: 600px) { .contract-checklist { padding: 12px; } .contract-checklist-items { grid-template-columns: 1fr; } }
+
+/* 이용 방법: 안내는 제목 아래, 확인 기준은 근로계약서 카드 안 */
+.landing-flow .band-head { display: block; }
+.landing-flow-intro { margin-top: 10px !important; max-width: 600px; line-height: 1.65; }
+.use-card-criteria { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule-soft); }
+.use-card-criteria .mono-meta { margin: 0 0 4px; font-size: 12px; }
+.use-card-criteria p:last-child { margin: 0; font-size: 13px; line-height: 1.65; color: var(--ink-2); }
