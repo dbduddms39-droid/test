@@ -8,7 +8,7 @@ import {
 } from './extract-issues.js';
 import { createStore, suggestAlias, StoreError, DEFAULT_ALIAS, NOTE_MAX, newId } from './store.js';
 import { buildFollowUps, BOUNDARY_TEXT, deferral, detailOnly, weeklyCalc } from './followups.js';
-import { contractSummaryGroup, summaryEvidence } from './result-presentation.js';
+import { contractSummaryGroup, summaryEvidence, externallyReferencedLeave } from './result-presentation.js';
 import { initSampleDownloads } from './samples.js';
 import { DOC_TYPE_LABEL, RELATION_LABEL, docLabels } from './relate.js';
 
@@ -1123,6 +1123,7 @@ function topicBadge(doc, t) {
   if (doc.docType !== 'contract' && t.status === 'MAIN_PARTIAL') return statusBadge('MAIN_FOUND', BRIEF_STATUS_LABEL.MAIN_PARTIAL);
   // 근로계약서 근무시간: 원문 값으로 주 소정근로시간을 계산해 확인했으면 '계산으로 확인한 조건' (원문 기재값과 구분, 판정은 그대로)
   if (doc.docType === 'contract' && weeklyCalc(t)) return el('span', { class: 'badge badge-calculated', 'data-status': t.status }, '계산으로 확인한 조건');
+  if (doc.docType === 'contract' && externallyReferencedLeave(t)) return el('span', { class: 'badge badge-calculated', 'data-status': t.status }, '기재됨 · 외부 기준 참조');
   // 근로계약서: 핵심 내용은 적혀 있고 세부 숫자(주 소정근로시간 등)만 직접 적혀 있지 않으면 '내용이 모호함' 대신 (판정은 그대로)
   if (detailOnly(t)) return statusBadge(t.status, '세부 확인 필요');
   return statusBadge(t.status, statusLabelFor(doc.docType, t.status));
@@ -1167,6 +1168,7 @@ function detailOnlyText(t) {
 function topicExplain(t, docType = 'contract') {
   if (!t?.visible) return null;
   if (docType === 'contract' && weeklyCalc(t)) return `${weeklyCalc(t).text}(계산값): 문서에 적힌 근무일과 휴게시간을 기준으로 계산했어요. 주 소정근로시간이 직접 기재된 것은 아니에요.`;
+  if (docType === 'contract' && externallyReferencedLeave(t)) return '연차 부여 기준으로 법령·취업규칙을 참조하고 있어요. 구체적인 일수와 운영 방식은 이 문장에 직접 적혀 있지 않아요.';
   if (docType === 'contract' && detailOnly(t)) return detailOnlyText(t);
   // 채용공고·처우 안내: 협의 예정·분석 확인 불가·한 문서 안의 서로 다른 값만 설명 (빠진 세부 정보는 말하지 않음)
   if (docType !== 'contract' && !deferral(t) && t.status !== 'MAIN_UNAVAILABLE') {
@@ -1421,7 +1423,7 @@ function renderRecord(record, { unsaved = false } = {}) {
     fill($('#contract-checklist-items'), ...ITEM_IDS.map((id) => {
       const t = topicOf(contract, id);
       const calculated = t && weeklyCalc(t);
-      const label = calculated ? '계산으로 확인한 조건' : t ? (detailOnly(t) ? '세부 확인 필요' : (statuses[t.status] ?? '분석 확인 불가')) : '분석 확인 불가';
+      const label = calculated ? '계산으로 확인한 조건' : externallyReferencedLeave(t) ? '기재됨 · 외부 기준 참조' : t ? (detailOnly(t) ? '세부 확인 필요' : (statuses[t.status] ?? '분석 확인 불가')) : '분석 확인 불가';
       const node = el(saved ? 'a' : 'span', {
         class: 'contract-checklist-link',
         ...(saved ? { href: ROUTES.item(record.id, id) } : {}),
@@ -1453,7 +1455,7 @@ function renderRecord(record, { unsaved = false } = {}) {
     else if (layout === 'brief') group = anyWritten && CARD_IDS.has(id) ? 'preview' : null;
     else if (layout === 'contract') {
       const t = per[0]?.t;
-      group = unavailable ? null : contractSummaryGroup(t, Boolean(q)); // 계산값은 질문이 있어도 '계산으로 확인'에 표시
+      group = unavailable ? null : externallyReferencedLeave(t) ? 'written' : contractSummaryGroup(t, Boolean(q)); // 외부 참조 기재는 미기재처럼 강조하지 않음
     } else {
       const rel = relItem?.relation;
       if (!anyWritten && !q) group = null;
