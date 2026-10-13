@@ -74,16 +74,16 @@ try {
     const c02 = await text('#condition-list [data-item="02"]');
     // v3.2: 채용공고는 기록만 — 빠진 세부 정보(주 소정근로시간 숫자)를 지적하지 않고 적힌 값만, 확인 질문 없음
     check(`[${tag}] 1) 공고 단독: 적힌 근무시간만, 미기재·불명확 표시와 질문 없음`, c02.includes('09:00~18:00') && !c02.includes('주 소정근로시간') && !c02.includes('일부만') && !c02.includes('정해지지 않았어요') && !(await groupText('needs')) && (await page.$$('#view-record .q-text')).length === 0, c02.slice(0, 120));
-    check(`[${tag}] 1) 공고 단독: '저장된 채용조건'이 먼저, 원문 펼침`, (await text('#conditions-title')) === '저장된 채용조건' && await page.$eval('#conditions-section', (e) => !e.previousElementSibling || e.compareDocumentPosition(document.querySelector('#now-section')) & Node.DOCUMENT_POSITION_FOLLOWING) && await page.$eval('#docs-box', (d) => d.open));
+    check(`[${tag}] 1) 공고 단독: 주요 조건 미리보기 + 두 번째 문서 추가 안내 (원문·전체 조건은 접힘)`, (await text('#conditions-title')) === '주요 조건 미리보기' && await page.isVisible('#add-second') && !(await page.$eval('#docs-box', (d) => d.open)));
     const c08 = await text('#condition-list [data-item="08"]');
     check(`[${tag}] 1) 수습 급여 '별도 안내'를 금액으로 보지 않음`, c08.includes('최종합격 시 별도 안내') && !/\d+만원|\d+%/.test(c08));
     check(`[${tag}] 1) 계약기간: 공고의 정규직 문구를 계약기간으로 쓰지 않음`, !(await page.$('#condition-list [data-item="06"]')) || !(await text('#condition-list [data-item="06"]')).includes('정규직'));
 
     // 2) 오퍼 추가
-    await page.click('#add-doc');
+    await page.click('#add-doc:visible, #add-second:visible');
     await register('offer', QA_OFFER);
     const diff2 = await groupText('different');
-    check(`[${tag}] 2) 서로 다르게 안내된 조건: 급여·근무시간`, diff2.includes('급여') && diff2.includes('근무시간') && diff2.includes('3,400만원') && diff2.includes('3,600만원'), diff2.slice(0, 160));
+    check(`[${tag}] 2) 서로 다른 조건: 임금·근무시간`, diff2.includes('임금') && diff2.includes('근무시간') && diff2.includes('3,400만원') && diff2.includes('3,600만원'), diff2.slice(0, 160));
     check(`[${tag}] 2) 근무장소·고용형태 공통`, (await text('#condition-list [data-item="03"] .badge-relation')) === '같은 내용으로 안내됐어요' && (await text('#condition-list [data-item="05"] .badge-relation')) === '같은 내용으로 안내됐어요');
     const hoursQ = await page.$eval('[data-group="different"] [data-topic="02"] .q-block > .question .q-text', (e) => e.value);
     check(`[${tag}] 2) 근무시간 대표 질문 1개`, hoursQ === '채용공고에는 근무시간이 09:00~18:00, 처우·근로조건 안내에는 10:00~19:00으로 기재되어 있습니다. 실제 적용되는 근무시간을 확인 부탁드립니다.', hoursQ);
@@ -91,12 +91,12 @@ try {
     check(`[${tag}] 2) 근무시간 질문은 대표 1개 + 접힌 추가 질문`, qCount === 1 && (await page.$$('[data-group="different"] [data-topic="02"] details.extra-q')).length <= 1);
 
     // 3) 계약서 추가
-    await page.click('#add-doc');
+    await page.click('#add-doc:visible, #add-second:visible');
     await register('contract', QA_CONTRACT);
     check(`[${tag}] 3) 자료 3건, 이전 자료 보존`, (await page.$$('#doc-list > li')).length === 3 && (await text('#doc-list')).includes('연봉: 3,400만원'));
     check(`[${tag}] 3) 첫 화면에 '입사 전 확인할 내용'`, await firstScreen('#now-title'));
     const spec = await groupText('specified');
-    check(`[${tag}] 3) 새롭게 구체화된 조건: 수습 중 급여 90%`, spec.includes('이전 자료에는 구체적인 수습 중 급여가 없었지만, 근로계약서에는 정규 급여의 90%, 월 2,700,000원(세전)으로 적혀 있어요.'), spec.slice(0, 160));
+    check(`[${tag}] 3) 새롭게 구체화된 조건: 수습 중 급여 90%`, spec.includes('이전 자료에는 구체적인 수습 중 임금이 없었지만, 근로계약서에는 정규 급여의 90%, 월 2,700,000원(세전)으로 적혀 있어요.'), spec.slice(0, 160));
     check(`[${tag}] 3) 계약기간: 계약서에 처음 적힘(기간의 정함 없음), 고용형태와 분리`, spec.includes('계약기간') && (await text('#condition-list [data-item="06"]')).includes('기간의 정함 없음') && !(await text('#condition-list [data-item="06"]')).includes('정규직'));
     check(`[${tag}] 3) 수습기간 3개월: 같은 내용 (날짜는 따로)`, (await text('#condition-list [data-item="07"] .badge-relation')) === '같은 내용으로 안내됐어요');
     check(`[${tag}] 3) 계약서 임금 확인됨 (올바른 응답), 금액 표시`, (await text('#condition-list [data-item="01"]')).includes('연봉 36,000,000원(세전)') && !(await groupText('unavailable')));
@@ -153,16 +153,16 @@ try {
     }, rec);
     await page.goto(`${BASE}/#/records/${oldId}`);
     await view('record');
-    check(`[${tag}] 예전 형식 기록도 열림·요약 표시`, (await text('#record-title')) === '예전 형식 기록' && (await groupText('different')).includes('급여') && (await text('#condition-list [data-item="02"]')).length > 0);
+    check(`[${tag}] 예전 형식 기록도 열림·요약 표시`, (await text('#record-title')) === '예전 형식 기록' && (await groupText('different')).includes('임금') && (await text('#condition-list [data-item="02"]')).length > 0);
 
     // 실제 Gemini QA 결과 재현(모의 응답, test/gemini-qa-docs.js): 공고 → 계약서 바로
     await page.goto(`${BASE}/#/new`);
     await register('job_posting', GQ_POSTING);
-    await page.click('#add-doc');
+    await page.click('#add-doc:visible, #add-second:visible');
     await register('contract', GQ_CONTRACT);
     await page.waitForTimeout(200);
     const gqDiff = await groupText('different');
-    check(`[${tag}] GQ 유지: 급여·근무시간 서로 다른 안내, 수습 급여 구체화, 계약기간 처음 적힘, 수습기간 같음`, gqDiff.includes('급여') && gqDiff.includes('근무시간') && (await groupText('specified')).includes('수습 중 급여')
+    check(`[${tag}] GQ 유지: 급여·근무시간 서로 다른 안내, 수습 급여 구체화, 계약기간 처음 적힘, 수습기간 같음`, gqDiff.includes('임금') && gqDiff.includes('근무시간') && (await groupText('specified')).includes('수습 중 임금')
       && (await text('#condition-list [data-item="06"]')).includes('새롭게 적혔어요') && (await text('#condition-list [data-item="07"] .badge-relation')) === '같은 내용으로 안내됐어요');
     const gq02 = await text('#condition-list [data-item="02"]');
     check(`[${tag}] GQ 근무시간 카드: 두 자료의 시간 차이가 먼저, '내용이 모호함' 대신 세부 확인 안내`, gq02.includes('09:00~18:00') && gq02.includes('10:00~19:00') && gq02.includes('서로 다른 안내가 있어요')
@@ -196,17 +196,17 @@ try {
       await page.goto(`${BASE}/#/new`);
       await register('job_posting', DEMO_POSTING);
       check('[demo] 공고 하나: 기록 이름 = 주식회사 파란스텝', (await text('#record-title')) === '주식회사 파란스텝');
-      const pend = await groupText('pending');
-      check('[demo] 공고 하나: 연봉 범위·수습 급여는 협의·추후 안내 예정 상태 (질문 없음)', pend.includes('협의 가능한 연봉 범위(3,400만~3,800만원)') && pend.includes('추후 안내 예정') && !(await page.$('[data-group="pending"] .q-text')));
+      // 문서 하나(채용공고): 미리보기에 협의·추후 안내 예정 상태만 표시, 질문 없음
+      check('[demo] 공고 하나: 연봉 범위·수습 임금은 협의·추후 안내 예정 상태 (질문 없음)', (await text('#condition-list [data-item="01"]')).includes('3,400만~3,800만') && (await text('#condition-list [data-item="01"]')).includes('협의 예정') && (await text('#condition-list [data-item="08"]')).includes('추후 안내 예정') && !(await page.$('#view-record .q-text')));
       check('[demo] 공고 카드: 수습 중 급여 배지 = 추후 안내 예정', (await text('#condition-list [data-item="08"]')).includes('추후 안내 예정'));
-      await page.click('#add-doc');
+      await page.click('#add-doc:visible, #add-second:visible');
       await register('offer', DEMO_OFFER);
-      await page.click('#add-doc');
+      await page.click('#add-doc:visible, #add-second:visible');
       await register('contract', DEMO_CONTRACT);
       const spec = await groupText('specified');
       check('[demo] 급여: 범위 안에서 구체화 (서로 다른 안내 아님)', spec.includes('채용공고에는 협의 가능한 연봉 범위(3,400만~3,800만원)가 적혀 있고, 처우·근로조건 안내와 근로계약서에는 연봉 3,600만 원으로 기재되어 있어요.') && !(await groupText('different')).includes('급여'));
       check('[demo] 수습 중 급여: 근로계약서에서 처음 구체화, 질문 없음', spec.includes('근로계약서에는 월 270만 원(세전, 정규 급여의 90%)으로 적혀 있어요') && !(await page.$('[data-group="specified"] [data-topic="08"] .q-text')));
-      check('[demo] 서로 다른 안내는 근무시간 하나', (await page.$$('[data-group="different"] .sum-item')).length === 1 && (await groupText('different')).includes('근무시간'));
+      check('[demo] 서로 다른 안내는 근무시간 하나', (await page.$$('[data-group="different"] .ccard')).length === 1 && (await groupText('different')).includes('근무시간'));
       check('[demo] 협의 완료·확정 단정 표현 없음', !/(협의 완료|확정된 합의|협의가 끝났)/.test(await text('#view-record')));
       await page.screenshot({ path: `${OUT}/demo-s04-three-docs.png`, fullPage: true });
     }

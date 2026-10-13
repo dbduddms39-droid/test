@@ -41,14 +41,14 @@ const STATE_ORDER = ['changed', 'unavailable', 'not_comparable', 'missing_one', 
 
 // 비교 항목과 세부 비교 대상(세부기준). kind: 값을 읽고 비교하는 방법
 export const COMPARE_ITEMS = [
-  { id: '01', label: '급여 및 지급 조건', facets: [{ id: '01-a', label: '급여 금액', kind: 'money' }, { id: '01-f', label: '지급일', kind: 'payday' }] },
+  { id: '01', label: '임금 및 지급 조건', facets: [{ id: '01-a', label: '임금 금액', kind: 'money' }, { id: '01-f', label: '지급일', kind: 'payday' }] },
   { id: '02', label: '근무시간 및 휴게시간', facets: [{ id: '02-a', label: '소정근로시간', kind: 'hours' }, { id: '02-b', label: '출퇴근 시각', kind: 'times' }, { id: '02-c', label: '휴게시간', kind: 'break' }] },
   { id: '03', label: '근무장소 및 근무형태', facets: [{ id: '03-a', label: '근무장소', kind: 'place' }, { id: '03-b', label: '재택·파견 등 근무형태', kind: 'text' }] },
   { id: '04', label: '담당업무', facets: [{ id: '04-a', label: '업무 내용', kind: 'text' }] },
   { id: '05', label: '고용형태', facets: [{ id: '05-a', label: '계약 형태', kind: 'employment' }] },
   { id: '06', label: '계약기간', facets: [{ id: '06-a', label: '기간의 정함', kind: 'term' }, { id: '06-b', label: '시작일·종료일', kind: 'period' }] },
   { id: '07', label: '수습기간', facets: [{ id: '07-a', label: '수습 적용', kind: 'probation' }, { id: '07-b', label: '수습 기간', kind: 'duration' }] },
-  { id: '08', label: '수습기간 중 급여', facets: [{ id: '08-a', label: '수습 중 지급 기준', kind: 'probationPay' }] },
+  { id: '08', label: '수습기간 중 임금', facets: [{ id: '08-a', label: '수습 중 지급 기준', kind: 'probationPay' }] },
 ];
 
 // ---------- 문서 한쪽의 세부기준 읽기 ----------

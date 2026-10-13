@@ -96,14 +96,13 @@ try {
     await page.waitForSelector('#original-list .original-view:not([aria-disabled])', { timeout: 10_000 });
     const rec1 = await recordId();
     check(`[${tag}] TC01 공고 단독: 저장·원본 저장 안내`, (await text('#save-status')).includes('저장했어요') && (await text('#save-status')).includes('원본 PDF도 이 브라우저에 저장했어요'));
-    check(`[${tag}] TC01 '저장된 채용조건'이 먼저, 카드 표시`, (await text('#conditions-title')) === '저장된 채용조건' && (await page.$$('#condition-list .ccard')).length > 0
-      && await page.$eval('#conditions-section', (c) => !!(c.compareDocumentPosition(document.querySelector('#now-section')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+    check(`[${tag}] TC01 주요 조건 미리보기 표시 (등록 완료)`, (await text('#conditions-title')) === '주요 조건 미리보기' && (await page.$$('#condition-list .ccard')).length > 0 && (await text('#brief-done')).includes('등록 완료'));
     const recText = await text('#view-record');
     check(`[${tag}] TC01 10개 기준 미기재·불명확 경고와 확인 질문 없음`, !(await page.$('[data-group="needs"]')) && (await page.$$('#view-record .q-text')).length === 0
       && !/문서에서 확인되지 않음|내용이 모호함|일부만 확인돼요|찾지 못했어요/.test(await text('#condition-list')), recText.length);
-    check(`[${tag}] TC01 협의 예정은 질문 없이 상태로`, (await page.$('[data-group="pending"]')) !== null);
-    check(`[${tag}] TC01 원본 PDF 보기·다운로드 버튼(기록 상단), 새 안내 추가`, await page.isVisible('#original-list .original-view') && await page.isVisible('#original-list .original-download') && await page.isVisible('#add-doc-top'));
-    check(`[${tag}] TC01 브라우저 저장 안내 문구`, (await text('#original-notice')).includes('파일은 현재 브라우저에 저장됩니다. 다른 기기에서는 확인할 수 없으며 브라우저 데이터 삭제 시 함께 사라질 수 있습니다.') && await page.$eval('#docs-box', (d) => d.open));
+    check(`[${tag}] TC01 협의 예정은 질문 없이 상태로`, (await text('#condition-list')).includes('협의 예정') && !(await page.$('#view-record .q-text')));
+    check(`[${tag}] TC01 원본 PDF 보기·다운로드 버튼(기록 상단), 새 안내 추가`, await page.isVisible('#original-list .original-view') && await page.isVisible('#original-list .original-download') && await page.isVisible('#add-second'));
+    check(`[${tag}] TC01 브라우저 저장 안내 문구`, (await text('#original-notice')).includes('파일은 현재 브라우저에 저장됩니다. 다른 기기에서는 확인할 수 없으며 브라우저 데이터 삭제 시 함께 사라질 수 있습니다.'));
     check(`[${tag}] TC01 가로 넘침 없음`, await noOverflow());
     await shot('tc01-posting');
     // 항목 상세: 근거 있는 세부 기준만, 기준 출처 안내 없음
@@ -150,7 +149,7 @@ try {
     await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'), null, { timeout: 30_000 });
     const rec2Row = (await idb(page, 'records')).find((r) => r.id === rec2);
     check(`[${tag}] TC08 같은 텍스트로 다시 분석 → 분석됨, 원본 다시 저장 안 함`, rec2Row.documents[0].status === 'analyzed' && (await idb(page, 'files')).length === filesBefore && (await page.$$('#condition-list .ccard')).length > 0);
-    check(`[${tag}] TC06 계약서 단독: 기재 상태 점검 화면 유지 ('핵심 조건 요약')`, (await text('#conditions-title')) === '핵심 조건 요약');
+    check(`[${tag}] TC06 계약서 단독: 기재 내용 확인 화면 유지 ('근로계약서 확인 결과')`, (await text('#conditions-title')) === '근로계약서 확인 결과');
     // 같은 PDF를 같은 기록에 다시 등록 → 원본은 한 번만
     await uploadPdf('contract', '파란스텝_근로계약서(사본).pdf', CONTRACT_PDF, { add: rec2 });
     await waitView('record');

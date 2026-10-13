@@ -60,20 +60,20 @@ test('범위 밖 금액: 공고 범위 3,400만~3,800만 → 오퍼 4,000만 →
   const d01 = f.summary.different.find((x) => x.topicId === '01');
   assert.ok(d01, '범위 밖 금액은 서로 다른 안내');
   const q = qsAbout(f, '01')[0];
-  assert.equal(q, '채용공고에는 급여가 연봉 3,400만~3,800만원 범위, 처우·근로조건 안내에는 4,000만 원으로 기재되어 있습니다. 실제 적용되는 급여를 확인 부탁드립니다.');
+  assert.equal(q, '채용공고에는 임금이 연봉 3,400만~3,800만원 범위, 처우·근로조건 안내에는 4,000만 원으로 기재되어 있습니다. 실제 적용되는 임금을 확인 부탁드립니다.');
 });
 
 test('오퍼 3,600만 ↔ 계약서 3,400만: 범위 안이어도 구체적인 두 금액이 다르면 서로 다른 안내 + 확인 질문 (기존 탐지 유지)', async () => {
   const [cText, cSpecs] = variant(DEMO_CONTRACT, DEMO_CONTRACT_SPECS, '3,600만 원', '3,400만 원');
   const f = buildFollowUps({ documents: [await doc('job_posting', DEMO_POSTING, DEMO_POSTING_SPECS), await doc('offer', DEMO_OFFER, DEMO_OFFER_SPECS), await doc('contract', cText, cSpecs)] });
   assert.ok(f.summary.different.some((x) => x.topicId === '01'));
-  assert.equal(qsAbout(f, '01')[0], '처우·근로조건 안내에는 급여가 3,600만 원, 근로계약서에는 연봉 3,400만 원(세전)으로 기재되어 있습니다. 실제 적용되는 급여를 확인 부탁드립니다.');
+  assert.equal(qsAbout(f, '01')[0], '처우·근로조건 안내에는 임금이 3,600만 원, 근로계약서에는 연봉 3,400만 원(세전)으로 기재되어 있습니다. 실제 적용되는 임금을 확인 부탁드립니다.');
 });
 
 test('후속 문서에서 구체화: 수습 급여 별도 안내 → 계약서 기재 예정 → 월 270만 원(90%) → 새롭게 구체화, 다시 묻지 않음', async () => {
   const f = buildFollowUps({ documents: [await doc('job_posting', DEMO_POSTING, DEMO_POSTING_SPECS), await doc('offer', DEMO_OFFER, DEMO_OFFER_SPECS), await doc('contract', DEMO_CONTRACT, DEMO_CONTRACT_SPECS)] });
   const s08 = f.summary.specified.find((x) => x.topicId === '08');
-  assert.equal(s08.line, '이전 자료에는 구체적인 수습 중 급여가 없었지만, 근로계약서에는 월 270만 원(세전, 정규 급여의 90%)으로 적혀 있어요.');
+  assert.equal(s08.line, '이전 자료에는 구체적인 수습 중 임금이 없었지만, 근로계약서에는 월 270만 원(세전, 정규 급여의 90%)으로 적혀 있어요.');
   assert.deepEqual(qsAbout(f, '08'), [], '이미 확인된 수습 급여를 다시 묻지 않는다');
   assert.ok(!f.summary.pending.some((x) => x.topicId === '08'), '구체화된 뒤에는 협의 예정으로 보이지 않는다');
   assert.ok(!f.summary.needsCheck.some((x) => x.topicId === '08'));

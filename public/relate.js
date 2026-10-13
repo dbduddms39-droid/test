@@ -70,7 +70,17 @@ function rangeCheck(vagueDoc, concreteDoc) {
 }
 
 // 화면·질문에 쓰는 짧은 값: 검증된 원문 기재값 → (시각은) 원문에서 읽은 시각 → 인용 구절(항목명 제외). 원문에 없는 값을 만들지 않는다.
-const stripLabel = (t) => String(t ?? '').replace(/^\s*(?:\d+\.\s*)?[^:：\n]{1,15}[:：]\s*/, '').trim();
+// 원문 목차·항목명('2. 근무장소', '제7조 수습기간 및 수습 중 임금', '근무지:')을 뺀 실제 값. 원문 근거 화면에는 쓰지 않는다
+const ITEM_NO = /^\s*(?:제\s*\d+\s*조|\d+\s*[.)]|[(（]\d+[)）]|[①-⑳])\s*/;
+const HEADING = /^(?:임금|급여|연봉|보수|근무\s*장소|근무지|근로\s*장소|취업\s*장소|업무(?:의)?\s*내용|담당\s*업무|종사\s*업무|근무\s*시간|근로\s*시간|소정\s*근로\s*시간|휴게\s*시간|수습\s*기간(?:\s*(?:및|중)\s*수습\s*(?:중|기간\s*중)?\s*(?:임금|급여))?|수습\s*(?:중\s*)?(?:임금|급여)|근로\s*계약\s*기간|계약\s*기간|휴일|연차\s*(?:유급\s*)?휴가|고용\s*형태)(?=\s|$)\s*/;
+const stripLabel = (t) => {
+  const raw = String(t ?? '').trim();
+  const noNum = raw.replace(ITEM_NO, '');
+  const colon = noNum.match(/^[^:：\n]{1,15}[:：]\s*(.*)$/s);
+  if (colon) return colon[1].trim();
+  // 번호가 붙은 줄에서만 항목명을 뗀다 (번호 없는 문장 앞부분은 그대로)
+  return noNum !== raw ? noNum.replace(HEADING, '').trim() : raw;
+};
 const clip = (t, n = 40) => (t.length > n ? `${t.slice(0, n)}…` : t);
 export function displayValue(facet, side) {
   if (side.kind === 'unavailable' || side.kind === 'missing') return null;
@@ -84,7 +94,8 @@ export function displayValue(facet, side) {
     if (r.length === 1) return r[0];
   }
   // 인용 구절(항목명 제외)을 그대로: '정규 급여의 90%, 월 2,700,000원(세전)'. 길면 첫 구절만
-  const quotes = [...new Set(side.evidence.map((e) => (stripLabel(e.text) || e.text).replace(/[.。]+$/, '')))];
+  // 항목명만 있는 인용 줄('7. 수습기간 및 수습 중 임금')은 값이 아니므로 빼고, 남는 게 없으면 검증된 원문 기재값을 쓴다
+  const quotes = [...new Set(side.evidence.map((e) => stripLabel(e.text).replace(/[.。]+$/, '')).filter(Boolean))];
   // 문장으로 된 인용('제안 연봉은 3,600만원입니다')은 검증된 원문 기재값을 쓴다
   const sentence = quotes.some((q) => /(니다|어요|에요|해요|드려요|겠습니다)$/.test(q));
   if (side.value && (sentence || !quotes.length)) return clip(side.value);
@@ -179,6 +190,34 @@ function relateFacet(facet, documents, labels) {
   return { id: facet.id, label: facet.label, kind: facet.kind, relation, relationLabel: relation ? RELATION_LABEL[relation] : null, notes, sides, specifiedIn, range, scopes };
 }
 
+// 핵심 값은 같고 뒤 자료에 세부 조건이 더 적힌 경우의 안내 (원문 조각만 사용, 원문에 없는 조건을 만들지 않음)
+// 예) '연봉은 동일하며, 근로계약서에 '월 지급 기준액 3,000,000원(세전)', 지급일(매월 25일 지급)이 추가로 기재되어 있어요.'
+const lastHangul = (t) => (String(t).match(/[가-힣](?=[^가-힣]*$)/) ?? [''])[0];
+const particle = (t, withB, without) => { const c = lastHangul(t).charCodeAt(0) - 0xac00; return c >= 0 && c <= 11171 && c % 28 !== 0 ? withB : without; };
+function addedDetailNote(facets, additions, labels) {
+  const main = facets[0];
+  const present = main.sides.filter((x) => x.kind === 'present' && x.display);
+  if (present.length < 2) return null;
+  const first = present[0]; const later = present.at(-1);
+  const extras = [];
+  let noun = main.label;
+  if (main.kind === 'money') {
+    // 같은 금액이 적힌 구절과 다른 금액(다른 산정 단위)이 적힌 구절을 나눈다
+    const base = new Set(parseAmounts(first.value ?? first.display));
+    const parts = later.display.split(' · ');
+    const common = parts.find((x) => parseAmounts(x).some((a) => base.has(a)));
+    noun = (common && payUnit(common)?.label) || '임금';
+    for (const x of parts) if (x !== common && parseAmounts(x).length && !parseAmounts(x).some((a) => base.has(a))) extras.push(`'${x}'`);
+  }
+  for (const f of additions) {
+    const side = f.sides.filter((x) => x.kind === 'present' && x.display && x.docId === later.docId)[0];
+    if (side) extras.push(`${f.label}(${side.display})`);
+  }
+  if (!extras.length) return null;
+  const list = extras.join(', ');
+  return `${noun}${particle(noun, '은', '는')} 동일하며, ${labels[later.docId]}에 ${list}${particle(list, '이', '가')} 추가로 기재되어 있어요.`;
+}
+
 // documents: 등록 순서대로의 자료 [{ id, docType, analysis: { criteria, ... } }]
 // 반환: { labels, items: [{ id, label, relation, relationLabel, facets }] } — 자료가 하나면 relation은 모두 null
 export function relateRecord(documents) {
@@ -186,8 +225,15 @@ export function relateRecord(documents) {
   const items = RELATE_ITEMS.map((item) => {
     const facets = item.facets.map((f) => relateFacet(f, documents, labels));
     // 대표 관계: 첫 세부 항목은 항상, 나머지는 관계가 있을 때만
-    const relation = RELATION_ORDER.find((r) => facets.some((f) => f.relation === r)) ?? null;
-    return { id: item.id, label: item.label, relation, relationLabel: relation ? RELATION_LABEL[relation] : null, facets };
+    let relation = RELATION_ORDER.find((r) => facets.some((f) => f.relation === r)) ?? null;
+    // 핵심 값(첫 세부 항목)이 같고 나머지는 뒤 자료에 새로 적힌 세부 조건뿐이면 '같은 내용 + 세부 조건 추가'
+    // (예: 연봉 3,600만 원 = 36,000,000원, 계약서에 지급일이 새로 적힘 → 임금 전체를 '새롭게 적힘'으로 보지 않음)
+    const ADD = ['newly_stated', 'newly_specified'];
+    const additions = facets.slice(1).filter((f) => ADD.includes(f.relation));
+    const sameMain = facets[0]?.relation === 'same' && facets.slice(1).every((f) => !f.relation || f.relation === 'same' || ADD.includes(f.relation));
+    if (sameMain && additions.length) relation = 'same';
+    const addedNote = sameMain ? addedDetailNote(facets, additions, labels) : null;
+    return { id: item.id, label: item.label, relation, relationLabel: relation ? RELATION_LABEL[relation] : null, facets, additions: sameMain ? additions.map((f) => f.id) : [], addedNote };
   });
   return { labels, items };
 }

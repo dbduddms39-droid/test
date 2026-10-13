@@ -110,7 +110,8 @@ try {
   await page.goto(`${BASE}/#/`);
   await waitView('landing');
   check('S01: 핵심 행동은 \'입사조건 확인하기\'', (await text('#landing-start')).includes('입사조건 확인하기'));
-  check('S01: 두 문서 비교 기능을 요구하지 않음', !(await page.isVisible('#landing-compare')) && !(await page.textContent('#view-landing')).includes('두 문서를 골라'));
+  // 두 문서 비교는 기능 안내로만 (별도 비교 모드·두 문서 필수 없음, 문서 하나로 시작 가능)
+  check('S01: 두 문서를 필수로 요구하지 않음', !(await page.isVisible('#landing-compare')) && (await page.textContent('#view-landing')).includes('하나만 등록해도'));
   await page.click('#landing-start');
   await waitView('input');
   check('S02: 문서 유형 3개(채용공고·오퍼·계약서) 선택지', (await page.$$('input[name="doc-type"]')).length === 3);
@@ -131,7 +132,7 @@ try {
   await page.screenshot({ path: `${OUT}/s04-posting-390.png`, fullPage: true });
 
   // ---- T05 새 안내 추가: 공고 3,400만원 → 오퍼 3,600만원 ----
-  await page.click('#add-doc');
+  await page.click('#add-doc:visible, #add-second:visible');
   await waitView('input');
   check('S07: 어느 기록에 추가하는지 표시', (await text('#target-alias')) === MARK && await page.isVisible('#target-banner'));
   await register('offer', OFFER_3600_SHORT, { add: true });
@@ -139,8 +140,8 @@ try {
   check('T05 자료 2건이 한 기록에', (await page.$$('#doc-list > li')).length === 2);
   const wageRow = page.locator('#condition-list [data-item="01"]');
   check('T05 급여: 서로 다른 안내가 있어요', (await wageRow.locator('.badge-relation').textContent()) === '서로 다른 안내가 있어요');
-  const nowText = await text('#summary-groups');
-  check('T05 지금 확인할 내용에 두 출처·원문을 함께', nowText.includes('3,400만원') && nowText.includes('3,600만원') && nowText.includes('채용공고') && nowText.includes('처우·근로조건 안내'));
+  const nowText = await text('#condition-list [data-group="different"]');
+  check('T05 서로 다른 조건에 두 출처·원문을 함께', nowText.includes('3,400만원') && nowText.includes('3,600만원') && nowText.includes('채용공고') && nowText.includes('처우·근로조건 안내'));
   check('T05 \'변경됨\'으로 단정하지 않음', !/변경됐|변경되었|조건이 변경/.test(await text('#view-record')));
   const stored = (await idbRecords()).find((r) => r.id === rec1);
   check('T05 이전 자료(공고) 텍스트·근거가 그대로 저장돼 있음', stored.documents[0].confirmedText === POSTING_3400 && JSON.stringify(stored.documents[0].analysis).includes('3,400만원'));
@@ -176,7 +177,7 @@ try {
   await register('job_posting', POSTING_NO_WAGE);
   const rec2 = await recordId();
   check('T11 같은 회사라도 새 등록은 별도 기록', rec2 && rec2 !== rec1);
-  await page.click('#add-doc');
+  await page.click('#add-doc:visible, #add-second:visible');
   await register('offer', OFFER_3600_SHORT, { add: true });
   const wage2 = await page.locator('#condition-list [data-item="01"] .badge-relation').textContent();
   check('T06 공고에 없던 급여가 오퍼에 처음: \'이번 안내에 새롭게 적혔어요\'', wage2 === '이번 안내에 새롭게 적혔어요', wage2);
@@ -189,7 +190,7 @@ try {
   await page.goto(`${BASE}/#/new`);
   await register('job_posting', POSTING_ANNUAL);
   check('회사명이 없으면 \'새 입사 기록\'', (await text('#record-title')) === '새 입사 기록');
-  await page.click('#add-doc');
+  await page.click('#add-doc:visible, #add-second:visible');
   await register('offer', OFFER_MONTHLY, { add: true });
   const wage3 = await page.locator('#condition-list [data-item="01"] .badge-relation').textContent();
   check('T07 연 3,600만원 ↔ 월 300: 같다고 추측하지 않고 \'서로 비교하기 어려워요\'', wage3 === '서로 비교하기 어려워요', wage3);
@@ -228,7 +229,7 @@ try {
   check('T10 브라우저를 닫았다 다시 열어도 기록 5개', (await page.$$('#record-list > li')).length === 5);
   await page.goto(`${BASE}/#/records/${rec1}`);
   await waitView('record');
-  check('T10 다시 연 기록의 자료·원문 유지', (await page.$$('#doc-list > li')).length === 2 && (await text('#summary-groups')).includes('3,400만원'));
+  check('T10 다시 연 기록의 자료·원문 유지', (await page.$$('#doc-list > li')).length === 2 && (await text('#condition-list [data-group="different"]')).includes('3,400만원'));
   check('1440px 가로 넘침 없음 (기록 화면)', await noHScroll());
   await page.screenshot({ path: `${OUT}/s04-two-docs-1440.png`, fullPage: true });
 

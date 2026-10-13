@@ -223,7 +223,7 @@ test('비교 결과 → 확인 질문: 뒤 문서에 새로 적힌 수습 중 �
   const qs = buildCompareQuestions(c);
   const q08 = qs.find((q) => q.itemId === '08');
   assert.ok(q08, '수습 중 급여 질문');
-  assert.match(q08.text, /채용공고에서는 수습기간 중 급여에 관한 내용을 찾지 못했고, 근로계약서에는 다음과 같이 적혀 있습니다\(90%\)/);
+  assert.match(q08.text, /채용공고에서는 수습기간 중 임금에 관한 내용을 찾지 못했고, 근로계약서에는 다음과 같이 적혀 있습니다\(90%\)/);
   assert.ok(!qs.some((q) => q.itemId === '07'), '두 문서에 같은 수습기간은 묻지 않음');
   assert.ok(!qs.some((q) => q.itemId === '01' && /지급일/.test(q.text)), '우선 대상이 아닌 새 조건(지급일)은 기존처럼 묻지 않음');
 });

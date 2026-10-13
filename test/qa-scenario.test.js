@@ -7,7 +7,7 @@ import { analyzeDocument } from '../src/analyze.js';
 import { CRITERION_IDS } from '../src/criteria.js';
 import { segmentText } from '../src/segment.js';
 import { relateRecord } from '../public/relate.js';
-import { buildFollowUps, euro } from '../public/followups.js';
+import { weeklyCalc, buildFollowUps, euro } from '../public/followups.js';
 import { buildExtraction } from './v22-fixtures.js';
 import {
   QA_POSTING, QA_OFFER, QA_CONTRACT, QA_POSTING_SPECS, QA_OFFER_SPECS, QA_CONTRACT_SPECS, WAGE_FAILURE_MODES,
@@ -45,10 +45,18 @@ test('오류 1: 출퇴근 시각이 적힌 근무시간 — 상태(기준표 그
   // v3.2: 채용공고 하나만으로는 확인 질문을 만들지 않는다 (기록만)
   const fp = buildFollowUps({ documents: [{ id: 'p', docType: 'job_posting', analysis: p }] });
   assert.ok(!all(fp).some((x) => x.topicIds.includes('02')), '채용공고 단독은 질문 없음');
-  // 같은 문구가 근로계약서에 적혀 있으면 빠진 세부 정보를 묻는다
+  // 같은 문구가 근로계약서에 적혀 있으면: 근무일(주 5일)·출퇴근·휴게가 모두 확인되므로 주 40시간을 계산으로 확인 (MVP 통합 QA)
+  // → 판정은 기준표 그대로(일부 확인), '내용이 모호함'으로 묻지 않고 계산값으로 구분해 보여 준다
   const pc = await analyze('contract', QA_POSTING, QA_POSTING_SPECS);
+  assert.equal(topic(pc, '02').status, 'MAIN_PARTIAL');
+  assert.deepEqual(weeklyCalc(topic(pc, '02')), { hours: 40, source: 'display_calc', text: '주 40시간', days: 5, work: '09:00~18:00', breakMinutes: 60 });
   const f = buildFollowUps({ documents: [{ id: 'pc', docType: 'contract', analysis: pc }] });
-  const w = all(f).find((x) => x.topicIds.includes('02'));
+  assert.ok(!all(f).some((x) => x.topicIds.includes('02')), '계산으로 확인한 근무시간은 질문하지 않는다');
+  // 근무일이 없으면 계산하지 않고(추론 없음) 빠진 세부 정보를 묻는다
+  const noDays = { ...QA_POSTING_SPECS, '02-a': { f: 'specific', q: ['09:00~18:00'], kind: 'quoted' }, '02-d': { f: 'absent', q: [] } };
+  const pc2 = await analyze('contract', QA_POSTING, noDays);
+  assert.equal(weeklyCalc(topic(pc2, '02')), null);
+  const w = all(buildFollowUps({ documents: [{ id: 'pc2', docType: 'contract', analysis: pc2 }] })).find((x) => x.topicIds.includes('02'));
   assert.equal(w.kind, 'partial_detail');
   assert.equal(w.tier, 'more', '세부 숫자만 빠진 경우는 우선 확인으로 올리지 않는다');
   assert.match(w.reasons[0], /주 소정근로시간 숫자/);
@@ -160,12 +168,12 @@ test('시나리오 1~3: 공고 → 오퍼 → 계약서. 요약(다름·구체�
   assert.equal(JSON.stringify([posting, offer]), before, '이전 자료는 바뀌지 않음');
   const wage = all(f3).find((x) => x.topicIds.includes('01'));
   assert.equal(wage.kind, 'different_stated');
-  assert.match(wage.question, /^채용공고에는 급여가 3,400만원, 처우·근로조건 안내에는 3,600만원, 근로계약서에는 연봉 36,000,000원\(세전\)/);
+  assert.match(wage.question, /^채용공고에는 임금이 3,400만원, 처우·근로조건 안내에는 3,600만원, 근로계약서에는 연봉 36,000,000원\(세전\)/);
   assert.equal(topic(contract.analysis, '01').status, 'MAIN_FOUND', '올바른 응답에서 계약서 임금은 확인됨');
   // 수습 중 급여: 처음 구체화
   assert.equal(item(f3.relation, '08').relation, 'newly_specified');
   const spec08 = f3.summary.specified.find((x) => x.topicId === '08');
-  assert.equal(spec08.line, '이전 자료에는 구체적인 수습 중 급여가 없었지만, 근로계약서에는 정규 급여의 90%, 월 2,700,000원(세전)으로 적혀 있어요.');
+  assert.equal(spec08.line, '이전 자료에는 구체적인 수습 중 임금이 없었지만, 근로계약서에는 정규 급여의 90%, 월 2,700,000원(세전)으로 적혀 있어요.');
   assert.doesNotMatch(spec08.line, /변경|위반/);
   // 계약기간은 계약서에 처음 적힘, 수습기간은 같은 3개월
   assert.equal(item(f3.relation, '06').relation, 'newly_stated');

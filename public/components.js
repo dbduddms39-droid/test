@@ -12,6 +12,9 @@ export const el = (tag, attrs = {}, ...children) => {
   return node;
 };
 
+// 자식 바꾸기: null·undefined·false는 건너뛴다. (DOM replaceChildren은 null을 'null' 글자로 넣는다)
+export const fill = (node, ...children) => node.replaceChildren(...children.flat(Infinity).filter((c) => c != null && c !== false));
+
 // 상태 코드 → 표시 유형. 색이 아니라 기호(• ○ — ?)와 글자 굵기로 구분하고, 초록·빨강은 쓰지 않는다.
 // 현재 앱의 4개 상태와 v2.2 동결 기준표의 상위 4개·세부 6개 상태 코드를 함께 받는다.
 // 라벨은 이 표에 두지 않는다: v2.2 라벨은 기준표 원문 그대로, 현재 상태 라벨은 서버 응답(statusLabel)을 쓴다.
@@ -55,7 +58,8 @@ export const sourceLines = (lines, highlight = []) => {
     const on = marked.has(String(s.id));
     return el('li', { class: on ? 'source-line is-marked' : 'source-line', 'data-line': String(s.id) },
       el('span', { class: 'mono-index source-line-no', 'aria-hidden': 'true' }, String(s.id).padStart(2, '0')),
-      el(on ? 'mark' : 'span', { class: 'source-line-text' }, s.text));
+      // 형광펜은 글자에만: 줄 상자(flex 항목)가 아니라 안쪽 인라인 mark에 칠한다
+      el('span', { class: 'source-line-text' }, on ? el('mark', {}, s.text) : s.text));
   }));
 };
 

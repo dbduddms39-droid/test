@@ -20,7 +20,7 @@ const MAX_TEXT_CHARS = 20_000;
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.gz': 'application/gzip', '.bcmap': 'application/octet-stream',
-  '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
+  '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.pdf': 'application/pdf',
 };
 
 // AI 오류 → 사용자 안내 (키 값이나 원문은 응답·로그에 넣지 않는다)
@@ -48,7 +48,7 @@ export function createHandler({ ai, limiter = createRateLimiter(), trustProxy = 
       if (req.method === 'POST' && req.url === '/api/analyze') return await handleAnalyze(req, res, { ai, limiter, trustProxy });
       if (req.method === 'POST' && req.url === '/api/compare') return await handleCompare(req, res, { ai, limiter, trustProxy });
       if (req.method === 'GET' && req.url === '/api/config') return sendJson(res, 200, { mode: ai.name });
-      if (req.method === 'GET') return await serveStatic(req, res);
+      if (req.method === 'GET' || req.method === 'HEAD') return await serveStatic(req, res); // HEAD: 체험용 가상 문서가 있는지 확인 (본문 없이 응답)
       sendJson(res, 405, { error: '지원하지 않는 요청이에요.' });
     } catch (err) {
       // 오류 메시지에는 입력 일부가 섞일 수 있어(예: JSON 파싱 오류) 오류 종류만 기록한다.

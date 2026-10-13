@@ -87,7 +87,8 @@ try {
     const u = new URL(r.url());
     if (!['http:', 'https:'].includes(u.protocol)) return; // blob:, data: 는 브라우저 내부
     if (u.origin !== BASE) external.push(u.origin);
-    if (r.method() !== 'GET') posts.push({ path: u.pathname, body: r.postData() ?? '' });
+    // 본문을 실을 수 있는 요청만 (GET·HEAD는 본문 없음. HEAD는 시작 화면의 체험용 가상 문서 확인)
+    if (!['GET', 'HEAD'].includes(r.method())) posts.push({ path: u.pathname, body: r.postData() ?? '' });
   });
   const page = await context.newPage();
   let dialogAnswer = 'accept'; // 입력란 내용 바꾸기 확인 대화상자에 대한 응답

@@ -10,7 +10,7 @@
 // 질문에는 검증된 원문 값만 넣고, 법률 판단이나 조건 확정 표현을 넣지 않는다.
 import { buildQuestion, josa } from './questions.js';
 import { relateRecord } from './relate.js';
-import { parsePayRange, formatWonRange, payUnit, parseAmounts } from './compare-core.js';
+import { parsePayRange, formatWonRange, payUnit, parseAmounts, parseTimeRanges, parseBreakMinutes } from './compare-core.js';
 
 export const PRIMARY_LIMIT = 3;
 const EXTRA_LIMIT = 2;
@@ -40,19 +40,19 @@ const REASON = {
   missing: '이 자료에서는 관련 내용을 찾지 못했어요. 짧은 안내에는 빠질 수 있어요.',
 };
 export const TOPIC_NAME = {
-  '01': '급여', '02': '근무시간', '03': '근무장소', '04': '담당업무', '05': '고용형태',
-  '06': '계약기간', '07': '수습기간', '08': '수습 중 급여', '09': '휴일', '10': '연차 유급휴가',
+  '01': '임금', '02': '근무시간', '03': '근무장소', '04': '담당업무', '05': '고용형태',
+  '06': '계약기간', '07': '수습기간', '08': '수습 중 임금', '09': '휴일', '10': '연차 유급휴가',
 };
 // 질문에서 세부 항목을 부르는 말 (예: 출퇴근 시각 → '근무시간이 09:00~18:00')
 const FACET_NOUN = {
-  '01-a': '급여', '01-f': '급여 지급일', '02-a': '주 소정근로시간', '02-b': '근무시간', '02-c': '휴게시간',
+  '01-a': '임금', '01-f': '임금 지급일', '02-a': '주 소정근로시간', '02-b': '근무시간', '02-c': '휴게시간',
   '03-a': '근무장소', '03-b': '근무형태', '04-a': '담당업무', '05-a': '고용형태', '06-a': '계약기간', '06-b': '계약기간',
-  '07-a': '수습 적용 여부', '07-b': '수습기간', '08-a': '수습 중 급여', '09-a': '휴일', '10-a': '연차 유급휴가',
+  '07-a': '수습 적용 여부', '07-b': '수습기간', '08-a': '수습 중 임금', '09-a': '휴일', '10-a': '연차 유급휴가',
 };
 // 경계 규칙으로 낮아진 상태의 설명 (rules.js의 boundary)
 export const BOUNDARY_TEXT = {
   hours_not_quoted: '주 소정근로시간 숫자(예: 주 40시간)가 직접 적혀 있지 않아요',
-  unit_not_stated: '급여의 산정 단위(연봉·월급·시급 등)가 적혀 있지 않아요',
+  unit_not_stated: '임금의 산정 단위(연봉·월급·시급 등)가 적혀 있지 않아요',
   rest_day_not_designated_holiday: '휴무일만 적혀 있고 지정된 휴일로 적혀 있지는 않아요',
   external_reference_only: '법령·내규를 따른다고만 적혀 있어요',
   calc_time_not_quoted: '근무시간을 계산할 출퇴근 시각을 원문에서 확인하지 못했어요',
@@ -62,6 +62,54 @@ export const BOUNDARY_TEXT = {
   calc_malformed: '주 소정근로시간 숫자(예: 주 40시간)가 직접 적혀 있지 않아요',
 };
 const DETAIL_ONLY = new Set(['hours_not_quoted', 'calc_missing', 'calc_malformed', 'calc_time_not_quoted', 'calc_break_not_quoted', 'calc_mismatch']);
+// 계산으로 확인한 주 소정근로시간: 원문에 '주 N시간'이 직접 적혀 있지 않을 때, 검증된 원문 값만으로 계산한다.
+//   출퇴근 시각 1개 + 휴게시간 1개(시각 범위 또는 분) + 근무일 수 1개('주 5일', '월~금')가 모두 확인될 때만.
+//   셋 중 하나라도 없거나, 서로 다른 값이 함께 있거나, 휴게가 근무시간 밖이면 계산하지 않는다 (추론·가정 없음).
+//   AI가 낸 계산값을 서버가 원문으로 다시 계산해 확인한 경우(02-a 계산값)는 그 값을 그대로 쓴다.
+// 판정(동결 기준표)은 바꾸지 않고, 화면에서 '원문 기재값'과 '계산값'을 구분해 보여 줄 때만 쓴다.
+const DAY_ORDER = '월화수목금토일';
+const toMin = (hm) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3));
+function workDayCount(texts) {
+  const counts = new Set();
+  for (const t of texts) {
+    for (const m of t.matchAll(/주\s*([1-7])\s*일/g)) counts.add(Number(m[1]));
+    for (const m of t.matchAll(/([월화수목금토일])(?:요일)?\s*(?:~|-|–|∼|부터)\s*([월화수목금토일])(?:요일)?/g)) {
+      const a = DAY_ORDER.indexOf(m[1]); const b = DAY_ORDER.indexOf(m[2]);
+      if (b >= a) counts.add(b - a + 1);
+    }
+  }
+  return counts.size === 1 ? [...counts][0] : null;
+}
+export function weeklyCalc(t) {
+  if (!t?.visible || t.id !== '02') return null;
+  const c = Object.fromEntries(t.criteria.map((x) => [x.id, x]));
+  const a = c['02-a'];
+  if (a?.status === 'CONFIRMED') {
+    // 서버가 원문으로 다시 계산해 확인한 계산값
+    if (a.valueKind === 'calculated' && a.derived?.length === 1) return { hours: Number(String(a.derived[0].value).match(/[\d.]+/)?.[0]), source: 'verified_calc', text: a.derived[0].value };
+    return null; // '주 N시간'이 원문에 직접 적힘 → 계산할 필요 없음
+  }
+  const ok = (x) => x?.status === 'CONFIRMED';
+  const textsOf = (x) => (ok(x) ? [x.sourceValue, ...(x.evidence ?? []).map((e) => e.text)].filter(Boolean) : []);
+  // 출퇴근 시각: 검증된 기재값이 있으면 그것만, 없으면 인용(휴게 시각 제외)
+  const workTexts = c['02-b']?.sourceValue && ok(c['02-b']) ? [c['02-b'].sourceValue] : textsOf(c['02-b']);
+  const work = [...new Set(workTexts.flatMap((x) => parseTimeRanges(x, { skipBreaks: true })))];
+  if (work.length !== 1) return null;
+  const [ws, we] = work[0].split('~').map(toMin);
+  if (!(we > ws)) return null;
+  const breakTexts = c['02-c']?.sourceValue && ok(c['02-c']) ? [c['02-c'].sourceValue] : textsOf(c['02-c']).map((x) => x.replace(/^.*?휴게/s, '휴게'));
+  const breaks = [...new Set(breakTexts.flatMap((x) => parseBreakMinutes(x)))];
+  if (breaks.length !== 1) return null;
+  const breakRanges = [...new Set(breakTexts.flatMap((x) => parseTimeRanges(x)))];
+  if (breakRanges.some((r) => { const [bs, be] = r.split('~').map(toMin); return bs < ws || be > we; })) return null;
+  const days = workDayCount(['02-a', '02-b', '02-c', '02-d'].flatMap((id) => textsOf(c[id])));
+  if (!days) return null;
+  const daily = we - ws - breaks[0];
+  if (daily <= 0) return null;
+  const hours = Math.round((daily * days) / 6) / 10;
+  return { hours, source: 'display_calc', text: `주 ${hours}시간`, days, work: work[0], breakMinutes: breaks[0] };
+}
+
 // 핵심 내용(출퇴근 시각·휴게시간 등)은 적혀 있고 세부 숫자(주 소정근로시간 등)만 직접 적혀 있지 않아 '일부 확인'인 항목.
 // 판정(MAIN_PARTIAL)은 그대로 두고 화면에서 '전체가 모호함'과 구분해 보여 줄 때 쓴다. 반환: { written: [라벨], lacking: [라벨] } 또는 null
 export function detailOnly(t) {
@@ -176,6 +224,7 @@ function docCandidates(doc, label, others) {
       kind = null;
     } else if (t.status === 'MAIN_PARTIAL') {
       if (laterFound && doc.docType !== 'contract') kind = null; // 뒤 자료에 구체적으로 적혀 있으면 앞 자료의 모호함은 묻지 않음
+      else if (detailOnly && weeklyCalc(t)) kind = null; // 원문 값으로 계산해 확인됨(계산값) → 묻지 않는다
       else if (detailOnly) kind = 'partial_detail';
       else if (doc.docType === 'contract') kind = 'contract_unclear';
       else if (doc.docType === 'offer' && OFFER_CORE.has(t.id)) kind = 'offer_unclear';
@@ -385,7 +434,7 @@ export function buildFollowUps(record) {
 
 export function pendingLine({ docLabel, def }) {
   const head = def.rangeText
-    ? `${docLabel}에는 협의 가능한 ${def.unitLabel ?? '급여'} 범위(${def.rangeText})가 적혀 있어요.`
+    ? `${docLabel}에는 협의 가능한 ${def.unitLabel ?? '임금'} 범위(${def.rangeText})가 적혀 있어요.`
     : `${docLabel}에는 '${clip(def.quote, 40)}'라고 적혀 있어요(${def.label}).`;
   return `${head} 다음 안내에서 구체적인 조건이 적히는지 이어서 확인해요.`;
 }

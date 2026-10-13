@@ -48,41 +48,51 @@
         </figure>
       </div>
 
-      <!-- 2. 서비스 이용 방식: 채용공고 저장 / 근로계약서 점검 (순서·조합을 강제하지 않음) -->
+      <!-- 2. 이용 방법: 문서 2개 비교 / 근로계약서 단독 확인 (순서·조합을 강제하지 않음) + 확인 기준 -->
       <section class="band landing-flow" id="landing-workflow" aria-labelledby="flow-title" tabindex="-1">
         <div class="band-head">
           <div>
-            <p class="mono-meta">§ 이용 방식</p>
+            <p class="mono-meta">§ 이용 방법</p>
             <h2 id="flow-title">가진 자료로 바로 시작해요.</h2>
           </div>
-          <p class="muted">채용공고나 근로계약서 중 하나만 있어도 돼요. 등록 순서는 정해져 있지 않아요.</p>
+          <p class="muted">채용공고, 처우·근로조건 안내, 근로계약서 중 받은 문서로 시작해요. 등록 순서는 정해져 있지 않아요.</p>
         </div>
         <ul class="flow-docs use-cards">
           <li class="flow-doc use-card">
-            <p class="flow-doc-type"><span class="mono-index">A</span> 채용공고</p>
-            <h3 class="use-card-title">채용공고, 저장하고 다시 확인해요.</h3>
-            <p class="use-card-body">주요 근로조건과 PDF 원본을 보관하고, 필요할 때 다시 열어볼 수 있어요.</p>
+            <p class="flow-doc-type"><span class="mono-index">A</span> 문서 2개 비교</p>
+            <h3 class="use-card-title">두 문서를 골라 비교해요.</h3>
+            <p class="use-card-body">채용공고, 처우·근로조건 안내, 근로계약서 중 두 문서를 선택해 근로조건의 차이를 확인해요.</p>
           </li>
           <li class="flow-doc use-card">
-            <p class="flow-doc-type"><span class="mono-index">B</span> 근로계약서</p>
-            <h3 class="use-card-title">근로계약서, 중요한 내용을 확인해요.</h3>
-            <p class="use-card-body">주요 근로조건이 어떻게 기재되어 있는지 확인하고, 필요한 질문을 살펴볼 수 있어요.</p>
+            <p class="flow-doc-type"><span class="mono-index">B</span> 근로계약서 단독 확인</p>
+            <h3 class="use-card-title">근로계약서 하나로도 확인해요.</h3>
+            <p class="use-card-body">근로계약서 하나만 등록해도 주요 근로조건이 적혀 있는지, 내용이 구체적인지 확인할 수 있어요.</p>
           </li>
         </ul>
-        <div class="margin-note use-together">
-          <p class="mono-meta">함께 등록했을 때</p>
-          <p>두 자료를 함께 등록하면 서로 다르게 안내된 조건과 새롭게 구체화된 내용도 확인할 수 있어요.</p>
-          <p class="muted">처우·근로조건 안내 문자나 메일은 받은 경우에만 추가하면 돼요.</p>
+        <div class="margin-note use-together" id="landing-criteria">
+          <p class="mono-meta">근로계약서 확인 기준</p>
+          <ul class="criteria-list">
+            <li>주요 근로조건의 기재 여부</li>
+            <li>기재된 내용의 구체성</li>
+            <li>원문에 직접 적힌 값과 계산으로 확인한 값의 구분</li>
+          </ul>
+          <p class="muted">일단확인은 문서에 적힌 내용을 확인하는 서비스이며, 법률 위반 여부나 계약의 적법성을 판정하지 않아요.</p>
         </div>
-        <p class="flow-foot muted small">자료 사이의 차이는 적힌 문구의 차이이며, 협의가 끝났는지·회사가 조건을 바꿨는지·법을 어겼는지는 판단하지 않아요.</p>
       </section>
 
-      <!-- 3. 마지막 CTA -->
+      <!-- 3. 마지막 CTA + 체험용 가상 문서 다운로드 (파일이 있을 때만 표시) -->
       <section class="landing-cta" aria-labelledby="cta-title">
         <h2 id="cta-title">지금 받은 문서부터 확인해 보세요.</h2>
         <p class="muted">채용공고, 근로계약서 또는 처우 안내 중 하나만 등록해도 괜찮아요.</p>
         <div class="cta-actions">
           <a href="#/new" class="btn-primary btn-auto" id="landing-start-bottom">입사조건 확인하기 →</a>
+        </div>
+        <div class="sample-download" id="sample-download" hidden>
+          <p class="sample-dl-title">가상 문서로 직접 체험해 보세요</p>
+          <p class="muted small">실제 문서가 없어도 괜찮아요. 예시 문서를 다운로드해 근로조건 비교를 체험할 수 있어요. 가상 회사와 가상의 근로조건으로 만든 문서예요.</p>
+          <ul class="sample-dl-list" id="sample-dl-list"></ul>
+          <button type="button" class="btn-text sample-zip" id="sample-zip">전체 다운로드</button>
+          <p class="muted small" id="sample-status" role="status" aria-live="polite"></p>
         </div>
         <p class="disclaimer">§ 문서에 적힌 근로조건과 원문 근거를 보여 줘요. 법률 위반 여부, 기업의 신뢰도, 입사 적합성은 판단하지 않아요.</p>
       </section>
@@ -157,10 +167,21 @@
           </div>
 
           <div class="privacy" role="note" id="privacy-note">
-            <p class="privacy-title">개인정보 보호 및 보관 안내</p>
-            <p>이름, 연락처, 주민등록번호, 주소 등 확인에 필요 없는 개인정보는 가리고 입력해 주세요.</p>
-            <p>확인한 텍스트는 분석을 위해 일단확인 서버를 거쳐 외부 AI 모델(Google Gemini API)에 전달돼요. 일단확인 서버는 문서 내용을 저장하지 않지만, 전달된 내용에는 외부 AI 제공자의 데이터 처리 방침이 적용돼요.</p>
-            <p>분석이 끝나면 확인한 텍스트·분석 결과·원문 근거가 <strong>지금 쓰는 이 브라우저</strong>에 기록으로 저장돼요. PDF로 올린 경우 원본 PDF도 함께 저장해요(사진 원본은 저장하지 않아요). 파일은 현재 브라우저에 저장됩니다. 다른 기기에서는 확인할 수 없으며 브라우저 데이터 삭제 시 함께 사라질 수 있습니다.</p>
+            <p class="privacy-title">개인정보·데이터 처리 안내</p>
+            <!-- 분석 전에 꼭 알아야 할 내용은 항상 보이게 (실제 동작: /api/analyze로 확인한 텍스트만 전송, 기록은 IndexedDB) -->
+            <ul class="privacy-core">
+              <li>분석에는 외부 AI(Google Gemini)를 사용해요.</li>
+              <li>분석 버튼을 누르면 <strong>확인한 텍스트</strong>가 일단확인 서버를 거쳐 Gemini로 전달돼요. 사진·PDF 파일 자체는 보내지 않아요.</li>
+              <li>분석 결과와 기록(PDF로 올렸다면 원본 PDF 포함)은 <strong>지금 쓰는 이 브라우저</strong>에만 저장돼요.</li>
+              <li>다른 기기에서는 볼 수 없고, 브라우저 데이터를 지우면 함께 사라질 수 있어요.</li>
+            </ul>
+            <details class="privacy-more" id="privacy-more">
+              <summary>자세한 데이터 처리 안내 보기</summary>
+              <p>이름, 연락처, 주민등록번호, 주소 등 확인에 필요 없는 개인정보는 가리고 입력해 주세요.</p>
+              <p>확인한 텍스트는 분석을 위해 일단확인 서버를 거쳐 외부 AI 모델(Google Gemini API)에 전달돼요. 일단확인 서버는 문서 내용을 저장하지 않지만, 전달된 내용에는 외부 AI 제공자의 데이터 처리 방침이 적용돼요. 이미 분석을 위해 전송된 요청은 기록을 지워도 되돌릴 수 없어요.</p>
+              <p>사진·PDF에서 글자를 읽는 과정은 이 브라우저 안에서 처리돼요. 분석이 끝나면 확인한 텍스트·분석 결과·원문 근거가 지금 쓰는 이 브라우저에 기록으로 저장돼요. PDF로 올린 경우 원본 PDF도 함께 저장해요(사진 원본은 저장하지 않아요).</p>
+              <p>파일은 현재 브라우저에 저장됩니다. 다른 기기에서는 확인할 수 없으며 브라우저 데이터 삭제 시 함께 사라질 수 있습니다. 시크릿 창을 닫거나 저장 공간이 부족할 때도 사라질 수 있고, 이 기기를 함께 쓰는 사람도 기록을 볼 수 있어요.</p>
+            </details>
           </div>
 
           <p id="input-error" class="error" role="alert" hidden></p>
@@ -246,14 +267,14 @@
     <!-- S-04 분석 중 -->
     <section id="view-analyzing" class="view view-center" hidden aria-busy="true">
       <p class="status-pill"><span class="mono-meta">확인 진행 중</span></p>
-      <h1 tabindex="-1" id="analyzing-title">문서의 근로조건을 확인하고 있어요.</h1>
-      <p class="lead">문서에 적힌 내용을 점검 기준에 따라 정리하고 있어요. 잠시만 기다려 주세요.</p>
+      <h1 tabindex="-1" id="analyzing-title">근로조건을 확인하고 있어요.</h1>
+      <p class="lead">문서에 적힌 내용을 항목별로 정리하고 있어요.</p>
       <div class="skeleton-sheet" aria-hidden="true">
         <span class="sk sk-w40"></span><span class="sk sk-w20"></span>
         <span class="sk sk-w70 sk-gap"></span><span class="sk sk-w60"></span><span class="sk sk-w50"></span>
         <span class="sk sk-w70 sk-mark sk-gap"></span><span class="sk sk-w55"></span><span class="sk sk-w35"></span>
       </div>
-      <p class="analyzing-note"><strong>분석이 끝나면 기록으로 저장하고 결과를 보여 드려요.</strong><br><span class="muted small">문서의 길이와 형식에 따라 시간이 걸릴 수 있어요.</span></p>
+      <p class="analyzing-note muted small">문서의 길이와 형식에 따라 시간이 걸릴 수 있어요.</p>
     </section>
 
     <!-- 공통 오류·재시도 -->
@@ -299,20 +320,24 @@
       </div>
       <p id="analysis-source" class="analysis-source"></p>
 
-      <!-- A. 입사 전 확인할 내용 (요약) -->
-      <section class="record-section now-check" id="now-section" aria-labelledby="now-title">
-        <h2 id="now-title">입사 전 확인할 내용</h2>
-        <p class="muted small">등록한 자료에 적힌 내용을 정리했어요. 질문은 고쳐서 복사할 수 있고, 일단확인이 회사에 보내지 않아요.</p>
+      <!-- 분석 확인 불가 (같은 텍스트로 다시 분석). 해당 항목이 있을 때만 -->
+      <section class="record-section now-check" id="now-section" aria-labelledby="now-title" hidden>
+        <h2 id="now-title">다시 분석이 필요한 항목</h2>
         <div class="summary-groups" id="summary-groups"></div>
-        <p class="now-empty" id="now-empty" hidden>이번 자료에서 별도로 제안할 확인 사항이 없어요. 아래 핵심 조건과 원문을 함께 확인해 주세요.</p>
       </section>
 
-      <!-- B. 핵심 조건 요약 -->
+      <!-- 주요 결과: 문서 1개(채용공고·처우 안내) = 주요 조건 미리보기 / 근로계약서 1개 = 확인 결과 / 문서 2개 이상 = 비교 결과.
+           카드는 한 번만, 묶음 제목의 숫자 = 그 묶음의 카드 수 -->
       <section class="record-section" id="conditions-section" aria-labelledby="conditions-title">
+        <p class="brief-done" id="brief-done" hidden></p>
         <h2 id="conditions-title">핵심 조건 요약</h2>
         <p class="muted small" id="conditions-help"></p>
-        <ol class="condition-cards" id="condition-list"></ol>
+        <div class="condition-groups" id="condition-list"></div>
         <p class="now-empty" id="conditions-empty" hidden></p>
+        <div class="next-step" id="next-step" hidden>
+          <p>다른 문서를 추가하면 근로조건이 어떻게 달라졌는지 비교할 수 있어요.</p>
+          <a class="btn-primary btn-auto" id="add-second">비교할 두 번째 문서 추가하기 →</a>
+        </div>
       </section>
 
       <!-- C. 상세 확인 (기본으로 접힘) -->

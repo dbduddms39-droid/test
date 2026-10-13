@@ -42,9 +42,9 @@ try {
     check(`[${tag}] S01: 대표 비주얼은 저장된 채용 기록(가상 시연 예시), 처우 안내를 출발점으로 보이지 않음`, hero.includes('주식회사 파란스텝') && hero.includes('채용공고 저장됨') && hero.includes('원본 PDF 다시 보기') && hero.includes('새 안내 추가하기') && hero.includes('가상 시연 예시') && hero.includes('실제 저장된 기록이 아니에요') && !/합격 안내|처우/.test(hero));
     check(`[${tag}] S01: 비주얼 안에는 누를 수 있는 요소 없음 (실제 CTA만)`, (await page.$$('.sample-card a, .sample-card button')).length === 0);
     const flow = await page.textContent('#landing-workflow');
-    check(`[${tag}] S01: 채용공고 저장 / 근로계약서 점검 역할 구분`, flow.includes('채용공고, 저장하고 다시 확인해요.') && flow.includes('주요 근로조건과 PDF 원본을 보관하고') && flow.includes('근로계약서, 중요한 내용을 확인해요.') && flow.includes('필요한 질문을 살펴볼 수 있어요'));
-    check(`[${tag}] S01: 함께 등록했을 때의 가치(비교) 안내`, flow.includes('두 자료를 함께 등록하면 서로 다르게 안내된 조건과 새롭게 구체화된 내용도 확인할 수 있어요.'));
-    check(`[${tag}] S01: 처우 안내는 선택, 순서·필수 표현 없음`, flow.includes('처우·근로조건 안내 문자나 메일은 받은 경우에만 추가하면 돼요.') && !/최종합격 안내|필수|반드시|순서대로/.test(landing) && (await page.$$('#landing-workflow .use-cards > li')).length === 2);
+    check(`[${tag}] S01: 이용 방법 두 기능 구분 (문서 2개 비교 / 근로계약서 단독 확인)`, flow.includes('문서 2개 비교') && flow.includes('두 문서를 선택해 근로조건의 차이를 확인해요.') && flow.includes('근로계약서 단독 확인') && flow.includes('근로계약서 하나만 등록해도'));
+    check(`[${tag}] S01: 근로계약서 확인 기준과 법률 판단 안 함 안내`, flow.includes('주요 근로조건의 기재 여부') && flow.includes('원문에 직접 적힌 값과 계산으로 확인한 값의 구분') && flow.includes('법률 위반 여부나 계약의 적법성을 판정하지 않아요'));
+    check(`[${tag}] S01: 처우 안내는 세 문서 중 하나(필수 단계 아님), 순서·필수 표현 없음`, flow.includes('처우·근로조건 안내') && flow.includes('등록 순서는 정해져 있지 않아요') && !/최종합격 안내|필수|반드시|순서대로/.test(landing) && (await page.$$('#landing-workflow .use-cards > li')).length === 2);
     check(`[${tag}] S01: 마지막 CTA 보조 문구`, landing.includes('채용공고, 근로계약서 또는 처우 안내 중 하나만 등록해도 괜찮아요.') && !/변경됐|변경되었|위반입니다/.test(landing));
     for (const [sel, hash, v] of [['#landing-records', '#/records', 'records'], ['#landing-start-bottom', '#/new', 'input']]) {
       await page.goto(BASE); await view('landing');
@@ -85,7 +85,7 @@ try {
     // S07 새 안내 추가 → 같은 기록
     await page.click('#item-back'); await view('record');
     const recUrl = page.url();
-    await page.click('#add-doc'); await view('input');
+    await page.click('#add-doc:visible, #add-second:visible'); await view('input');
     await page.check('input[name="doc-type"][value="offer"]');
     await page.click('#example-btn'); await shot('S07'); await noOverflow('S07');
     check(`[${tag}] S07: 추가할 기록 표시`, await page.isVisible('#target-banner'));
