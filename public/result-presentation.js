@@ -1,6 +1,6 @@
 // 기록 결과 화면에 표시할 분류와 대표 원문 근거.
 // 분석 결과·질문 생성 규칙은 변경하지 않는다.
-import { weeklyCalc } from './followups.js';
+import { weeklyCalc, externallyReferencedLeave } from './followups.js';
 
 // 직접 쓰인 주 소정근로시간이 없어도 검증된 근무일·시각·휴게시간으로
 // 주간 시간을 계산할 수 있으면 질문 유무보다 '계산값' 분류를 우선한다.
@@ -26,14 +26,4 @@ export function summaryEvidence(t) {
   return selected?.evidence?.[0] ?? null;
 }
 
-// 연차의 '법령·취업규칙에 따라 부여'는 외부 기준을 명시한 기재 방식이다.
-// 분석 결과의 PARTIAL 판정은 유지하고, 외부 참조 표현을 확인할 때만 별도 안내한다.
-export function externallyReferencedLeave(t) {
-  if (!t?.visible || t.id !== '10' || t.status !== 'MAIN_PARTIAL') return false;
-  const c = t.criteria?.find((x) => x.id === '10-a');
-  if (!c?.evidence?.length) return false;
-  const quotes = c.evidence.map((e) => e.text).join(' ');
-  return /(법령|근로기준법|법률|취업규칙|사내규정|회사\s*규정)/.test(quotes)
-    && /(따라|준하여|기준으로|의거하여)/.test(quotes)
-    && /(연차|휴가)/.test(quotes);
-}
+export { externallyReferencedLeave } from './followups.js';
