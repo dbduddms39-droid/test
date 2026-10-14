@@ -216,6 +216,28 @@ export function normalizeText(text, { place = false } = {}) {
   t = t.replace(/(^|\s)및(?=\s)/g, ',');
   return t.replace(/[\s.,·()[\]{}'"“”‘’\-–~/]/g, '').toLowerCase();
 }
+// 여러 줄의 원문 근거가 있는 경우 대표 추출값 한 줄만으로 '같음'을 판단하지 않는다.
+// 검증된 원문 구절의 표기가 같은지만 비교한다. 의미 동등성·조건 변경 여부는 추론하지 않는다.
+export function compareTextEvidence(quotesA = [], quotesB = []) {
+  const parts = (quotes) => {
+    const found = new Map();
+    for (const q of quotes) {
+      const raw = String(typeof q === 'string' ? q : q?.text ?? '').trim();
+      const key = normalizeText(raw);
+      if (key && !found.has(key)) found.set(key, raw);
+    }
+    return found;
+  };
+  const a = parts(quotesA);
+  const b = parts(quotesB);
+  if (!a.size || !b.size) return null;
+  const onlyA = [...a].filter(([key]) => !b.has(key)).map(([, raw]) => raw);
+  const onlyB = [...b].filter(([key]) => !a.has(key)).map(([, raw]) => raw);
+  const common = [...a.keys()].filter((key) => b.has(key)).length;
+  if (!onlyA.length && !onlyB.length) return { kind: 'same', common, onlyA, onlyB };
+  return { kind: 'partial', common, onlyA, onlyB };
+}
+
 // 글로 적힌 업무·조건의 나열 비교: 각 자료에 적힌 항목(쉼표·'및'·줄바꿈으로 나뉜 원문 조각)이 상대 자료에도 있는지 본다.
 // 반환 조각은 모두 원문 그대로의 부분 문자열이다(바꿔 쓰지 않음). 안전하게 특정할 수 없으면 null.
 //   { kind: 'same' } / { kind: 'added', onlyB } (뒤 자료에 더 적힘) / { kind: 'removed', onlyA } / { kind: 'different', onlyA, onlyB }
@@ -352,11 +374,25 @@ function compareConcrete(kind, a, b, docA, docB, L) {
     }
     case 'place':
     case 'text': {
-      const na = normalizeText(a.text, { place: kind === 'place' }); const nb = normalizeText(b.text, { place: kind === 'place' });
+      // 담당업무 등 긴 원문: AI가 선택한 첫 sourceValue가 아니라 검증된 근거 전체를 비교한다.
+      // 일부 문구만 겹치면 동일하다고 하지 않고, 일치하지 않는 실제 구절을 이유로 보여 준다.
+      const evidenceRelation = kind === 'text' ? compareTextEvidence(a.evidence, b.evidence) : null;
+      if (evidenceRelation?.kind === 'same') return SAME('두 문서에서 인용된 원문 문구가 모두 같아요.');
+      const textA = kind === 'text' && a.evidence.length ? a.evidence.map((q) => q.text).join('\n') : a.text;
+      const textB = kind === 'text' && b.evidence.length ? b.evidence.map((q) => q.text).join('\n') : b.text;
+      if (evidenceRelation?.kind === 'partial' && evidenceRelation.common > 0) {
+        const show = (xs) => xs.slice(0, 2).map((x) => `'${x.length > 70 ? `${x.slice(0, 70)}…` : x}'`).join(' · ') + (xs.length > 2 ? ` 외 ${xs.length - 2}곳` : '');
+        const unmatched = [
+          evidenceRelation.onlyA.length ? `${L.A}에서만 확인된 원문 구절: ${show(evidenceRelation.onlyA)}` : '',
+          evidenceRelation.onlyB.length ? `${L.B}에서만 확인된 원문 구절: ${show(evidenceRelation.onlyB)}` : '',
+        ].filter(Boolean).join('. ');
+        return UNCLEAR(`동일한 원문 문구 ${evidenceRelation.common}곳을 확인했어요. ${unmatched}. 나머지는 표현의 차이인지 업무 범위의 차이인지 자동으로 판단하지 않았어요.`);
+      }
+      const na = normalizeText(textA, { place: kind === 'place' }); const nb = normalizeText(textB, { place: kind === 'place' });
       if (na && na === nb) return SAME('같은 내용으로 적혀 있어요.');
       if (kind === 'text') {
         // 나열된 항목 단위로 다시 본다: 표현 차이만 있으면 같음, 한쪽에만 적힌 항목이 있으면 그 원문 조각을 남긴다 (바뀌었다고 단정하지 않음)
-        const scope = textScope(a.text, b.text);
+        const scope = textScope(textA, textB);
         if (scope?.kind === 'same') return SAME('표현만 조금 다르고 같은 내용으로 적혀 있어요.');
         if (scope?.kind === 'added') return { ...UNCLEAR(`${L.B}에는 ${L.A}의 내용에 더해 ${quoteList(scope.onlyB)}도 적혀 있어요. 조건이 바뀌었는지는 판단하지 않아요.`), scope };
         if (scope?.kind === 'removed') return { ...UNCLEAR(`${L.A}에 적힌 ${quoteList(scope.onlyA)}는 ${L.B}에 따로 적혀 있지 않아요. 없어졌다는 뜻은 아니에요.`), scope };
