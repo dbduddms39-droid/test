@@ -108,7 +108,7 @@ try {
     check(`[${tag}] TC01 가로 넘침 없음`, await noOverflow());
     await shot('tc01-posting');
     // 항목 상세: 근거 있는 세부 기준만, 기준 출처 안내 없음
-    await page.click('#condition-list .ccard a.btn-text');
+    await page.click('#condition-list .ccard a[href*="/item/"]');
     await waitView('item');
     check(`[${tag}] TC01 항목 상세: '미기재' 세부 기준 없음, 기준 출처 아코디언 없음`, !(await page.$('#item .source-accordion')) && !/문서에서 확인되지 않음/.test(await text('#item')));
     await page.goBack(); await waitView('record');

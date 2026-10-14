@@ -117,7 +117,7 @@ try {
   await waitView('record');
   check('분석 → 기록 화면(S04), 저장 확인 표시', /#\/records\/rec_/.test(page.url()) && requests.length === 1 && /저장됐어요|추가됐어요/.test(await page.textContent('#save-status')));
 
-  await page.click('#condition-list .btn-text >> nth=0');
+  await page.click('#condition-list a[href*="/item/"] >> nth=0');
   await waitView('item');
   await page.goBack();
   await waitView('record');

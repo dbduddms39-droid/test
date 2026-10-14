@@ -8,7 +8,7 @@ import { CRITERION_IDS } from '../src/criteria.js';
 import { segmentText } from '../src/segment.js';
 import { relateRecord, docLabels, RELATION_LABEL } from '../public/relate.js';
 import { buildFollowUps, PRIMARY_LIMIT } from '../public/followups.js';
-import { createStore, memoryAdapter, suggestAlias, StoreError, DEFAULT_ALIAS } from '../public/store.js';
+import { createStore, memoryAdapter, userAlias, StoreError, DEFAULT_ALIAS } from '../public/store.js';
 import { buildExtraction } from './v22-fixtures.js';
 
 // 고정 응답 AI: 요청한 세부기준만 돌려준다. mutate로 응답을 바꿀 수 있다(예: 원문에 없는 인용)
@@ -285,16 +285,23 @@ test('T13 기록 전체 삭제: 자료·확인 텍스트·분석·원문·메모
   assert.deepEqual(await store.list(), []);
 });
 
-test('기록 이름 바꾸기: 비우면 기본 이름으로', async () => {
+test('기록 이름 바꾸기: 사용자가 정한 이름만 이름, 비우면 이름 없음', async () => {
   const store = createStore(memoryAdapter());
   const r = await store.create({ document: docIn() });
-  assert.equal((await store.rename(r.id, '  가상상사 데이터 직무 ')).alias, '가상상사 데이터 직무');
-  assert.equal((await store.rename(r.id, '')).alias, DEFAULT_ALIAS);
+  assert.equal(userAlias(r), '', '새 기록은 이름 없음 (회사명 자동 표시 없음)');
+  const named = await store.rename(r.id, '  가상상사 데이터 직무 ');
+  assert.equal(named.alias, '가상상사 데이터 직무');
+  assert.equal(userAlias(named), '가상상사 데이터 직무');
+  const cleared = await store.rename(r.id, '');
+  assert.equal(userAlias(cleared), '');
+  assert.notEqual(cleared.alias, '기록 이름을 입력해 주세요', '안내 문구를 이름으로 저장하지 않음');
 });
 
-test('별칭 제안: 회사명이 분명히 하나일 때만', () => {
-  assert.deepEqual(suggestAlias('회사명: 가상상사\n연봉 3,600만원'), { alias: '가상상사', source: 'suggested' });
-  assert.deepEqual(suggestAlias('(주)바른데이터 채용\n(주)바른데이터 인사팀'), { alias: '(주)바른데이터', source: 'suggested' });
-  assert.equal(suggestAlias('연봉 3,600만원, 서울 근무').alias, DEFAULT_ALIAS);
-  assert.equal(suggestAlias('(주)가나다 와 (주)라마바 공동 채용').alias, DEFAULT_ALIAS, '여러 회사면 제안하지 않음');
+test('예전 버전이 회사명으로 제안한 이름은 이름 없음으로 표시 (저장값은 그대로)', async () => {
+  const store = createStore(memoryAdapter());
+  const r = await store.create({ alias: '(주)바른데이터', aliasSource: 'suggested', document: docIn() });
+  assert.equal(r.alias, '(주)바른데이터');
+  assert.equal(userAlias(r), '');
+  assert.equal(userAlias({ alias: '옛 기록 이름' }), '옛 기록 이름');
+  assert.equal(userAlias({ alias: DEFAULT_ALIAS }), '');
 });

@@ -180,12 +180,13 @@ try {
     await page.waitForTimeout(200);
     const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
     check(`[${tag}] 확인 질문 복사`, clip === qText && /임금이/.test(qText), qText.slice(0, 80));
-    await page.click('#copy-all-questions');
-    await page.waitForTimeout(200);
-    check(`[${tag}] 질문 모두 복사`, (await text('#actions-status')).includes('복사했어요'));
+    // 비교 화면: '질문 전체 복사'는 위쪽 질문 모아보기 한 곳에만 (아래 '질문 모두 복사' 중복 없음)
+    check(`[${tag}] 질문 전체 복사 버튼은 한 곳에만`, await page.isVisible('#copy-all-top') && !(await page.isVisible('#copy-all-questions')));
+    check(`[${tag}] 같은 화면에 '새 문서 추가' 버튼은 하나`, (await page.$$('#view-record a[href$="/add"]:visible')).length === 1);
 
     // ---- 기록 관리: 이름 바꾸기(새로고침 후 유지) · 개별 삭제 확인창 ----
     const recUrl = page.url();
+    check(`[${tag}] 이름이 없으면 제목 자리에 안내 문구 + 연필 버튼 (회사명 자동 표시 없음)`, (await text('#record-title')) === '기록 이름을 입력해 주세요' && (await page.$$('#rename-open svg')).length === 1 && (await text('#rename-open')).includes('이름 입력'));
     await page.click('#rename-open');
     await page.fill('#rename-input', '파란스텝 콘텐츠 마케터 (가상)');
     await page.click('#rename-form button[type="submit"]');

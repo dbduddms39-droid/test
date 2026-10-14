@@ -75,7 +75,7 @@ export async function initSampleDownloads({ root, list, zipButton, status, el })
   list.replaceChildren(...SAMPLE_FILES.map((f, i) => el('li', { class: 'sample-dl-item' },
     el('p', { class: 'sample-dl-no' }, `가상 문서 ${i + 1}`),
     el('p', { class: 'sample-dl-desc' }, f.desc ?? ''),
-    el('a', { href: f.path, download: f.name, class: 'btn-text sample-dl-link' }, `${f.label} 다운로드`))));
+    el('a', { href: f.path, download: f.name, class: 'btn-secondary sample-dl-link' }, `${f.label} 다운로드`))));
   zipButton.addEventListener('click', async () => {
     zipButton.disabled = true;
     status.textContent = '파일을 묶는 중이에요…';

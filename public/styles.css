@@ -1198,3 +1198,76 @@ details.cmp-group > summary::-webkit-details-marker { display: none; }
 .cmp-question .q-label::before { content: none; }
 .cmp-question .q-text, .item-followup .q-text { width: 100%; font: inherit; font-size: 15px; line-height: 1.65; padding: 10px 12px; border: 1px solid #C9CDD3; background: var(--paper); }
 .cmp-question .q-text, .item-followup .q-text { field-sizing: content; min-height: 4.5lh; }
+
+/* =====================================================================
+   v5 버튼 체계: Primary · Secondary · Small (공통 컴포넌트)
+   - Primary: 딥그린 채움. 화면에서 가장 중요한 행동 하나
+   - Secondary: 흰 바탕 + 테두리. 화면 이동·원문 보기·질문 복사·문서 추가·다운로드
+   - Small: 수정·이름 변경·취소 등 작은 보조 기능
+   - 화면 이동은 <a>로 두되 모양은 같은 버튼. 상태 배지·안내 태그는 테두리 없는 표시로 구분
+   ===================================================================== */
+:root { --btn-radius: 6px; --btn-border: #C4C9D0; }
+.btn-primary, .btn-secondary, .btn-small {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  box-sizing: border-box; margin: 0; font: inherit; font-weight: 600; line-height: 1.25; letter-spacing: -0.005em;
+  text-align: center; text-decoration: none; white-space: normal; cursor: pointer;
+  border: 1px solid transparent; border-radius: var(--btn-radius); -webkit-tap-highlight-color: transparent;
+  transition: background-color .12s, border-color .12s, color .12s;
+}
+.btn-primary { min-height: 48px; padding: 12px 22px; font-size: 15px; color: #FFFFFF; background: var(--green); border-color: var(--green); }
+.btn-primary:not(.btn-auto) { width: 100%; }
+.btn-primary:hover:not(:disabled) { background: var(--green-dark); border-color: var(--green-dark); color: #FFFFFF; }
+.btn-secondary { min-height: 42px; padding: 9px 16px; font-size: 14px; color: var(--ink); background: #FFFFFF; border-color: var(--btn-border); }
+.btn-small { min-height: 34px; padding: 6px 12px; font-size: 13px; color: var(--ink); background: #FFFFFF; border-color: var(--btn-border); }
+.btn-secondary:hover:not(:disabled), .btn-small:hover:not(:disabled) { border-color: var(--ink); color: var(--ink); background: #FFFFFF; }
+.btn-small.is-strong { color: var(--green); border-color: var(--green); }
+.btn-secondary.danger, .btn-small.danger { color: var(--danger); border-color: #E9BDB7; }
+.btn-secondary.danger:hover:not(:disabled), .btn-small.danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); background: #FEF3F2; }
+.btn-primary:disabled, .btn-secondary:disabled, .btn-small:disabled { opacity: .45; cursor: not-allowed; }
+.btn-primary:focus-visible, .btn-secondary:focus-visible, .btn-small:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.btn-icon { flex: none; display: block; }
+/* 이전 화면으로: 글자 링크 대신 Secondary 버튼 */
+.btn-secondary.back { margin: 0 0 14px; align-self: flex-start; }
+/* 카드 안 이동·복사 버튼은 내용 폭만 */
+.cmp-detail-link, .sum-more, .btn-copy, .sample-dl-item .sample-dl-link, .ccard .btn-secondary, .contract-glance-item .btn-secondary { align-self: flex-start; margin-top: 8px; }
+.cmp-detail-link { display: inline-flex; }
+.sample-dl-item .sample-dl-link { justify-self: start; font-size: 14px; text-decoration: none; }
+.hero-sub .btn-small { font-size: 13px; }
+.view-landing .hero .btn-primary { min-height: 52px; padding: 13px 28px; font-size: 16px; }
+.view-landing .sample-zip { text-decoration: none; }
+/* 기록 제목: 이름이 없으면 안내 문구 + 연필 버튼 */
+#record-title.is-placeholder { color: var(--ink-3); font-weight: 600; }
+.record-title-row { align-items: center; }
+.rename-open { flex: none; }
+.rename-inline .btn-small { min-height: 40px; }
+/* 내 기록 목록: 이름 없는 기록도 문서 유형·등록일로 구별 */
+.record-name.is-unnamed { color: var(--ink-3); }
+.record-types { font-size: 14px; font-weight: 600; color: var(--ink); }
+/* 누를 수 없는 표시(태그·숫자)는 버튼처럼 보이지 않게: 테두리 없이 옅은 바탕 */
+.tag, .source-badge, .sum-count, .tag-done, .tag-warn { border: 0; border-radius: 999px; background: var(--wash); padding: 1px 8px; }
+.tag-done { background: var(--green-soft); color: var(--green-dark); }
+@media (max-width: 640px) {
+  .btn-secondary { min-height: 44px; }
+  .btn-small { min-height: 40px; padding: 8px 14px; }
+  .action-row { gap: 8px; }
+}
+.doc-line .pin { border: 0; border-radius: 999px; background: var(--brand-soft); color: var(--brand-ink); padding: 0 8px; font-size: 11px; }
+.topnav a.nav-records { border-radius: var(--btn-radius); border-color: var(--btn-border); }
+
+/* S-03 읽기 쉽게 정리해서 보기: 보기 전용 (원문 글자 그대로, 제목 괄호는 화면에서만) */
+.layout-box { margin-top: 16px; padding: 16px; background: var(--paper); border: 1px solid var(--rule); border-radius: var(--card-radius); }
+.layout-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+.layout-head > div { flex: 1 1 320px; min-width: 0; }
+.layout-title { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
+.layout-head p { margin: 0; line-height: 1.6; }
+.layout-status:empty { display: none; }
+.layout-status { margin: 10px 0 0; color: var(--ink-2); }
+.layout-view { margin: 12px 0 10px; padding: 16px 18px; max-height: 560px; overflow: auto; background: #FFFFFF; border: 1px solid var(--rule-soft); border-left: 3px solid var(--brand); border-radius: var(--radius); font-size: 15px; line-height: 1.75; }
+.layout-view p { margin: 0 0 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.layout-view .layout-item { padding-left: 12px; }
+.layout-view .layout-heading { margin: 16px 0 6px; font-size: 16px; font-weight: 800; color: var(--ink); overflow-wrap: anywhere; }
+.layout-view .layout-heading:first-child { margin-top: 0; }
+.layout-view .layout-heading.with-marker::before { content: '['; content: '[' / ''; }
+.layout-view .layout-heading.with-marker::after { content: ']'; content: ']' / ''; }
+.link-list { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.link-list .btn-small { text-align: left; }

@@ -2,6 +2,7 @@
 // 유료 모델로 자동 전환하는 fallback은 두지 않는다. 실패하면 오류로 돌려준다.
 import { GoogleGenAI, ApiError } from '@google/genai';
 import { SYSTEM_PROMPT, buildUserMessage, responseSchema } from './prompt.js';
+import { LAYOUT_SYSTEM_PROMPT, buildLayoutMessage, layoutResponseSchema } from './layout-prompt.js';
 import { AIError } from './errors.js';
 
 const BLOCKED_FINISH = ['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'LANGUAGE', 'OTHER'];
@@ -30,36 +31,54 @@ export function createGeminiAnalyzer({
       }
     },
     async analyze({ docType, segments, criterionIds, feedback }) {
-      if (!client) throw new AIError('missing_key', 'AI 분석 키(GEMINI_API_KEY)가 설정되지 않았어요.');
-      let response;
-      try {
-        response = await client.models.generateContent({
-          model,
-          contents: buildUserMessage({ docType, segments, criterionIds, feedback }),
-          config: {
-            systemInstruction: SYSTEM_PROMPT,
-            temperature: 0,
-            maxOutputTokens: 16000,
-            responseMimeType: 'application/json',
-            responseJsonSchema: responseSchema(criterionIds),
-            abortSignal: AbortSignal.timeout(timeoutMs),
-          },
-        });
-      } catch (err) {
-        throw toAIError(err);
-      }
-
-      if (response.promptFeedback?.blockReason) throw new AIError('blocked', 'AI가 이 문서를 처리하지 않았어요.');
-      const finish = response.candidates?.[0]?.finishReason;
-      if (finish === 'MAX_TOKENS') throw new AIError('truncated', 'AI 응답이 잘렸어요.');
-      if (BLOCKED_FINISH.includes(finish)) throw new AIError('blocked', 'AI가 이 문서를 처리하지 않았어요.');
-      try {
-        return JSON.parse(response.text ?? '');
-      } catch {
-        throw new AIError('invalid_json', 'AI 응답을 해석하지 못했어요.');
-      }
+      return generateJson({
+        contents: buildUserMessage({ docType, segments, criterionIds, feedback }),
+        systemInstruction: SYSTEM_PROMPT,
+        maxOutputTokens: 16000,
+        schema: responseSchema(criterionIds),
+      });
+    },
+    // S-03 읽기 쉽게 정리: 블록 나누기만 (결과는 호출한 쪽에서 원문과 대조해 검증)
+    async layout({ text }) {
+      return generateJson({
+        contents: buildLayoutMessage(text),
+        systemInstruction: LAYOUT_SYSTEM_PROMPT,
+        maxOutputTokens: 32000,
+        schema: layoutResponseSchema(),
+      });
     },
   };
+
+  async function generateJson({ contents, systemInstruction, maxOutputTokens, schema }) {
+    if (!client) throw new AIError('missing_key', 'AI 분석 키(GEMINI_API_KEY)가 설정되지 않았어요.');
+    let response;
+    try {
+      response = await client.models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction,
+          temperature: 0,
+          maxOutputTokens,
+          responseMimeType: 'application/json',
+          responseJsonSchema: schema,
+          abortSignal: AbortSignal.timeout(timeoutMs),
+        },
+      });
+    } catch (err) {
+      throw toAIError(err);
+    }
+
+    if (response.promptFeedback?.blockReason) throw new AIError('blocked', 'AI가 이 문서를 처리하지 않았어요.');
+    const finish = response.candidates?.[0]?.finishReason;
+    if (finish === 'MAX_TOKENS') throw new AIError('truncated', 'AI 응답이 잘렸어요.');
+    if (BLOCKED_FINISH.includes(finish)) throw new AIError('blocked', 'AI가 이 문서를 처리하지 않았어요.');
+    try {
+      return JSON.parse(response.text ?? '');
+    } catch {
+      throw new AIError('invalid_json', 'AI 응답을 해석하지 못했어요.');
+    }
+  }
 }
 
 async function listFlashModels(client) {

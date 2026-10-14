@@ -38,7 +38,7 @@
           <div class="hero-actions">
             <a href="#/new" class="btn-primary btn-auto" id="landing-start">첫 문서 등록하기 →</a>
           </div>
-          <p class="hero-sub">문서 하나만 있어도 시작할 수 있어요. <button type="button" class="btn-text" id="landing-how" hidden>체험용 가상문서 받기 ↓</button></p>
+          <p class="hero-sub">문서 하나만 있어도 시작할 수 있어요. <button type="button" class="btn-small" id="landing-how" hidden>체험용 가상문서 받기 ↓</button></p>
         </div>
         <!-- 설명용 비주얼 (가상 예시, 누를 수 없음): 문서 세 장과 조건 차이 확인 카드 -->
         <figure class="hero-visual" aria-label="문서 세 장과 조건 차이 확인 예시 (가상)">
@@ -107,7 +107,7 @@
         <ul class="sample-dl-list" id="sample-dl-list"></ul>
         <div class="sample-zip-card">
           <div><p class="sample-zip-title">가상 문서 3종 한 번에 받기</p><p class="small muted">세 PDF를 ZIP 하나로 묶어 받아요.</p></div>
-          <button type="button" class="btn-editorial btn-auto sample-zip" id="sample-zip">전체 다운로드</button>
+          <button type="button" class="btn-secondary btn-auto sample-zip" id="sample-zip">전체 다운로드</button>
         </div>
         <p class="muted small" id="sample-status" role="status" aria-live="polite"></p>
       </section>
@@ -159,8 +159,8 @@
               <div class="editor-bar">
                 <label for="doc-text" class="editor-label">문서 본문 입력</label>
                 <span class="editor-tools">
-                  <button type="button" class="btn-text" id="example-btn">가상 예시 넣어보기</button>
-                  <button type="button" class="btn-text" id="clear-text">비우기</button>
+                  <button type="button" class="btn-small" id="example-btn">가상 예시 넣어보기</button>
+                  <button type="button" class="btn-small" id="clear-text">비우기</button>
                 </span>
               </div>
               <textarea id="doc-text" name="text" rows="14" maxlength="20000" placeholder="확인할 문서의 내용을 여기에 붙여넣어 주세요."></textarea>
@@ -180,8 +180,8 @@
                 <p class="image-panel-help">같은 문서를 이어서 캡처한 이미지로 보고, 아래 순서대로 글자를 읽어 하나의 문서로 합쳐요. 순서를 확인해 주세요.</p>
                 <ol id="image-list" class="image-list"></ol>
                 <div class="image-actions">
-                  <button type="button" id="extract-btn" class="secondary">텍스트 추출</button>
-                  <button type="button" id="clear-images" class="text-btn">이미지 모두 지우기</button>
+                  <button type="button" id="extract-btn" class="btn-secondary">텍스트 추출</button>
+                  <button type="button" id="clear-images" class="btn-small">이미지 모두 지우기</button>
                 </div>
               </div>
               <p class="upload-note">파일은 이 브라우저 안에서만 읽고 서버로 보내거나 저장하지 않아요. 추출한 텍스트는 다음 화면에서 원본과 비교해 확인·수정한 뒤, '이 내용으로 계속하기'를 눌렀을 때만 분석을 위해 전송돼요.</p>
@@ -211,7 +211,7 @@
           <p id="input-error" class="error" role="alert" hidden></p>
           <div class="submit-row" id="paste-submit-row">
             <p class="muted small" id="submit-hint">문서 내용을 입력해 주세요.</p>
-            <button type="submit" id="submit-btn" class="primary" disabled>입사조건 정리하기 →</button>
+            <button type="submit" id="submit-btn" class="btn-primary" disabled>입사조건 정리하기 →</button>
           </div>
         </form>
       </div>
@@ -219,7 +219,6 @@
 
     <!-- S03 추출 텍스트 확인 -->
     <section id="view-review" class="view view-wide" hidden>
-      <a href="#/new" class="back" id="review-back-top">← 이전으로</a>
       <div class="review-head">
         <div>
           <h1>문서 내용을 확인해 주세요.</h1>
@@ -245,12 +244,12 @@
           <div class="pane-bar">
             <p class="pane-title"><span id="preview-name" class="preview-name"></span><span class="tag">원본 대조본</span></p>
             <div class="pane-tools">
-              <button type="button" class="icon-btn" id="preview-prev" aria-label="이전 쪽">‹</button>
+              <button type="button" class="btn-small" id="preview-prev" aria-label="이전 쪽">‹</button>
               <span class="mono-index" id="preview-page" aria-live="polite">1 / 1</span>
-              <button type="button" class="icon-btn" id="preview-next" aria-label="다음 쪽">›</button>
-              <button type="button" class="icon-btn" id="zoom-out" aria-label="축소">−</button>
+              <button type="button" class="btn-small" id="preview-next" aria-label="다음 쪽">›</button>
+              <button type="button" class="btn-small" id="zoom-out" aria-label="축소">−</button>
               <span class="mono-index" id="zoom-level">100%</span>
-              <button type="button" class="icon-btn" id="zoom-in" aria-label="확대">+</button>
+              <button type="button" class="btn-small" id="zoom-in" aria-label="확대">+</button>
             </div>
           </div>
           <div class="preview-stage" id="preview-stage" tabindex="0" aria-label="원본 미리보기">
@@ -262,14 +261,27 @@
           <div class="pane-bar">
             <p class="pane-title"><label for="review-text">추출된 텍스트</label><span class="tag">편집 가능</span></p>
             <div class="pane-tools">
-              <button type="button" class="icon-btn" id="review-select">전체 선택</button>
-              <button type="button" class="icon-btn" id="review-clear">비우기</button>
-              <button type="button" class="icon-btn" id="review-restore">원래 내용으로</button>
+              <button type="button" class="btn-small" id="review-select">전체 선택</button>
+              <button type="button" class="btn-small" id="review-clear">비우기</button>
+              <button type="button" class="btn-small" id="review-restore">원래 내용으로</button>
             </div>
           </div>
           <textarea id="review-text" rows="18" maxlength="20000"></textarea>
           <div class="editor-foot"><span class="mono-meta muted-mono">글자 <span id="review-chars">0</span>자 · 줄 <span id="review-lines">0</span>행</span></div>
           <p class="margin-note">수정한 텍스트를 기준으로 분석해요. 분석이 끝나 기록으로 저장되기 전까지는 이 창에서만 유지돼요.</p>
+          <!-- 읽기 쉽게 정리해서 보기 (선택): 버튼을 눌렀을 때만 Gemini로 전송. 결과는 보기 전용, 원문과 대조해 일치할 때만 표시 -->
+          <section id="layout-box" class="layout-box" aria-labelledby="layout-title">
+            <div class="layout-head">
+              <div>
+                <h2 id="layout-title" class="layout-title">읽기 쉽게 정리해서 보기 <span class="tag">선택</span></h2>
+                <p class="small muted" id="layout-notice">버튼을 누르면 위 텍스트가 일단확인 서버를 거쳐 <strong>Google Gemini로 전송</strong>돼요. Gemini는 제목·항목·문장 단위로 줄만 나누고 글자·숫자·날짜·금액은 바꾸지 않아요. 정리된 보기는 읽기용이며, 분석과 저장에는 위 텍스트가 그대로 쓰여요.</p>
+              </div>
+              <button type="button" class="btn-secondary btn-auto" id="layout-run">Gemini로 정리해서 보기</button>
+            </div>
+            <p class="small layout-status" id="layout-status" role="status" aria-live="polite"></p>
+            <div class="layout-view" id="layout-view" aria-label="읽기 쉽게 정리한 보기 (원문과 같은 글자)" hidden></div>
+            <button type="button" class="btn-small" id="layout-close" hidden>정리된 보기 닫기</button>
+          </section>
           <section id="ocr-check" class="ocr-check" aria-labelledby="ocr-check-title" hidden>
             <h2 id="ocr-check-title">확인이 필요한 글자 <span id="ocr-check-count" class="ocr-check-count"></span></h2>
             <p class="small">글자 인식(OCR)이 불확실한 곳이에요. 원본과 대조해 고치거나, 맞다면 '원본과 대조해 확인했어요'를 눌러 주세요.
@@ -282,7 +294,7 @@
       <p id="review-error" class="error" role="alert" hidden></p>
       <p id="review-blocked" class="route-notice" role="status" hidden></p>
       <div class="action-bar">
-        <a href="#/new" class="btn-editorial btn-auto" id="review-back">← 이전으로</a>
+        <a href="#/new" class="btn-secondary btn-auto" id="review-back">← 이전으로</a>
         <p class="muted small">확인한 텍스트를 기준으로 근로조건을 확인해요.</p>
         <button type="button" id="review-submit" class="btn-primary btn-auto" disabled>이 내용으로 계속하기 →</button>
       </div>
@@ -312,7 +324,7 @@
         </div>
         <div class="error-actions">
           <button type="button" class="btn-primary btn-auto" id="retry-btn">다시 분석하기 →</button>
-          <a href="#/new" class="btn-editorial btn-auto" id="error-edit">문서 내용 확인하기</a>
+          <a href="#/new" class="btn-secondary btn-auto" id="error-edit">문서 내용 확인하기</a>
         </div>
         <p class="muted small">잠시 후 다시 시도해 주세요. 문제가 계속되면 문서 내용을 확인한 뒤 다시 진행해 보세요.</p>
       </div>
@@ -320,26 +332,26 @@
 
     <!-- S04 입사조건 기록 (핵심 결과). 저장되지 않은 결과(#/unsaved)도 같은 화면으로 보여 준다 -->
     <section id="view-record" class="view view-wide" hidden>
-      <a href="#/records" class="back" id="record-back">← 내 기록 목록</a>
+      <a href="#/records" class="btn-secondary back" id="record-back">← 내 기록 목록</a>
       <p id="save-status" class="save-status" role="status" hidden></p>
       <div class="record-head">
         <div class="record-head-main">
           <p class="crumb">내 입사조건 기록</p>
           <div class="record-title-row" id="record-title-row">
             <h1 id="record-title"></h1>
-            <button type="button" class="btn-text rename-open" id="rename-open">이름 바꾸기</button>
+            <button type="button" class="btn-small rename-open" id="rename-open" aria-label="기록 이름 수정"><svg class="btn-icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false"><path d="M13.6 3.2a1.8 1.8 0 0 1 2.5 0l.7.7a1.8 1.8 0 0 1 0 2.5L7.6 15.6 3.5 16.5l.9-4.1 9.2-9.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12.2 4.6l3.2 3.2" stroke="currentColor" stroke-width="1.6"/></svg><span id="rename-open-text">수정</span></button>
           </div>
           <form id="rename-form" class="rename-form rename-inline" hidden>
             <label for="rename-input" class="sr-only">기록 이름 (회사명·직무 등, 선택)</label>
-            <input id="rename-input" maxlength="40" autocomplete="off" placeholder="회사명·직무 등 · Enter로 저장">
-            <button type="submit" class="icon-btn">저장</button>
-            <button type="button" class="btn-text" id="rename-cancel">취소</button>
+            <input id="rename-input" maxlength="40" autocomplete="off" placeholder="예: 파란스텝 마케터 (Enter로 저장)">
+            <button type="submit" class="btn-small">저장</button>
+            <button type="button" class="btn-small" id="rename-cancel">취소</button>
             <p class="error small" id="rename-error" role="alert" hidden></p>
           </form>
           <p class="record-meta muted small" id="record-meta"></p>
           <div class="record-doc-chips" id="record-doc-chips" aria-label="등록한 문서 종류"></div>
           <div class="record-tools" id="record-tools">
-            <a class="btn-primary btn-auto" id="add-doc-top">새 안내 추가하기 →</a>
+            <a class="btn-secondary btn-auto" id="add-doc-top">+ 새 문서 추가하기</a>
             <details class="original-dropdown" id="original-dropdown">
               <summary>등록 문서·원본 보기</summary>
               <ul class="original-list" id="original-list" aria-label="등록 문서와 원본 PDF"></ul>
@@ -395,7 +407,7 @@
             <h3 id="cmp-questions-title">회사에 확인할 질문 <span class="cmp-q-count" id="cmp-q-count"></span></h3>
             <p class="small">다르게 적혔거나 추가로 대조할 조건의 질문이에요. 각 항목에서 고쳐 쓰고 하나씩 복사할 수 있어요. 일단확인은 회사에 보내지 않아요.</p>
           </div>
-          <button type="button" class="btn-editorial btn-auto" id="copy-all-top">질문 전체 복사</button>
+          <button type="button" class="btn-secondary btn-auto" id="copy-all-top">질문 전체 복사</button>
           <p class="small muted" id="copy-all-top-status" role="status" aria-live="polite"></p>
         </section>
         <details class="contract-checklist" id="contract-checklist" hidden>
@@ -436,11 +448,10 @@
       <section class="record-section record-actions" aria-labelledby="actions-title">
         <h2 id="actions-title">필요할 때 하기</h2>
         <div class="action-row">
-          <a class="btn-primary btn-auto" id="add-doc">새 안내 추가하기 →</a>
-          <button type="button" class="btn-editorial btn-auto" id="copy-all-questions">질문 모두 복사</button>
-          <button type="button" class="btn-text danger" id="delete-record">이 기록 삭제</button>
+          <button type="button" class="btn-secondary btn-auto" id="copy-all-questions">질문 모두 복사</button>
+          <button type="button" class="btn-secondary danger" id="delete-record">이 기록 삭제</button>
         </div>
-        <p class="muted small">담당자 답변은 각 조건의 '자세히 보기'에서 '내가 기록한 답변'으로 남길 수 있어요. 이 기록은 상단 '내 기록'에서 다시 열 수 있어요.</p>
+        <p class="muted small">담당자 답변은 각 조건의 상세 화면에서 '내가 기록한 답변'으로 남길 수 있어요. 이 기록은 상단 '내 기록'에서 다시 열 수 있어요.</p>
         <p class="muted small" id="actions-status" role="status" aria-live="polite"></p>
       </section>
       <p class="small result-notice" id="record-notice"></p>
@@ -448,7 +459,7 @@
 
     <!-- S05 항목 상세 -->
     <section id="view-item" class="view view-wide" hidden>
-      <a class="back" id="item-back" hidden>← 기록으로 돌아가기</a>
+      <a class="btn-secondary back" id="item-back" hidden>← 기록으로 돌아가기</a>
       <div id="item"></div>
     </section>
 
@@ -463,7 +474,7 @@
         <p>아직 저장된 기록이 없어요.</p>
         <a href="#/new" class="btn-primary btn-auto">입사조건 확인하기 →</a>
       </div>
-      <a href="#/new" class="btn-editorial btn-auto" id="records-new">새 기록 시작하기</a>
+      <a href="#/new" class="btn-secondary btn-auto" id="records-new">새 기록 시작하기</a>
       <div class="storage-note" role="note">
         <p class="privacy-title">기록은 어디에 저장되나요?</p>
         <p>기록은 <strong>지금 쓰는 이 브라우저(이 기기)</strong>의 저장소(IndexedDB)에만 저장돼요. 계정이 없고 서버에 보관하지 않아서 다른 기기나 다른 브라우저에서는 보이지 않아요.</p>
@@ -472,7 +483,7 @@
         <p>시크릿(사생활 보호) 창을 닫거나, 브라우저의 사이트 데이터를 지우거나, 저장 공간이 부족하면 기록이 사라질 수 있어요. 영구 보관을 보장하지 않아요.</p>
         <p>이 기기를 다른 사람과 함께 쓰면 그 사람도 기록을 볼 수 있어요. 필요 없는 기록은 지워 주세요.</p>
         <p>분석할 때 확인한 텍스트는 일단확인 서버를 거쳐 외부 AI 모델(Google Gemini)에 전달돼요. 기록을 지워도 이미 분석을 위해 전송된 요청은 되돌릴 수 없어요.</p>
-        <button type="button" class="btn-text danger" id="delete-all">이 브라우저의 모든 기록 삭제</button>
+        <button type="button" class="btn-small danger" id="delete-all">이 브라우저의 모든 기록 삭제</button>
         <p class="muted small" id="records-status" role="status" aria-live="polite"></p>
       </div>
     </section>

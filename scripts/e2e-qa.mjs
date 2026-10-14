@@ -82,7 +82,7 @@ try {
     check(`[${tag}] 1) 계약기간: 공고의 정규직 문구를 계약기간으로 쓰지 않음`, !(await page.$('#condition-list [data-item="06"]')) || !(await text('#condition-list [data-item="06"]')).includes('정규직'));
 
     // 2) 오퍼 추가
-    await page.click('#add-doc:visible, #add-second:visible');
+    await page.click('#add-doc-top:visible, #add-second:visible');
     await register('offer', QA_OFFER);
     const diff2 = await groupText('different');
     check(`[${tag}] 2) 서로 다른 조건: 임금·근무시간`, diff2.includes('임금') && diff2.includes('근무시간') && diff2.includes('3,400만원') && diff2.includes('3,600만원'), diff2.slice(0, 160));
@@ -93,7 +93,7 @@ try {
     check(`[${tag}] 2) 근무시간 질문은 대표 1개 + 접힌 추가 질문`, qCount === 1 && (await page.$$('[data-group="different"] [data-topic="02"] details.extra-q')).length <= 1);
 
     // 3) 계약서 추가
-    await page.click('#add-doc:visible, #add-second:visible');
+    await page.click('#add-doc-top:visible, #add-second:visible');
     await register('contract', QA_CONTRACT);
     // 문서 3건: 기본은 앞의 두 문서 비교 → 두 번째 칸을 근로계약서로 바꿔 채용공고 ↔ 근로계약서 비교
     check(`[${tag}] 3) 문서 3건: 비교할 두 문서 선택 칸 표시`, await page.isVisible('#compare-pair') && (await page.$$('#compare-doc-b option')).length === 3);
@@ -149,6 +149,7 @@ try {
       const old = structuredClone(cur);
       old.id = 'rec_oldformat0001';
       old.alias = '예전 형식 기록';
+      old.aliasSource = 'user';
       for (const d of old.documents) {
         for (const t of d.analysis.topics) for (const c of t.criteria) { delete c.boundary; delete c.unavailableCodes; }
         for (const c of Object.values(d.analysis.criteria)) { delete c.boundary; delete c.codes; }
@@ -163,7 +164,7 @@ try {
     // 실제 Gemini QA 결과 재현(모의 응답, test/gemini-qa-docs.js): 공고 → 계약서 바로
     await page.goto(`${BASE}/#/new`);
     await register('job_posting', GQ_POSTING);
-    await page.click('#add-doc:visible, #add-second:visible');
+    await page.click('#add-doc-top:visible, #add-second:visible');
     await register('contract', GQ_CONTRACT);
     await page.waitForTimeout(200);
     const gqDiff = await groupText('different');
@@ -200,13 +201,13 @@ try {
     if (tag === 'desk') {
       await page.goto(`${BASE}/#/new`);
       await register('job_posting', DEMO_POSTING);
-      check('[demo] 공고 하나: 기록 이름 = 주식회사 파란스텝', (await text('#record-title')) === '주식회사 파란스텝');
+      check('[demo] 공고 하나: 회사명(주식회사 파란스텝)을 기록 이름으로 자동 표시하지 않음', (await text('#record-title')) === '기록 이름을 입력해 주세요');
       // 문서 하나(채용공고): 미리보기에 협의·추후 안내 예정 상태만 표시, 질문 없음
       check('[demo] 공고 하나: 연봉 범위·수습 임금은 협의·추후 안내 예정 상태 (질문 없음)', (await text('#condition-list [data-item="01"]')).includes('3,400만~3,800만') && (await text('#condition-list [data-item="01"]')).includes('협의 예정') && (await text('#condition-list [data-item="08"]')).includes('추후 안내 예정') && !(await page.$('#view-record .q-text')));
       check('[demo] 공고 카드: 수습 중 급여 배지 = 추후 안내 예정', (await text('#condition-list [data-item="08"]')).includes('추후 안내 예정'));
-      await page.click('#add-doc:visible, #add-second:visible');
+      await page.click('#add-doc-top:visible, #add-second:visible');
       await register('offer', DEMO_OFFER);
-      await page.click('#add-doc:visible, #add-second:visible');
+      await page.click('#add-doc-top:visible, #add-second:visible');
       await register('contract', DEMO_CONTRACT);
       await page.selectOption('#compare-doc-b', { index: 2 }); await page.waitForTimeout(200); // 채용공고 ↔ 근로계약서
       const spec = await specText();

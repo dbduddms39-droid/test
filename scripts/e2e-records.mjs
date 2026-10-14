@@ -123,7 +123,7 @@ try {
   const rec1 = await recordId();
   check('T01 채용공고 하나로 결과·기록 도달', Boolean(rec1));
   check('T01 저장을 확인한 뒤에만 \'저장했어요\' 표시', /저장됐어요|추가됐어요/.test(await text('#save-status')));
-  check('T01 회사명이 분명하면 기록 이름으로 제안', (await text('#record-title')) === MARK);
+  check('T01 회사명을 자동으로 기록 이름에 쓰지 않음: 안내 문구 표시', (await text('#record-title')) === '기록 이름을 입력해 주세요' && !(await text('#record-title')).includes(MARK));
   const order = await page.evaluate(() => ['now-title', 'conditions-title', 'details-title', 'actions-title'].map((id) => document.getElementById(id).getBoundingClientRect().top));
   check('결과 화면 순서: 입사 전 확인할 내용 → 핵심 조건 요약 → 상세 확인(접힘) → 필요할 때 하기', order.every((v, i) => i === 0 || v > order[i - 1]), order.map(Math.round).join(' < '));
   check('T01 공고에서 찾지 못한 항목을 우선 질문으로 쏟아내지 않음', (await page.$$('#summary-groups .sum-item')).length <= 3 && !(await text('#summary-groups')).includes('휴일'));
@@ -132,9 +132,9 @@ try {
   await page.screenshot({ path: `${OUT}/s04-posting-390.png`, fullPage: true });
 
   // ---- T05 새 안내 추가: 공고 3,400만원 → 오퍼 3,600만원 ----
-  await page.click('#add-doc:visible, #add-second:visible');
+  await page.click('#add-doc-top:visible, #add-second:visible');
   await waitView('input');
-  check('S07: 어느 기록에 추가하는지 표시', (await text('#target-alias')) === MARK && await page.isVisible('#target-banner'));
+  check('S07: 어느 기록에 추가하는지 표시 (이름 없는 기록은 문서 유형·등록일로)', (await text('#target-alias')).startsWith('이름 없는 기록 (채용공고 · ') && await page.isVisible('#target-banner'), await text('#target-alias'));
   await register('offer', OFFER_3600_SHORT, { add: true });
   check('S07 → 같은 기록으로 돌아옴', (await recordId()) === rec1);
   check('T05 자료 2건이 한 기록에', (await page.$$('#doc-list > li')).length === 2);
@@ -177,7 +177,7 @@ try {
   await register('job_posting', POSTING_NO_WAGE);
   const rec2 = await recordId();
   check('T11 같은 회사라도 새 등록은 별도 기록', rec2 && rec2 !== rec1);
-  await page.click('#add-doc:visible, #add-second:visible');
+  await page.click('#add-doc-top:visible, #add-second:visible');
   await register('offer', OFFER_3600_SHORT, { add: true });
   const wage2 = await page.locator('#condition-list [data-item="01"] .badge-relation').textContent();
   check('T06 공고에 없던 급여가 오퍼에 처음: \'한쪽에만 기재\' (변경·삭제로 보지 않음)', wage2 === '한쪽에만 기재' && (await text('#condition-list [data-item="01"] .cmp-panel.is-a')).includes('원문에 언급 없음'), wage2);
@@ -189,8 +189,8 @@ try {
   // ---- T07 비교 어려움 ----
   await page.goto(`${BASE}/#/new`);
   await register('job_posting', POSTING_ANNUAL);
-  check('회사명이 없으면 \'새 입사 기록\'', (await text('#record-title')) === '새 입사 기록');
-  await page.click('#add-doc:visible, #add-second:visible');
+  check('이름이 없으면 안내 문구 (안내 문구는 저장하지 않음)', (await text('#record-title')) === '기록 이름을 입력해 주세요');
+  await page.click('#add-doc-top:visible, #add-second:visible');
   await register('offer', OFFER_MONTHLY, { add: true });
   const wage3 = await page.locator('#condition-list [data-item="01"] .badge-relation').textContent();
   check('T07 연 3,600만원 ↔ 월 300: 같다고 추측하지 않고 \'추가 대조 필요\' (단위 환산·합산 없음)', wage3 === '추가 대조 필요' && !(await page.$('#cmp-group-same [data-item="01"]')), wage3);
@@ -215,6 +215,8 @@ try {
   await waitView('records');
   const cards = await page.$$('#record-list > li');
   check('S06 기록 목록: 지원 건별 5개', cards.length === 5, String(cards.length));
+  const rows = await page.$$eval('#record-list > li', (els) => els.map((e) => ({ name: e.querySelector('.record-name').textContent, types: e.querySelector('.record-types')?.textContent ?? '', meta: e.textContent })));
+  check('S06 이름 없는 기록도 문서 유형·첫 등록일로 구별, 안내 문구를 이름으로 쓰지 않음', rows.every((r) => r.types.length > 0 && r.meta.includes('첫 등록') && r.name !== '기록 이름을 입력해 주세요') && rows.some((r) => r.name === '이름 없는 기록'), JSON.stringify(rows.map((r) => `${r.name} | ${r.types}`)).slice(0, 200));
   check('S06 저장 위치·범위·손실 조건·외부 AI 전달 안내', /이 브라우저\(이 기기\)/.test(await text('.storage-note')) && /다른 기기/.test(await text('.storage-note')) && /사진 원본은 저장하지 않아요/.test(await text('.storage-note')) && /파일은 현재 브라우저에 저장됩니다/.test(await text('.storage-note')));
   check('390px 가로 넘침 없음 (목록)', await noHScroll());
 

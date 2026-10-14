@@ -46,7 +46,17 @@ export function createDemoAnalyzer() {
     async analyze({ segments, criterionIds }) {
       return { criteria: criterionIds.map((id) => extract(id, segments)) };
     },
+    // 읽기 쉽게 정리 (데모): 줄 단위로 나누고 모양으로만 제목·항목을 고른다. AI가 아니다.
+    async layout({ text }) {
+      return { blocks: String(text).split('\n').filter((l) => l.trim()).map((l) => ({ kind: layoutKind(l.trim()), text: l.trim() })) };
+    },
   };
+}
+
+function layoutKind(line) {
+  if (/^(\[[^\]]{1,30}\]|【[^】]{1,30}】|제\s*\d+\s*조.{0,20}|■.{1,30})$/.test(line)) return 'heading';
+  if (/^(\d+[.)]|[-•·▪]|[가-하][.)])\s*\S/.test(line) || /^[^:：]{1,15}\s*[:：]/.test(line)) return 'item';
+  return 'text';
 }
 
 function extract(id, segments) {

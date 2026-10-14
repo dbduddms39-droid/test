@@ -7,11 +7,12 @@ import { createTracker, applyEdit, confirmSpan, pendingRanges, unlocatedPending,
 import {
   buildIssues, resolveIssue, unresolve, blockingIssues, resetTextDependent, resultNotes, isResolved, setSupplement, shiftAnchors, assembleText,
 } from './extract-issues.js';
-import { createStore, suggestAlias, StoreError, DEFAULT_ALIAS, NOTE_MAX, newId } from './store.js';
+import { createStore, userAlias, StoreError, DEFAULT_ALIAS, NOTE_MAX, newId } from './store.js';
 import { buildFollowUps, BOUNDARY_TEXT, deferral, detailOnly, weeklyCalc } from './followups.js';
 import { contractSummaryGroup, summaryEvidence, externallyReferencedLeave } from './result-presentation.js';
 import { comparisonPair, comparisonView, replaceComparedDocument } from './comparison-selection.js';
 import { initSampleDownloads } from './samples.js';
+import { alignLayout, headingHasMarker } from './text-layout.js';
 import { DOC_TYPE_LABEL, RELATION_LABEL, docLabels } from './relate.js';
 
 // 일단확인 클라이언트 (PRD v3.1: 자료 한 건으로 시작 → 지금 확인할 내용 → 입사 건별 기록 → 새 안내 추가).
@@ -242,7 +243,7 @@ async function applyTarget(target) {
   $('#target-banner').hidden = target.kind !== 'add';
   if (target.kind === 'add') {
     const r = state.targetRecord;
-    $('#target-alias').textContent = r.alias;
+    $('#target-alias').textContent = recordLabel(r);
     $('#target-meta').textContent = `등록된 자료 ${r.documents.length}건: ${r.documents.map((d) => DOC_TYPE_LABEL[d.docType]).join(', ')}`;
   }
   setTypeRadios();
@@ -335,7 +336,7 @@ function renderImages() {
   $('#clear-images').disabled = busy;
   fill(imageList, ...images.map((img, i) => {
     const btn = (label, action, disabled) => {
-      const b = el('button', { type: 'button', class: 'icon-btn', 'aria-label': `${i + 1}번째 이미지 ${label}`, 'data-action': action, 'data-index': String(i) }, label);
+      const b = el('button', { type: 'button', class: 'btn-small', 'aria-label': `${i + 1}번째 이미지 ${label}`, 'data-action': action, 'data-index': String(i) }, label);
       b.disabled = busy || disabled;
       return b;
     };
@@ -540,7 +541,60 @@ function updateReviewState() {
   if (blocking.length) blockedMsg.push(`분석 전에 확인할 추출 문제 ${blocking.length}건을 먼저 처리해 주세요. 위의 '분석 전에 확인할 추출 문제'에서 처리할 수 있어요.`);
   if (unlocated.length) blockedMsg.push(`위치를 찾을 수 없는 불확실한 글자 ${unlocated.length}곳이 있어요. 어느 조건에 영향을 주는지 알 수 없어, '확인이 필요한 글자'에서 원본과 대조해 확인하기 전에는 분석할 수 없어요.`);
   showMsg($('#review-blocked'), blockedMsg.join(' '));
+  syncLayout();
 }
+
+// ---------- S-03 읽기 쉽게 정리해서 보기 (선택) ----------
+// 사용자가 버튼을 눌렀을 때만 확인 중인 텍스트를 /api/layout(Gemini)으로 보낸다.
+// 응답 블록은 브라우저에서도 원문과 다시 대조하고, 일치할 때만 보기 전용으로 그린다.
+// 추출 원본(state.file.original)과 사용자가 고친 텍스트(textarea)는 바꾸지 않으며, 정리 결과는 저장·분석에 쓰지 않는다.
+let layoutState = null; // { source, blocks } — 이 창의 메모리에만
+function renderLayoutView(blocks) {
+  fill($('#layout-view'), ...blocks.map((b) => el(b.kind === 'heading' ? 'h3' : 'p', {
+    class: `layout-${b.kind}${b.kind === 'heading' && !headingHasMarker(b.text) ? ' with-marker' : ''}`,
+  }, b.text)));
+}
+function syncLayout() {
+  const fresh = layoutState && layoutState.source === reviewText.value;
+  if (layoutState && !fresh) {
+    layoutState = null;
+    $('#layout-status').textContent = '텍스트가 바뀌어 정리된 보기를 닫았어요. 필요하면 다시 정리해 주세요.';
+  }
+  $('#layout-view').hidden = !fresh;
+  $('#layout-close').hidden = !fresh;
+}
+$('#layout-run').addEventListener('click', async () => {
+  const source = reviewText.value;
+  if (!source.trim()) { $('#layout-status').textContent = '정리할 텍스트가 없어요.'; return; }
+  const btn = $('#layout-run');
+  btn.disabled = true;
+  layoutState = null;
+  syncLayout();
+  $('#layout-status').textContent = 'Gemini로 줄을 나누는 중이에요…';
+  let message;
+  try {
+    const res = await fetch('/api/layout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: source }) });
+    const data = await res.json().catch(() => ({}));
+    if (reviewText.value !== source) message = '정리하는 동안 텍스트가 바뀌어 결과를 표시하지 않았어요. 다시 정리해 주세요.';
+    else if (!res.ok) message = data.error ?? '읽기 쉽게 정리하지 못했어요. 원래 텍스트를 그대로 확인해 주세요.';
+    else {
+      const blocks = alignLayout(source, data.blocks); // 서버 검증과 별도로 다시 대조
+      if (!blocks) message = '정리 결과가 원문과 글자 단위로 일치하지 않아 표시하지 않았어요. 원래 텍스트를 그대로 확인해 주세요.';
+      else {
+        layoutState = { source, blocks };
+        renderLayoutView(blocks);
+        message = `원문과 글자가 모두 같은지 확인했어요. 줄바꿈과 제목 표시만 달라요.${data.mode === 'demo' ? ' (데모 모드: AI가 아닌 줄 단위 규칙으로 나눴어요)' : ''}`;
+      }
+    }
+  } catch {
+    message = '서버에 연결하지 못해 정리하지 못했어요. 원래 텍스트를 그대로 확인해 주세요.';
+  } finally {
+    btn.disabled = false;
+  }
+  $('#layout-status').textContent = message;
+  syncLayout();
+});
+$('#layout-close').addEventListener('click', () => { layoutState = null; $('#layout-status').textContent = ''; syncLayout(); });
 function reviewBlocking() { return state.file ? blockingIssues(state.file.issues ?? []) : []; }
 // 텍스트가 바뀔 때마다 저신뢰 구간의 위치·상태를 갱신한다
 function trackReviewText() {
@@ -580,8 +634,8 @@ function renderOcrCheck() {
       el('span', { class: 'ocr-state' }, OCR_STATE_TEXT[x.state])),
     unlocated.has(x.id) ? el('p', { class: 'issue-desc ocr-unlocated' }, '지금 텍스트에서 위치를 찾을 수 없어 어느 조건에 영향을 주는지 알 수 없어요. 원본에서 이 글자가 있던 곳을 찾아 확인한 뒤 눌러 주세요. 확인하기 전에는 분석하지 않아요.') : null,
     x.state === 'pending' ? el('div', { class: 'ocr-item-actions' },
-      x.start != null ? el('button', { type: 'button', class: 'btn-text', 'data-ocr-action': 'locate' }, '위치 보기') : null,
-      el('button', { type: 'button', class: 'icon-btn', 'data-ocr-action': 'confirm' }, '원본과 대조해 확인했어요')) : null)));
+      x.start != null ? el('button', { type: 'button', class: 'btn-small', 'data-ocr-action': 'locate' }, '위치 보기') : null,
+      el('button', { type: 'button', class: 'btn-small', 'data-ocr-action': 'confirm' }, '원본과 대조해 확인했어요')) : null)));
 }
 $('#ocr-check-list').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-ocr-action]');
@@ -644,13 +698,13 @@ function issueItem(x) {
     input.querySelector('textarea').value = x.supplement ?? '';
   }
   if (!resolved) {
-    if (state.file?.previews?.length) actions.push(el('button', { type: 'button', class: 'btn-text', 'data-issue-action': 'view' }, '원본 보기'));
+    if (state.file?.previews?.length) actions.push(el('button', { type: 'button', class: 'btn-small', 'data-issue-action': 'view' }, '원본 보기'));
     if (failed) {
-      actions.push(el('a', { href: inputRoute(), class: 'btn-text', 'data-issue-action': 'reextract' }, x.unit === 'pdf' ? '파일 다시 올려 추출하기' : '이미지 바꾸고 다시 추출하기'));
-      actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'manual_input' }, '원본을 보고 직접 입력했어요'));
+      actions.push(el('a', { href: inputRoute(), class: 'btn-small', 'data-issue-action': 'reextract' }, x.unit === 'pdf' ? '파일 다시 올려 추출하기' : '이미지 바꾸고 다시 추출하기'));
+      actions.push(el('button', { type: 'button', class: 'btn-small', 'data-issue-resolve': 'manual_input' }, '원본을 보고 직접 입력했어요'));
       // 글자를 찾지 못했고 원본 미리보기로 대조할 수 있는 경우에만. 시스템이 빈 쪽이라고 정한 것이 아님을 밝힌다.
       if (x.canConfirmBlank) {
-        actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'blank_confirmed' }, `원본에서 빈 ${blankName}임을 확인했어요`));
+        actions.push(el('button', { type: 'button', class: 'btn-small', 'data-issue-resolve': 'blank_confirmed' }, `원본에서 빈 ${blankName}임을 확인했어요`));
         blankNote = el('p', { class: 'issue-desc' }, `글자를 찾지 못했다는 것만으로 빈 ${blankName}로 보지 않아요. 원본에 정말 아무 내용이 없을 때만 '빈 ${blankName}임을 확인했어요'를 눌러 주세요. 그러면 이 ${josa(unitName, '은/는')} 분석에서 빠져요.`);
       } else {
         blankNote = el('p', { class: 'issue-desc' }, x.code === 'no_text_found'
@@ -658,12 +712,12 @@ function issueItem(x) {
           : '파일을 열거나 그리지 못해 원본을 확인하기 어려워요. 다시 추출하거나 원본을 보고 직접 입력해 주세요.');
       }
     } else {
-      actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'supplemented' }, '빠진 내용을 직접 보완했어요'));
-      actions.push(el('button', { type: 'button', class: 'icon-btn', 'data-issue-resolve': 'range_checked' }, '원본과 비교해 추출 범위를 확인했어요'));
+      actions.push(el('button', { type: 'button', class: 'btn-small', 'data-issue-resolve': 'supplemented' }, '빠진 내용을 직접 보완했어요'));
+      actions.push(el('button', { type: 'button', class: 'btn-small', 'data-issue-resolve': 'range_checked' }, '원본과 비교해 추출 범위를 확인했어요'));
     }
   } else {
     actions.push(el('span', { class: 'issue-state' }, ISSUE_STATE_TEXT[x.resolution]));
-    actions.push(el('button', { type: 'button', class: 'btn-text', 'data-issue-action': 'undo' }, '표시 취소'));
+    actions.push(el('button', { type: 'button', class: 'btn-small', 'data-issue-action': 'undo' }, '표시 취소'));
   }
   return el('li', { class: `issue-item is-${x.kind}${resolved ? ' is-resolved' : ''}`, 'data-issue-id': x.id },
     el('p', { class: 'issue-title' }, title, el('span', { class: 'issue-kind' }, resolved ? '처리함' : '처리 필요')),
@@ -863,7 +917,7 @@ async function startAnalysis(payload, { replace = false } = {}) {
     lowConfidence: payload.lowConfidence ?? [],
     status: 'pending',
   };
-  const naming = payload.target.kind === 'new' ? suggestAliasFor(payload.text) : {};
+  const naming = {}; // 기록 이름은 사용자가 직접 정한다 (문서의 회사명을 자동으로 쓰지 않음)
   const saved = await saveDocument(payload, entry, naming);
   const r = await requestAnalysis(payload, controller.signal);
   state.inflight = null;
@@ -920,7 +974,6 @@ async function startAnalysis(payload, { replace = false } = {}) {
   state.unsaved = { ...pending, baseRecord, error: saved.error };
   go(ROUTES.unsaved, true);
 }
-const suggestAliasFor = (text) => { const s = suggestAlias(text); return { alias: s.alias, aliasSource: s.source }; };
 const withoutDoc = (record, docId) => (record ? { ...record, documents: record.documents.filter((d) => d.id !== docId) } : null);
 const ORIGINAL_ERROR_TEXT = {
   quota: '브라우저 저장 공간이 부족해',
@@ -1100,7 +1153,7 @@ function criterionCard(c) {
 }
 
 function linkList(links) {
-  return el('ul', { class: 'link-list' }, links.map((l) => el('li', {}, el('a', { href: l.url, target: '_blank', rel: 'noopener noreferrer', class: 'link-external' }, `${l.label} ↗`))));
+  return el('ul', { class: 'link-list' }, links.map((l) => el('li', {}, el('a', { href: l.url, target: '_blank', rel: 'noopener noreferrer', class: 'btn-small link-external' }, `${l.label} ↗`))));
 }
 
 
@@ -1225,7 +1278,7 @@ function questionBox(text, label = '회사에 확인할 때 쓸 질문') {
     el('label', { class: 'q-label', for: id }, `${label} (고쳐 쓸 수 있어요)`),
     ta,
     el('div', { class: 'q-actions' },
-      el('button', { type: 'button', class: 'icon-btn', 'data-copy': id }, '질문 복사'),
+      el('button', { type: 'button', class: 'btn-secondary btn-copy', 'data-copy': id }, '질문 복사'),
       el('span', { class: 'q-status muted small', role: 'status', 'aria-live': 'polite' })));
 }
 // 대표 질문 + (접힌) 추가 질문
@@ -1244,7 +1297,18 @@ function followupCard(f, record, saved) {
     el('div', { class: 'followup-head' }, el('h3', { class: 'followup-label' }, f.label)),
     el('p', { class: 'followup-reason small' }, f.reasons[0]),
     questionBlock(f),
-    saved ? el('a', { href: ROUTES.item(record.id, f.topicIds[0]), class: 'btn-text' }, '자세히 보기 →') : null);
+    saved ? el('a', { href: ROUTES.item(record.id, f.topicIds[0]), class: 'btn-secondary' }, '자세히 보기 →') : null);
+}
+
+// ---------- 기록 이름 ----------
+// 이름은 사용자가 정한 경우에만. 이름이 없으면 제목 자리에 안내 문구(저장하지 않음), 다른 곳에서는 문서 유형·등록일로 구별
+const NAME_PLACEHOLDER = '기록 이름을 입력해 주세요';
+const firstRegistered = (r) => r.documents.map((d) => d.registeredAt).filter(Boolean).sort()[0] ?? r.updatedAt;
+function recordLabel(r) {
+  const name = userAlias(r);
+  if (name) return name;
+  const types = [...new Set((r?.documents ?? []).map((d) => DOC_TYPE_LABEL[d.docType]))].join('·');
+  return `이름 없는 기록 (${types || '자료 없음'} · ${formatDateTime(firstRegistered(r))} 등록)`;
 }
 
 // ---------- S04 입사조건 기록 ----------
@@ -1307,8 +1371,8 @@ function originalLinks(d, label) {
   const o = d.original;
   return el('li', { class: 'original-item', 'data-file': o.fileId },
     el('span', { class: 'original-name' }, `${label} 원본 · ${o.name}`, el('span', { class: 'muted small' }, ` (${formatBytes(o.size)})`)),
-    el('a', { class: 'btn-text original-view', target: '_blank', rel: 'noopener', 'aria-disabled': 'true' }, '원본 PDF 보기'),
-    el('a', { class: 'btn-text original-download', download: o.name, 'aria-disabled': 'true' }, '다운로드'),
+    el('a', { class: 'btn-secondary original-view', target: '_blank', rel: 'noopener', 'aria-disabled': 'true' }, '원본 PDF 보기'),
+    el('a', { class: 'btn-secondary original-download', download: o.name, 'aria-disabled': 'true' }, '다운로드'),
     el('span', { class: 'muted small original-status', role: 'status' }));
 }
 async function attachOriginalUrls(root) {
@@ -1430,9 +1494,9 @@ function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendi
         el('p', { class: 'cmp-sub' }, '강조 표시는 비교에 쓴 표현이에요. 문서 전체는 아래 \'등록된 안내 자료와 원문\'에서 볼 수 있어요.')),
       q?.question ? el('div', { class: 'cmp-question' }, el('p', { class: 'cmp-question-title' }, `회사에 확인할 질문 · ${itemLabel(record, id)}`), questionBlock(q)) : null,
       saved && unavailDocs.length ? el('div', { class: 'reanalyze' },
-        unavailDocs.map((d) => el('button', { type: 'button', class: 'icon-btn', 'data-reanalyze': d.id }, `${labels[d.id]} 같은 텍스트로 다시 분석하기`)),
+        unavailDocs.map((d) => el('button', { type: 'button', class: 'btn-secondary', 'data-reanalyze': d.id }, `${labels[d.id]} 같은 텍스트로 다시 분석하기`)),
         el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null,
-      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-text cmp-detail-link' }, '조건 상세·내 메모 →') : null);
+      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary cmp-detail-link' }, '조건 상세·내 메모 →') : null);
   };
   const groups = STATUS_ORDER.map((st) => {
     const list = rows.filter((r) => r.st === st);
@@ -1460,7 +1524,7 @@ function renderRecord(record, { unsaved = false } = {}) {
   const mode = recordMode(comparedRecord);
   const allFus = [...fus.primary, ...fus.more];
   const fuOf = (topicId) => allFus.find((x) => x.topicIds.includes(topicId));
-  const detailLink = (topicId) => (saved ? el('a', { href: ROUTES.item(record.id, topicId), class: 'btn-text sum-more' }, '자세히 →') : null);
+  const detailLink = (topicId) => (saved ? el('a', { href: ROUTES.item(record.id, topicId), class: 'btn-secondary sum-more' }, '자세히 →') : null);
 
   // 저장 상태: 실제 저장을 확인했을 때만 '저장했어요'
   const status = $('#save-status');
@@ -1475,7 +1539,7 @@ function renderRecord(record, { unsaved = false } = {}) {
       u.error === 'unavailable' ? '이 브라우저에서 저장소를 열 수 없어요(시크릿 창이거나 저장이 막혀 있을 수 있어요). ' : '저장 공간이 부족하거나 브라우저가 저장을 막았을 수 있어요. ',
       el('span', { class: 'save-actions' },
         el('button', { type: 'button', class: 'btn-primary btn-auto', id: 'save-retry' }, '다시 저장하기'),
-        el('button', { type: 'button', class: 'btn-text', id: 'copy-confirmed' }, '확인한 텍스트 복사')));
+        el('button', { type: 'button', class: 'btn-small', id: 'copy-confirmed' }, '확인한 텍스트 복사')));
     status.hidden = false;
   } else if (state.flash) {
     status.classList.add(`is-${state.flash.kind}`);
@@ -1487,7 +1551,11 @@ function renderRecord(record, { unsaved = false } = {}) {
   }
 
   $('#record-back').hidden = unsaved;
-  $('#record-title').textContent = record.alias;
+  const named = userAlias(record);
+  $('#record-title').textContent = named || NAME_PLACEHOLDER;
+  $('#record-title').classList.toggle('is-placeholder', !named);
+  $('#rename-open-text').textContent = named ? '수정' : '이름 입력';
+  $('#rename-open').setAttribute('aria-label', named ? '기록 이름 수정' : '기록 이름 입력');
   $('#record-meta').textContent = `등록 문서 ${record.documents.length}건${saved ? '' : ' · 저장 전'}`;
   fill($('#record-doc-chips'), ...record.documents.map((d) => el('span', { class: 'record-doc-chip' }, labels[d.id])));
   $('#rename-form').hidden = true;
@@ -1523,7 +1591,7 @@ function renderRecord(record, { unsaved = false } = {}) {
     el('ul', { class: 'sum-list' }, sum.unavailable.map((x) => el('li', { class: 'sum-item', 'data-topic': x.topicId },
       el('p', { class: 'sum-head' }, el('strong', {}, x.label), detailLink(x.topicId)),
       el('p', { class: 'sum-line' }, `${unavailableCause(x.codes)}.`)))),
-    saved ? el('div', { class: 'reanalyze' }, unavailableDocs.map((docId) => el('button', { type: 'button', class: 'icon-btn', 'data-reanalyze': docId }, `${labels[docId]} 같은 텍스트로 다시 분석하기`)),
+    saved ? el('div', { class: 'reanalyze' }, unavailableDocs.map((docId) => el('button', { type: 'button', class: 'btn-secondary', 'data-reanalyze': docId }, `${labels[docId]} 같은 텍스트로 다시 분석하기`)),
       el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null) : null;
   fill($('#summary-groups'), reBox);
   $('#now-section').hidden = !reBox;
@@ -1647,7 +1715,7 @@ function renderRecord(record, { unsaved = false } = {}) {
       detailNote,
       // 질문은 해당 카드 안에서만 (채용공고·처우 안내 1개일 때는 만들지 않음)
       layout !== 'brief' && q?.question ? el('details', { class: 'sum-q' }, el('summary', {}, '질문 보기·복사'), questionBlock(q)) : null,
-      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-text' }, '자세히 보기 →') : null);
+      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary' }, '자세히 보기 →') : null);
   };
   const GROUPS = {
     compare: [['different', '서로 다른 조건'], ['specified', '새롭게 기재되거나 확인이 필요한 조건'], ['same', '같은 조건']],
@@ -1691,7 +1759,7 @@ function renderRecord(record, { unsaved = false } = {}) {
           el('strong', {}, TOPIC_CHECKLIST_LABELS[r.id]),
           el('span', { class: 'contract-glance-state' }, calc ? '원문 기준 계산' : '원문에서 확인')),
         el('p', { class: 'contract-glance-value' }, value, calc ? ` · ${calc.text}(계산값)` : ''),
-        saved ? el('a', { href: ROUTES.item(record.id, r.id), class: 'btn-text' }, '원문 보기 →') : null);
+        saved ? el('a', { href: ROUTES.item(record.id, r.id), class: 'btn-secondary' }, '원문 보기 →') : null);
     }));
     const refBox = $('#contract-glance-reference');
     const refLeave = externallyReferencedLeave(topicOf(doc, '10'));
@@ -1699,7 +1767,7 @@ function renderRecord(record, { unsaved = false } = {}) {
     fill(refBox, ...(refLeave ? [
       el('strong', {}, '참고 · 연차 유급휴가'),
       el('p', {}, '법령·취업규칙을 참조하는 기준이 기재돼 있어요. 구체적인 부여 일수와 운영 방식은 해당 기준에서 별도 확인할 수 있어요.'),
-      saved ? el('a', { class: 'btn-text', href: ROUTES.item(record.id, '10') }, '연차 원문 보기 →') : null,
+      saved ? el('a', { class: 'btn-secondary', href: ROUTES.item(record.id, '10') }, '연차 원문 보기 →') : null,
     ] : []));
   }
   const compareRows = layout === 'compare' ? renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendingOf }) : null;
@@ -1751,7 +1819,7 @@ function renderRecord(record, { unsaved = false } = {}) {
           ev ? el('q', { class: 'cd-quote' }, clipText(ev.text)) : null,
           (() => { const x = topicExplain(t, d.docType); return x ? el('span', { class: 'cd-explain small' }, x) : null; })());
       })),
-      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-text' }, '자세히 보기 →') : null);
+      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary' }, '자세히 보기 →') : null);
   });
   fill($('#all-condition-list'), ...allRows);
   $('#all-count').textContent = `${allRows.length}개 항목${restIds.length ? ` · 요약에 없는 항목 ${restIds.length}개 포함` : ''}`;
@@ -1773,7 +1841,7 @@ function renderRecord(record, { unsaved = false } = {}) {
           : d.inputSource === 'pdf' && !pendingDoc ? el('p', { class: 'muted small doc-original is-legacy' }, '이전에 등록한 자료는 원본 파일이 보관되어 있지 않아요.') : null,
       saved && st !== 'analyzed' ? el('div', { class: 'reanalyze' },
         el('p', { class: 'small' }, st === 'analysis_failed' ? `분석을 완료하지 못했어요. 저장된 텍스트${d.original ? '와 원본' : ''}은 그대로예요.` : '아직 분석하지 않은 자료예요.'),
-        el('button', { type: 'button', class: 'icon-btn', 'data-reanalyze': d.id }, st === 'analysis_failed' ? '같은 텍스트로 다시 분석하기' : '분석하기'),
+        el('button', { type: 'button', class: 'btn-secondary', 'data-reanalyze': d.id }, st === 'analysis_failed' ? '같은 텍스트로 다시 분석하기' : '분석하기'),
         el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null,
       el('p', { class: 'muted small' }, [
         INPUT_SOURCE_LABEL[d.inputSource] ?? '확인한 텍스트',
@@ -1794,9 +1862,8 @@ function renderRecord(record, { unsaved = false } = {}) {
   $('#view-record .record-actions').hidden = unsaved;
   // 문서 1개(채용공고·처우 안내): 두 번째 문서 추가는 위 '다음 행동'에서, 여기는 기록 관리만
   $('#actions-title').textContent = layout === 'brief' ? '기록 관리' : '필요할 때 하기';
-  $('#add-doc').hidden = layout === 'brief';
-  if (saved) $('#add-doc').setAttribute('href', ROUTES.add(record.id));
-  $('#copy-all-questions').hidden = !allFus.some((f) => f.question);
+  // 같은 기능 버튼은 한 곳에만: 문서 추가는 기록 상단(문서 1개면 '다음 행동'), 비교 화면의 질문 전체 복사는 위쪽 질문 모아보기
+  $('#copy-all-questions').hidden = layout === 'compare' || !allFus.some((f) => f.question);
   $('#actions-status').textContent = '';
   $('#record-notice').textContent = `${analyzedDocs[0]?.analysis?.notice ?? ''} 이 기록은 이 브라우저에만 저장돼요. 다른 기기에서는 보이지 않아요.`.trim();
 }
@@ -1856,7 +1923,7 @@ async function reanalyze(record, docId, btn) {
 $('#rename-open').addEventListener('click', () => {
   $('#rename-form').hidden = false;
   $('#record-title-row').hidden = true;
-  $('#rename-input').value = currentRecord?.alias ?? '';
+  $('#rename-input').value = userAlias(currentRecord);
   $('#rename-error').hidden = true;
   $('#rename-input').focus();
 });
@@ -1897,7 +1964,7 @@ $('#copy-all-questions').addEventListener('click', async () => {
 });
 $('#delete-record').addEventListener('click', async () => {
   if (!currentRecord) return;
-  if (!confirm(`'${currentRecord.alias}' 기록을 삭제할까요? 등록한 자료·확인한 텍스트·분석 결과·원문 근거·원본 PDF·답변 메모가 모두 지워지고 되돌릴 수 없어요.`)) return;
+  if (!confirm(`'${recordLabel(currentRecord)}' 기록을 삭제할까요? 등록한 자료·확인한 텍스트·분석 결과·원문 근거·원본 PDF·답변 메모가 모두 지워지고 되돌릴 수 없어요.`)) return;
   try {
     pendingNotice = 'deleted';
     try { await store.remove(currentRecord.id); } catch (err) { if (err?.code !== 'files_cleanup_failed') throw err; pendingNotice = 'deleted_files_left'; }
@@ -1924,7 +1991,7 @@ function renderItem(record, itemId) {
   $('#item-back').setAttribute('href', ROUTES.record(record.id));
 
   const head = el('header', { class: 'detail-head' },
-    el('p', { class: 'crumb' }, record.alias),
+    el('p', { class: 'crumb' }, recordLabel(record)),
     el('h1', {}, label),
     multi ? relationBadge(rel?.relation) : null);
 
@@ -1992,9 +2059,9 @@ function renderItem(record, itemId) {
       el('p', { class: 'memo-text' }, n.text),
       el('p', { class: 'muted small' }, `메모 작성 ${formatDateTime(n.createdAt)}${n.updatedAt !== n.createdAt ? ` · 수정 ${formatDateTime(n.updatedAt)}` : ''}`),
       el('div', { class: 'memo-actions' },
-        el('button', { type: 'button', class: 'btn-text', 'data-memo-edit': n.id }, '수정'),
-        el('button', { type: 'button', class: 'btn-text danger', 'data-memo-delete': n.id }, '삭제')))))),
-    memoEditing === 'new' ? memoForm(null) : el('button', { type: 'button', class: 'btn-editorial btn-auto', id: 'memo-add' }, '답변 메모 추가'),
+        el('button', { type: 'button', class: 'btn-small', 'data-memo-edit': n.id }, '수정'),
+        el('button', { type: 'button', class: 'btn-small danger', 'data-memo-delete': n.id }, '삭제')))))),
+    memoEditing === 'new' ? memoForm(null) : el('button', { type: 'button', class: 'btn-secondary', id: 'memo-add' }, '답변 메모 추가'),
     el('p', { class: 'muted small', id: 'memo-status', role: 'status', 'aria-live': 'polite' }));
 
   // 점검 기준 출처는 근로계약서 점검에만 (채용공고·처우 안내는 기록만 하므로 숨김)
@@ -2009,7 +2076,7 @@ function renderItem(record, itemId) {
       t0.links.length ? linkList(t0.links) : null)) : null;
 
   fill($('#item'), head, relSec, fuSec, reSec, ...docSecs, memoSec, sourceSec,
-    el('div', { class: 'detail-actions' }, el('a', { href: ROUTES.record(record.id), class: 'btn-editorial btn-auto' }, '← 기록으로 돌아가기')));
+    el('div', { class: 'detail-actions' }, el('a', { href: ROUTES.record(record.id), class: 'btn-secondary' }, '← 기록으로 돌아가기')));
 }
 
 function memoForm(note) {
@@ -2019,8 +2086,8 @@ function memoForm(note) {
     el('label', { for: 'memo-text' }, note ? '메모 고치기' : '새 메모'),
     ta,
     el('div', { class: 'memo-actions' },
-      el('button', { type: 'button', class: 'icon-btn', id: 'memo-save', 'data-note': note?.id ?? '' }, '메모 저장'),
-      el('button', { type: 'button', class: 'btn-text', id: 'memo-cancel' }, '취소')));
+      el('button', { type: 'button', class: 'btn-small is-strong', id: 'memo-save', 'data-note': note?.id ?? '' }, '메모 저장'),
+      el('button', { type: 'button', class: 'btn-small', id: 'memo-cancel' }, '취소')));
 }
 
 $('#item').addEventListener('click', async (e) => {
@@ -2084,10 +2151,11 @@ async function renderRecords() {
   $('#records-status').textContent = '';
   fill($('#record-list'), ...list.map((r) => el('li', { class: 'record-card', 'data-record': r.id },
     el('a', { href: ROUTES.record(r.id), class: 'record-link' },
-      el('span', { class: 'record-name' }, r.alias),
-      el('span', { class: 'muted small' }, `자료 ${r.documents.length}건 · ${r.documents.map((d) => DOC_TYPE_LABEL[d.docType]).join(', ')}`),
-      el('span', { class: 'muted small' }, `마지막 저장 ${formatDateTime(r.updatedAt)}${r.notes?.length ? ` · 내 메모 ${r.notes.length}개` : ''}`)),
-    el('button', { type: 'button', class: 'btn-text danger', 'data-delete': r.id }, '삭제'))));
+      el('span', { class: `record-name${userAlias(r) ? '' : ' is-unnamed'}` }, userAlias(r) || '이름 없는 기록'),
+      // 이름이 없어도 문서 유형·등록일로 서로 구별할 수 있게
+      el('span', { class: 'record-types' }, `${r.documents.map((d) => DOC_TYPE_LABEL[d.docType]).join(' · ')} (자료 ${r.documents.length}건)`),
+      el('span', { class: 'muted small' }, `첫 등록 ${formatDateTime(firstRegistered(r))} · 마지막 저장 ${formatDateTime(r.updatedAt)}${r.notes?.length ? ` · 내 메모 ${r.notes.length}개` : ''}`)),
+    el('button', { type: 'button', class: 'btn-small danger', 'data-delete': r.id }, '삭제'))));
 }
 $('#record-list').addEventListener('click', async (e) => {
   const b = e.target.closest('button[data-delete]');
@@ -2168,7 +2236,6 @@ async function route() {
   else if (r.view === 'records') await renderRecords();
   else if (r.view === 'review') {
     $('#review-back').setAttribute('href', inputRoute());
-    $('#review-back-top').setAttribute('href', inputRoute());
     reviewSubmit.textContent = state.target.kind === 'add' ? '이 내용으로 계속하기 (기록에 추가) →' : '이 내용으로 계속하기 →';
     $('#review-stale').hidden = state.file.source !== 'ocr' || state.file.imagesVersion === imagesVersion;
     renderOcrCheck();

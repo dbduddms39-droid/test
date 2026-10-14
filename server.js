@@ -1,4 +1,5 @@
 // 일단확인 MVP 서버: 정적 파일 제공 + POST /api/analyze(문서 1건) + POST /api/compare(2문서 비교)
+// + POST /api/layout(S-03 읽기 쉽게 정리: 사용자가 버튼을 눌렀을 때만, 원문과 대조해 검증된 블록만 돌려준다)
 // 서버는 분석 요청을 처리할 뿐 문서·결과를 저장하지 않는다. 입사 기록은 사용자 브라우저(IndexedDB)에만 저장된다.
 // - 로컬: `node server.js` 로 직접 실행 (아래 맨 끝 블록)
 // - Vercel: 루트의 server.js를 Node 서버리스 함수로 import 해서 default export (req, res) 핸들러를 호출한다.
@@ -13,6 +14,7 @@ import { DOC_TYPES } from './src/criteria.js';
 import { createGeminiAnalyzer } from './src/ai/gemini.js';
 import { createDemoAnalyzer } from './src/ai/demo.js';
 import { createRateLimiter } from './src/rateLimit.js';
+import { alignLayout } from './public/text-layout.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const MAX_BODY_BYTES = 200_000;
@@ -47,6 +49,7 @@ export function createHandler({ ai, limiter = createRateLimiter(), trustProxy = 
     try {
       if (req.method === 'POST' && req.url === '/api/analyze') return await handleAnalyze(req, res, { ai, limiter, trustProxy });
       if (req.method === 'POST' && req.url === '/api/compare') return await handleCompare(req, res, { ai, limiter, trustProxy });
+      if (req.method === 'POST' && req.url === '/api/layout') return await handleLayout(req, res, { ai, limiter, trustProxy });
       if (req.method === 'GET' && req.url === '/api/config') return sendJson(res, 200, { mode: ai.name });
       if (req.method === 'GET' || req.method === 'HEAD') return await serveStatic(req, res); // HEAD: 체험용 가상 문서가 있는지 확인 (본문 없이 응답)
       sendJson(res, 405, { error: '지원하지 않는 요청이에요.' });
@@ -100,6 +103,41 @@ async function handleAnalyze(req, res, { ai, limiter, trustProxy }) {
     return sendJson(res, known[0], { error: known[1], code: err.code });
   }
   sendJson(res, 200, { ...result, mode: ai.name });
+}
+
+// S-03 읽기 쉽게 정리. AI가 나눈 블록을 원문과 대조해 글자가 모두 같을 때만 돌려준다 (공백·줄바꿈 위치만 다를 수 있음).
+// 결과는 화면 표시용이며 저장·분석에 쓰지 않는다. 로그에는 블록 수·검증 결과만 남긴다.
+async function handleLayout(req, res, { ai, limiter, trustProxy }) {
+  let body;
+  try {
+    body = JSON.parse(await readBody(req));
+  } catch (err) {
+    return sendJson(res, err.code === 'too_large' ? 413 : 400, { error: err.code === 'too_large' ? '입력이 너무 길어요.' : '요청 형식이 올바르지 않아요.' });
+  }
+  const text = body?.text;
+  if (typeof text !== 'string' || !text.trim()) return sendJson(res, 400, { error: '정리할 텍스트가 없어요.' });
+  if (text.length > MAX_TEXT_CHARS) return sendJson(res, 400, { error: `텍스트는 ${MAX_TEXT_CHARS.toLocaleString()}자 이하만 정리할 수 있어요.` });
+  if (typeof ai.layout !== 'function') return sendJson(res, 503, { error: '읽기 쉽게 정리하기를 지금 사용할 수 없어요.', code: 'layout_unavailable' });
+
+  const limit = limiter.check(clientIp(req, trustProxy));
+  if (!limit.ok) {
+    log({ event: 'rate_limited', scope: limit.scope });
+    res.setHeader('Retry-After', String(limit.retryAfterSec));
+    return sendJson(res, 429, { error: RATE_LIMIT_MESSAGES[limit.scope], code: `rate_limited_${limit.scope}` });
+  }
+  let raw;
+  try {
+    raw = await ai.layout({ text });
+  } catch (err) {
+    const known = AI_ERROR_RESPONSES[err.code];
+    log({ event: 'layout_failed', code: err?.code ?? null });
+    if (known) return sendJson(res, known[0], { error: known[1], code: err.code });
+    return sendJson(res, 502, { error: '읽기 쉽게 정리하지 못했어요. 원래 텍스트를 그대로 확인해 주세요.', code: err?.code ?? 'layout_failed' });
+  }
+  const blocks = alignLayout(text, raw?.blocks);
+  log({ event: 'layout_done', analyzer: ai.name, blocks: Array.isArray(raw?.blocks) ? raw.blocks.length : 0, verified: Boolean(blocks) });
+  if (!blocks) return sendJson(res, 422, { error: '정리 결과가 원문과 글자 단위로 일치하지 않아 표시하지 않았어요. 원래 텍스트를 그대로 확인해 주세요.', code: 'layout_mismatch' });
+  sendJson(res, 200, { blocks, mode: ai.name });
 }
 
 // 문서 1개 입력 검사. 문제가 있으면 사용자 안내 문구, 없으면 null

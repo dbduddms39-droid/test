@@ -125,22 +125,15 @@ export async function sha256Hex(blob) {
 }
 const isQuota = (e) => e?.name === 'QuotaExceededError' || e?.cause?.name === 'QuotaExceededError' || /quota/i.test(String(e?.message ?? ''));
 
-// ---------- 별칭 제안 ----------
-// 회사명이 문서에 분명하게 하나만 보일 때만 제안한다. 없거나 여러 개면 '새 입사 기록'.
-const NAME_FIELD = /(?:회사명|회사\s*이름|기업명|상호|사업체명|사업장명)\s*[:：]\s*([^\n,·|/]{2,30})/g;
-const CORP = /((?:\(주\)|㈜|주식회사) ?[가-힣A-Za-z0-9&]{2,20}|[가-힣A-Za-z0-9&]{2,20} ?(?:\(주\)|㈜|주식회사))/g;
-const clean = (s) => s.replace(/\s+/g, ' ').replace(/[.。]+$/, '').trim();
-const normCorp = (s) => s.replace(/\(주\)|㈜|주식회사|\s/g, '');
-
-export function suggestAlias(text) {
-  const t = String(text ?? '');
-  const fields = [...new Set([...t.matchAll(NAME_FIELD)].map((m) => clean(m[1])))].filter(Boolean);
-  if (fields.length === 1) return { alias: fields[0].slice(0, ALIAS_MAX), source: 'suggested' };
-  if (fields.length > 1) return { alias: DEFAULT_ALIAS, source: 'default' };
-  const corps = [...t.matchAll(CORP)].map((m) => clean(m[1]));
-  const distinct = [...new Map(corps.map((c) => [normCorp(c), c])).values()].filter((c) => normCorp(c).length >= 2);
-  if (distinct.length === 1) return { alias: distinct[0].slice(0, ALIAS_MAX), source: 'suggested' };
-  return { alias: DEFAULT_ALIAS, source: 'default' };
+// ---------- 기록 이름 ----------
+// 기록 이름은 사용자가 직접 정한 경우에만 이름으로 본다 (문서의 회사명을 자동으로 쓰지 않는다).
+// 예전 버전이 회사명으로 제안해 저장한 이름(aliasSource 'suggested')과 기본 이름은 '이름 없음'으로 다룬다. 저장된 값은 지우지 않는다.
+export function userAlias(record) {
+  if (!record) return '';
+  const src = record.aliasSource;
+  if (src === 'user') return record.alias ?? '';
+  if (src === 'default' || src === 'suggested') return '';
+  return record.alias && record.alias !== DEFAULT_ALIAS ? record.alias : ''; // aliasSource가 없는 아주 예전 기록
 }
 
 // ---------- 저장소 ----------
@@ -282,8 +275,10 @@ export function createStore(adapter = idbAdapter(), { now = () => new Date().toI
     },
     async rename(recordId, alias) {
       const cur = await load(recordId);
-      const value = String(alias ?? '').trim().slice(0, ALIAS_MAX) || DEFAULT_ALIAS;
-      const record = { ...cur, alias: value, aliasSource: 'user', updatedAt: now() };
+      const typed = String(alias ?? '').trim().slice(0, ALIAS_MAX);
+      // 비우면 '이름 없음'으로 되돌린다 (안내 문구를 이름으로 저장하지 않음)
+      const value = typed || DEFAULT_ALIAS;
+      const record = { ...cur, alias: value, aliasSource: typed ? 'user' : 'default', updatedAt: now() };
       return write(record, (b) => b.alias === value);
     },
     // 답변 메모 작성·수정 (conditionKey: 항목 ID). 메모는 사용자가 직접 기록한 것이며 분석 결과를 바꾸지 않는다.

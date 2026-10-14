@@ -72,7 +72,7 @@ try {
     const rows = await page.$$eval('#condition-list .ccard', (e) => e.length);
     check(`[${tag}] S04: 핵심 조건 요약 카드`, rows >= 4, `${rows}개`);
     check(`[${tag}] S04: 데모 결과 안내·저장 표시`, (await page.textContent('#analysis-source')).includes('데모') && /저장됐어요|추가됐어요/.test(await page.textContent('#save-status')));
-    await page.click('#condition-list .ccard a.btn-text'); await view('item'); await page.waitForTimeout(300);
+    await page.click('#condition-list .ccard a[href*="/item/"]'); await view('item'); await page.waitForTimeout(300);
     await shot('S05'); await noOverflow('S05'); await codesHidden('S05');
     // 상세: 카드에는 근거 건수만, 인용 전문은 아래 '원문 근거'에서 한 번만 (강조는 글자에만)
     const counts = await page.$$eval('#item .criterion .card-detail p', (e) => e.map((x) => x.textContent).filter((t) => t.includes('관련 원문 근거')));
@@ -84,7 +84,7 @@ try {
     check(`[${tag}] S05: 위쪽 '돌아가기' 중복 없음, 아래 돌아가기만`, !(await page.isVisible('#item-back')) && (await page.$$('#item .detail-actions a')).length === 1);
     await page.click('#item .detail-actions a'); await view('record');
     const recUrl = page.url();
-    await page.click('#add-doc:visible, #add-second:visible'); await view('input');
+    await page.click('#add-doc-top:visible, #add-second:visible'); await view('input');
     await page.check('input[name="doc-type"][value="offer"]');
     await page.click('#example-btn'); await shot('S07'); await noOverflow('S07');
     check(`[${tag}] S07: 추가할 기록 표시`, await page.isVisible('#target-banner'));
