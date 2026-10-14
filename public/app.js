@@ -1087,7 +1087,9 @@ function criterionCard(c) {
   const chips = evidenceChips(c);
   return el('article', { class: `criterion criterion-card${c.role === 'C' ? ' is-core' : ''}`, 'data-criterion': c.id },
     el('div', { class: 'card-head' }, el('span', { class: 'criterion-name' }, c.label), statusBadge(c.status, c.statusLabel)),
-    values.length || chips.length ? el('div', { class: 'card-detail' }, ...values, chips.length ? el('div', { class: 'chips' }, chips) : null) : null,
+    // 인용 전문은 아래 '원문 근거'에서 한 번만 표시한다. 위 카드에는 건수만 알려 중복을 줄인다.
+    values.length || chips.length ? el('div', { class: 'card-detail' }, ...values,
+      chips.length ? el('p', { class: 'muted small' }, `관련 원문 근거 ${chips.length}곳 · 아래에서 확인할 수 있어요.`) : null) : null,
     el('p', { class: 'item-desc' }, criterionText(c)),
     c.provisional ? el('p', { class: 'provisional muted small' }, PROVISIONAL_TEXT) : null,
     c.condition && !c.required && c.status !== 'NOT_APPLICABLE' ? el('p', { class: 'muted small' }, CONDITION_TEXT[c.condition]) : null);
