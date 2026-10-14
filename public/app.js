@@ -13,6 +13,7 @@ import { comparisonPair, comparisonView, replaceComparedDocument } from './compa
 import { initSampleDownloads } from './samples.js';
 import { alignLayout, headingHasMarker, layoutText, positionMap } from './text-layout.js';
 import { reportText, questionsText, sideText, REPORT_NOTICES } from './compare-report.js';
+import { buildReportPdf, reportPdfName } from './report-pdf.js';
 import { DOC_TYPE_LABEL, RELATION_LABEL, docLabels } from './relate.js';
 
 // 일단확인 클라이언트 (PRD v3.1: 자료 한 건으로 시작 → 지금 확인할 내용 → 입사 건별 기록 → 새 안내 추가).
@@ -1320,10 +1321,21 @@ function relationBadge(relation) {
 }
 
 let qSeq = 0;
+// 사용자가 고친 질문: 기록별로 이 창의 메모리에 둔다 (화면을 다시 그려도, 정리본·PDF에도 고친 문장이 들어가게).
+// 처음 만든 질문 문장을 열쇠로 쓴다. 저장소에는 쓰지 않는다.
+const questionEdits = new Map(); // recordId → Map(처음 문장 → 고친 문장)
+const editsOf = (recordId) => { if (!questionEdits.has(recordId)) questionEdits.set(recordId, new Map()); return questionEdits.get(recordId); };
+const editedQuestion = (recordId, text) => questionEdits.get(recordId)?.get(text) ?? null;
+document.addEventListener('input', (e) => {
+  const ta = e.target.closest?.('textarea.q-text[data-orig]');
+  if (!ta || !currentRecord?.id) return;
+  const m = editsOf(currentRecord.id);
+  if (ta.value.trim() && ta.value !== ta.dataset.orig) m.set(ta.dataset.orig, ta.value); else m.delete(ta.dataset.orig);
+});
 function questionBox(text, label = '회사에 확인할 때 쓸 질문') {
   const id = `q-${qSeq += 1}`;
-  const ta = el('textarea', { id, class: 'q-text', rows: '3' });
-  ta.value = text;
+  const ta = el('textarea', { id, class: 'q-text', rows: '3', 'data-orig': text });
+  ta.value = (currentRecord?.id && editedQuestion(currentRecord.id, text)) || text;
   return el('div', { class: 'question' },
     el('label', { class: 'q-label', for: id }, `${label} (고쳐 쓸 수 있어요)`),
     ta,
@@ -1607,30 +1619,28 @@ function noEvidenceText(t) {
   return '관련 원문 줄을 특정하지 못했어요.';
 }
 
-// 결과 활용 안내: 문서 개수와 실제 결과에 맞춰 다음 행동만 짧게. 버튼은 새로 만들지 않고 기존 요소(카드의 원문 근거·질문·메모, 문서 추가)를 가리킨다.
-// 질문이 없으면 질문 복사 단계를 넣지 않는다. 비교 결과 정리본(두 문서 비교)은 여기 한 곳에서만 연다.
+// 결과 활용 안내 (결과 내용의 맨 끝): 문서 개수와 실제 결과에 맞춘 한두 문장. 버튼은 두지 않는다.
+// 질문이 없으면 질문 복사를 권하지 않는다. 비교 결과 정리본·PDF는 요약 바로 아래(#report-entry) 한 곳에서만.
 function renderGuide(layout, rows, { record, saved }) {
   const box = $('#result-guide');
+  const entry = $('#report-entry');
+  entry.hidden = !(layout === 'compare' && saved);
+  if (!entry.hidden) $('#open-report').setAttribute('href', ROUTES.report(record.id));
   box.hidden = !['brief', 'contract', 'compare'].includes(layout) || !rows.length;
   if (box.hidden) return;
   const n = (...st) => rows.filter((r) => st.includes(r.st)).length;
   const hasQ = rows.some((r) => r.q?.question);
-  const memo = saved ? "회사에서 받은 답변은 카드의 '조건 상세·답변 메모'에 직접 기록해 두면 나중에 다시 확인할 수 있어요." : null;
-  const steps = {
-    brief: [
-      `문서에 적힌 주요 조건 ${rows.length}개와 '원문 근거 보기'를 확인하세요.`,
-      saved ? "필요하면 다른 문서를 추가해 두 문서를 나란히 비교해 보세요 (맨 아래 '비교할 두 번째 문서 추가하기')." : null,
-    ],
+  const memo = saved ? ' 받은 답변은 각 조건의 메모로 남길 수 있어요.' : '';
+  const text = {
+    brief: `문서에 적힌 조건과 원문 근거를 확인해 보세요.${saved ? ' 다른 문서를 추가하면 두 문서를 나란히 비교할 수 있어요.' : ''}`,
     contract: n('needs')
-      ? [`추가 확인이 필요한 조건 ${n('needs')}개부터 확인하세요.`, "카드의 '원문 근거 보기'로 문서에 적힌 문장과 위치를 확인하세요.", hasQ ? QUESTION_HINT : null, memo]
-      : ['추가 확인이 필요한 조건으로 분류된 항목은 없어요. 기재된 조건과 원문 근거를 확인해 보세요. 법률 위반 여부를 판단한 결과는 아니에요.', memo],
-    compare: n('different', 'review')
-      ? [`서로 다른 조건 ${n('different')}개와 추가 대조가 필요한 조건 ${n('review')}개를 먼저 확인하세요.`, "카드의 '원문 근거 보기'로 두 문서에 실제로 적힌 문장과 위치를 확인하세요.", hasQ ? QUESTION_HINT : null, memo]
-      : ['서로 다르거나 추가 대조가 필요한 조건은 없어요. 한쪽에만 적힌 조건과 원문 근거를 확인해 보세요.', memo],
-  }[layout].filter(Boolean);
-  fill($('#result-guide-steps'), ...steps.map((t) => el('li', {}, t)));
-  fill($('#result-guide-actions'), layout === 'compare' && saved
-    ? el('a', { href: ROUTES.report(record.id), class: 'btn-secondary', id: 'open-report' }, '비교 결과 정리본 보기 (복사·인쇄)') : null);
+      ? `추가 확인이 필요한 조건부터 원문 근거와 함께 확인해 보세요.${hasQ ? ' 질문은 직접 수정·복사해 회사에 확인할 수 있어요.' : ''}${memo}`
+      : `추가 확인이 필요한 조건으로 분류된 항목은 없어요. 기재된 조건과 원문 근거를 확인해 보세요. 법률 위반 여부를 판단한 결과는 아니에요.${memo}`,
+    compare: n('different', 'review') || hasQ
+      ? `확인한 조건과 원문 근거를 바탕으로 회사에 질문해 보세요.${hasQ && saved ? ' 질문은 직접 수정·복사할 수 있고, 받은 답변은 메모로 남길 수 있어요.' : hasQ ? ' 질문은 직접 수정·복사할 수 있어요.' : memo}`
+      : `서로 다르거나 추가로 대조할 조건은 없었어요. 한쪽에만 적힌 조건과 원문 근거를 확인해 보세요.${memo}`,
+  }[layout];
+  $('#result-guide-text').textContent = text;
 }
 
 // 문서 1개 결과 (채용공고·처우 안내 미리보기 / 근로계약서 확인): 비교 화면과 같은 카드·요약 구조, 한 줄 단일 컬럼.
@@ -2101,7 +2111,11 @@ function buildReportModel(record) {
       const { line, detail } = rowNotes(row, docs, { comparedRecord, labels, fus, pendingOf });
       const ev = (k) => (row.ts[k]?.status === 'MAIN_UNAVAILABLE' ? [] : evidenceFor(row.relItem, docs[k].id));
       let questionNo = null;
-      if (row.q?.question) { questionNo = questions.length + 1; questions.push({ no: questionNo, label, text: row.q.question }); }
+      if (row.q?.question) {
+        const edited = editedQuestion(record.id, row.q.question);
+        questionNo = questions.length + 1;
+        questions.push({ no: questionNo, label, text: edited ?? row.q.question, edited: Boolean(edited) });
+      }
       return {
         id: row.id, label, badge: st === 'same' && row.relItem?.addedNote ? '같은 조건 · 세부 조건 추가' : COMPARE_STATUS[st].badge,
         a: sideInfo(row, docs[0], 0), b: sideInfo(row, docs[1], 1), line, detail, evidence: { a: ev(0), b: ev(1) }, questionNo,
@@ -2122,7 +2136,7 @@ function renderReport(record) {
   $('#report-status').textContent = '';
   reportModel = buildReportModel(record);
   const m = reportModel;
-  for (const id of ['#report-copy', '#report-copy-q', '#report-print']) $(id).hidden = !m;
+  for (const id of ['#report-copy', '#report-copy-q', '#report-print', '#view-report [data-pdf-download]']) $(id).hidden = !m;
   if (!m) { fill($('#report'), el('p', {}, '두 문서를 비교한 기록에서만 정리본을 볼 수 있어요. 다른 문서를 추가해 비교해 주세요.')); return; }
   $('#report-copy-q').hidden = !m.questions.length;
   const quote = (e, side) => el('li', {},
@@ -2155,9 +2169,9 @@ function renderReport(record) {
           el('ul', {}, [...r.evidence.a.map((e) => quote(e, 'A')), ...r.evidence.b.map((e) => quote(e, 'B'))])) : null,
         r.questionNo ? el('p', { class: 'report-qref' }, `→ 회사에 확인할 질문 ${r.questionNo}번`) : null)))),
     el('section', { class: 'report-sec report-questions' }, el('h2', {}, '회사에 확인할 질문'),
-      m.questions.length ? el('ol', {}, m.questions.map((q) => el('li', {}, el('strong', {}, `${q.label} `), q.text)))
+      m.questions.length ? el('ol', {}, m.questions.map((q) => el('li', {}, el('strong', {}, `${q.label}${q.edited ? ' · 직접 고친 질문' : ''} `), q.text)))
         : el('p', {}, '이번 비교에서 만든 확인 질문은 없어요.'),
-      m.questions.length ? el('p', { class: 'report-note' }, '질문은 결과 화면에서 상황에 맞게 고쳐 쓸 수 있어요. 정리본에는 처음 만든 문장이 들어가요.') : null),
+      m.questions.length ? el('p', { class: 'report-note' }, '결과 화면에서 고친 질문은 고친 문장으로 들어가요(이 창을 닫으면 고친 내용은 사라져요). 일단확인은 회사에 보내지 않아요.') : null),
     el('section', { class: 'report-sec report-notices' }, el('h2', {}, '원문 근거와 서비스 안내'),
       el('ul', {}, REPORT_NOTICES.map((n) => el('li', {}, n)))));
 }
@@ -2170,6 +2184,46 @@ $('#report-copy-q').addEventListener('click', async () => {
   $('#report-status').textContent = ok ? `질문 ${reportModel.questions.length}개만 복사했어요.` : '복사하지 못했어요. 질문을 직접 선택해 복사해 주세요.';
 });
 $('#report-print').addEventListener('click', () => window.print());
+
+// ---------- 정리본 PDF 다운로드 ----------
+// 이 기기(브라우저)에서 바로 PDF를 만든다: pdf-lib + Pretendard(한글) — 서버·외부 서비스로 보내지 않고, AI도 부르지 않는다.
+// 라이브러리와 글꼴(약 3MB)은 처음 누를 때만 내려받는다. 결과 화면·정리본 화면의 버튼 모두 같은 정리본 모델을 쓴다.
+let pdfTools = null;
+const loadScript = (src) => new Promise((resolve, reject) => {
+  const sc = document.createElement('script');
+  sc.src = src; sc.onload = resolve; sc.onerror = () => reject(new Error('script'));
+  document.head.append(sc);
+});
+async function loadPdfTools() {
+  if (pdfTools) return pdfTools;
+  if (!window.PDFLib) await loadScript('/vendor/pdf-lib/pdf-lib.min.js');
+  if (!window.fontkit) await loadScript('/vendor/pdf-lib/fontkit.umd.min.js');
+  const [regular, bold] = await Promise.all(['/vendor/fonts/pretendard-pdf/Pretendard-Regular-KR.ttf', '/vendor/fonts/pretendard-pdf/Pretendard-Bold-UI.ttf']
+    .map((u) => fetch(u).then((r) => { if (!r.ok) throw new Error('font'); return r.arrayBuffer(); })));
+  pdfTools = { PDFLib: window.PDFLib, fontkit: window.fontkit, fonts: { regular, bold } };
+  return pdfTools;
+}
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-pdf-download]');
+  if (!btn || !currentRecord) return;
+  const status = btn.closest('#view-report') ? $('#report-status') : $('#report-entry-status');
+  const model = buildReportModel(currentRecord);
+  if (!model) { status.textContent = '두 문서를 비교한 기록에서만 PDF를 만들 수 있어요.'; return; }
+  btn.disabled = true;
+  status.textContent = pdfTools ? 'PDF를 만드는 중이에요…' : 'PDF를 만드는 중이에요… 처음에는 한글 글꼴을 내려받아 조금 걸릴 수 있어요.';
+  try {
+    const bytes = await buildReportPdf({ ...(await loadPdfTools()), model });
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const a = el('a', { href: url, download: reportPdfName() });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    status.textContent = `PDF를 이 기기에 저장했어요 (${reportPdfName()}). 개인정보가 들어 있을 수 있으니 보관에 주의해 주세요.`;
+  } catch {
+    status.textContent = "PDF를 만들지 못했어요. 정리본 화면의 '인쇄'에서 'PDF로 저장'을 골라 저장할 수 있어요.";
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // ---------- S05 항목 상세 ----------
 let memoEditing = null; // 편집 중인 메모 ID 또는 'new'

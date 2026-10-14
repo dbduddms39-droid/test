@@ -1384,3 +1384,8 @@ details.cmp-group > summary::-webkit-details-marker { display: none; }
 .ai-layout-opt label { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; cursor: pointer; }
 .ai-layout-opt input { margin-top: 4px; }
 .ai-layout-opt p { margin: 6px 0 0 24px; line-height: 1.6; }
+
+/* 비교 결과 정리본 보기 · PDF 다운로드 (요약 바로 아래 한 곳) */
+.report-entry { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 16px; }
+.report-entry p { flex-basis: 100%; margin: 0; }
+.result-guide-text { margin: 0; font-size: 14px; line-height: 1.7; color: var(--ink-2); }

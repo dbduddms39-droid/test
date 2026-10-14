@@ -56,7 +56,7 @@ export function reportText(model) {
     });
   }
   out.push('', hr, '[회사에 확인할 질문]');
-  if (model.questions.length) for (const q of model.questions) out.push(`${q.no}. (${q.label}) ${q.text}`);
+  if (model.questions.length) for (const q of model.questions) out.push(`${q.no}. (${q.label}${q.edited ? ' · 직접 고친 질문' : ''}) ${q.text}`);
   else out.push('이번 비교에서 만든 확인 질문은 없어요.');
   out.push('', '[안내]', ...REPORT_NOTICES.map((n) => `- ${n}`));
   return out.join('\n');

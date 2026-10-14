@@ -37,6 +37,10 @@ const COPIES = [
   // 언어 데이터 (best_int: 정확도와 크기의 절충)
   [path.join(kor, '4.0.0_best_int/kor.traineddata.gz'), 'tessdata/kor.traineddata.gz'],
   [path.join(eng, '4.0.0_best_int/eng.traineddata.gz'), 'tessdata/eng.traineddata.gz'],
+  // 비교 결과 정리본 PDF 만들기 (브라우저에서만, MIT). 'PDF 다운로드'를 누를 때만 불러온다
+  [path.join(pkgDir('pdf-lib'), 'dist/pdf-lib.min.js'), 'pdf-lib/pdf-lib.min.js'],
+  [path.join(pkgDir('pdf-lib'), 'LICENSE.md'), 'pdf-lib/LICENSE-pdf-lib.md'],
+  [path.join(pkgDir('@pdf-lib/fontkit'), 'dist/fontkit.umd.min.js'), 'pdf-lib/fontkit.umd.min.js'],
   // 글꼴 (SIL OFL 1.1). Pretendard는 유니코드 범위별 분할 파일이라 화면에 쓰인 글자 묶음만 내려받는다.
   [path.join(pretendard, 'dist/web/variable/pretendardvariable-dynamic-subset.css'), 'fonts/pretendard/pretendardvariable-dynamic-subset.css'],
   [path.join(pretendard, 'dist/web/variable/woff2-dynamic-subset'), 'fonts/pretendard/woff2-dynamic-subset'],

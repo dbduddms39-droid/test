@@ -38,6 +38,14 @@ const server = createServer({ ai, limiter: createRateLimiter({ perIp: 1000, glob
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const BASE = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch();
+// PDF 글자 읽기 (pdf.js): 이미지가 아닌 글자로 들어 있는지·내용이 맞는지 확인
+async function pdfText(bytes) {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false }).promise;
+  const pages = [];
+  for (let i = 1; i <= doc.numPages; i += 1) { const p = await doc.getPage(i); pages.push({ text: (await p.getTextContent()).items.map((x) => x.str).join(''), view: p.view }); }
+  return pages;
+}
 
 try {
   for (const [w, h, tag] of [[1440, 900, 'desk'], [390, 844, 'mob']]) {
@@ -85,19 +93,26 @@ try {
     await page.click('#review-submit'); await view('record'); await page.waitForTimeout(300);
     const cCards = await page.$$eval('#condition-list .cmp-card', (els) => els.length);
     const guideC = await text('#result-guide');
-    check(`[${tag}] 근로계약서 하나: 10개 기준 카드 + 활용 안내(추가 확인 → 원문 → 메모)`, cCards >= 9 && cCards <= 10 && guideC.includes('이렇게 활용해 보세요') && guideC.includes('답변 메모') && !(await page.isVisible('#open-report')), `카드 ${cCards}`);
+    check(`[${tag}] 근로계약서 하나: 10개 기준 카드 + 활용 안내(추가 확인 → 원문 → 메모)`, cCards >= 9 && cCards <= 10 && guideC.includes('이렇게 활용해 보세요') && guideC.includes('메모로 남길 수 있어요') && !(await page.isVisible('#open-report')), `카드 ${cCards}`);
     await page.screenshot({ path: `${OUT}/${tag}-1-contract-sample.png`, fullPage: true });
 
     // ---- 2) 채용공고 하나 ----
     await page.goto(`${BASE}/#/new`);
     await register('job_posting', GQ_POSTING);
-    const guideB = await page.$$eval('#result-guide-steps li', (els) => els.map((e) => e.textContent));
-    check(`[${tag}] 채용공고 하나: 활용 안내 = 주요 조건 확인 → 다른 문서 추가, 질문 단계 없음, 다음 문서 CTA 하나`, guideB.length === 2 && guideB[1].includes('다른 문서를 추가') && !guideB.join('').includes('복사') && (await page.$$('#view-record a[href$="/add"]:visible')).length === 1, guideB.join(' | '));
+    const guideB = await text('#result-guide-text');
+    check(`[${tag}] 채용공고 하나: 활용 안내 = 주요 조건 확인 → 다른 문서 추가, 질문 권유 없음, 다음 문서 CTA 하나, 정리본·PDF 버튼 없음`, guideB.includes('다른 문서를 추가하면') && !guideB.includes('복사') && (await page.$$('#view-record a[href$="/add"]:visible')).length === 1 && !(await page.isVisible('#report-entry')), guideB);
 
     // ---- 3) 두 문서 비교 → 원문 위치 이동 ----
     await addDoc(); await register('contract', QA2_CONTRACT);
-    const guideX = await text('#result-guide');
-    check(`[${tag}] 비교: 활용 안내(차이 → 원문 → 질문 고쳐 복사 → 메모) + 정리본 버튼 하나`, guideX.includes('서로 다른 조건') && guideX.includes('질문을 상황에 맞게 고쳐서 복사한 뒤 회사에 직접 확인해 보세요') && guideX.includes('나중에 다시 확인할 수 있어요') && (await page.$$('#open-report')).length === 1);
+    const guideX = await text('#result-guide-text');
+    const screenOrder = await page.evaluate(() => {
+      const ids = ['cmp-docs', 'cmp-summary', 'report-entry', 'cmp-questions', 'condition-list', 'docs-box', 'result-guide', 'actions-title'];
+      const els = ids.map((id) => document.getElementById(id));
+      return els.every((e, i) => i === 0 || Boolean(els[i - 1].compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING));
+    });
+    check(`[${tag}] 비교 화면 순서: 문서 A/B → 요약 → 정리본 보기·PDF → 질문 → 조건 카드 → 원문 → 활용 안내 → 기록 관리`, screenOrder);
+    check(`[${tag}] 비교: 활용 안내는 맨 끝 한 문단(권장 문구), 정리본 보기·PDF 다운로드는 요약 아래 한 곳씩`, guideX === '확인한 조건과 원문 근거를 바탕으로 회사에 질문해 보세요. 질문은 직접 수정·복사할 수 있고, 받은 답변은 메모로 남길 수 있어요.'
+      && (await page.$$('#view-record #open-report')).length === 1 && (await page.$$('#view-record [data-pdf-download]')).length === 1 && !(await page.$('#result-guide a, #result-guide button')), guideX);
     const card = '#condition-list [data-group="different"] .cmp-card >> nth=0';
     const cardId = await page.getAttribute(card, 'id');
     await page.click(`#${cardId} details.cmp-evidence > summary`);
@@ -128,9 +143,27 @@ try {
     check(`[${tag}] 브라우저 뒤로 가기도 보던 카드 위치로`, await inView(`#cmp-item-${item}`));
     check(`[${tag}] 결과 화면 가로 넘침 없음`, await noOverflow());
 
-    // ---- 5) 비교 결과 정리본 ----
+    // ---- 5) 비교 결과 정리본 · PDF ----
     const recUrl = page.url();
+    // 질문 하나를 고친다 → 정리본·PDF에 고친 문장
+    const EDIT = `실제 적용 연봉을 서면으로 확인 부탁드립니다. (가상 수정 ${tag})`;
+    await page.fill('#cmp-questions ~ .condition-groups .q-text >> nth=0', EDIT).catch(async () => page.fill('#condition-list .q-text >> nth=0', EDIT));
+    await page.waitForTimeout(100);
+    const [pdl] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#view-record [data-pdf-download]')]);
+    const pdfName = pdl.suggestedFilename();
+    const pdfBytes = readFileSync(await pdl.path());
+    const pdfPages = await pdfText(pdfBytes);
+    const pdfAll = pdfPages.map((p) => p.text).join('').replace(/\s/g, '');
+    const has = (t) => pdfAll.includes(t.replace(/\s/g, ''));
+    check(`[${tag}] 결과 화면 'PDF 다운로드' → 바로 PDF 파일 (A4, 인쇄 창 없음)`, pdfBytes.subarray(0, 5).toString() === '%PDF-' && pdfPages.length >= 1 && pdfPages.every((p) => Math.round(p.view[2]) === 595 && Math.round(p.view[3]) === 842) && /^(일단확인_비교결과_\d{8}\.pdf|download)$/.test(pdfName), `${pdfName} ${pdfPages.length}쪽 ${pdfBytes.length}B`);
+    check(`[${tag}] PDF 내용 = 비교한 A·B 문서, 한글·숫자·금액 그대로(텍스트 선택 가능), 고친 질문 반영`, has('문서 A · 채용공고') && has('문서 B · 근로계약서') && has('36,000,000원(세전)') && has('09:00~18:00') && has(EDIT) && has('직접 고친 질문') && has('법률 위반 여부'));
+    check(`[${tag}] PDF 쪽 나눔: 쪽마다 쪽 번호, 빈 쪽 없음`, pdfPages.length >= 2 && pdfPages.every((p, i) => p.text.includes(`${i + 1} / ${pdfPages.length}`) && p.text.replace(/일단확인 · 비교 결과 정리본|\d+ \/ \d+/g, '').trim().length > 20), `${pdfPages.length}쪽`);
+    writeFileSync(`${OUT}/${tag}-report-download.pdf`, pdfBytes);
     await page.click('#open-report'); await view('report');
+    check(`[${tag}] 정리본 화면에도 고친 질문 반영`, (await text('#report .report-questions')).includes(EDIT) && (await text('#report .report-questions')).includes('직접 고친 질문'));
+    const [pdl2] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#view-report [data-pdf-download]')]);
+    const pdf2 = (await pdfText(readFileSync(await pdl2.path()))).map((p) => p.text).join('').replace(/\s/g, '');
+    check(`[${tag}] 정리본 화면 'PDF 다운로드'도 같은 내용`, pdf2 === pdfAll.replace(/정리한때\d{4}\.\d{2}\.\d{2}\d{2}:\d{2}/, (m) => m) || (pdf2.includes(EDIT.replace(/\s/g, '')) && pdf2.includes('문서B·근로계약서')));
     const rep = await page.evaluate(() => ({
       groups: [...document.querySelectorAll('#report [data-group]')].map((g) => g.dataset.group),
       items: document.querySelectorAll('#report .report-item').length,
@@ -143,7 +176,7 @@ try {
     check(`[${tag}] 정리본 전체 복사: 제목·문서·값·원문 근거·질문 구분`, ['비교 결과 정리본', '[비교한 문서]', '문서 A(채용공고)', '원문 근거', '[회사에 확인할 질문]', '[안내]'].every((s) => all.includes(s)), `${all.length}자`);
     await page.click('#report-copy-q'); await page.waitForTimeout(200);
     const qOnly = await clip();
-    check(`[${tag}] 질문만 복사: 질문 문장만 (정리본과 구분)`, qOnly.length > 0 && !qOnly.includes('[비교한 문서]') && qOnly.split('\n\n').length === rep.q);
+    check(`[${tag}] 질문만 복사: 질문 문장만 (정리본과 구분), 고친 질문 반영`, qOnly.length > 0 && !qOnly.includes('[비교한 문서]') && qOnly.split('\n\n').length === rep.q && qOnly.includes(EDIT));
     check(`[${tag}] 정리본 가로 넘침 없음`, await noOverflow());
     await page.screenshot({ path: `${OUT}/${tag}-5-report.png`, fullPage: true });
     if (tag === 'desk') {
