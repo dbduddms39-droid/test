@@ -41,6 +41,12 @@ try {
     await page.screenshot({ path: `${OUT}/${tag}-landing.png`, fullPage: true });
     await page.goto(`${BASE}/#/new`);
     await page.screenshot({ path: `${OUT}/${tag}-input.png`, fullPage: true });
+    await register('job_posting', GQ_POSTING);
+    await page.screenshot({ path: `${OUT}/${tag}-posting.png`, fullPage: true });
+    await page.goto(`${BASE}/#/new`);
+    await register('offer', QA2_OFFER);
+    await page.screenshot({ path: `${OUT}/${tag}-offer.png`, fullPage: true });
+    await page.goto(`${BASE}/#/new`);
     await register('contract', QA2_CONTRACT);
     await page.screenshot({ path: `${OUT}/${tag}-contract.png`, fullPage: true });
     await page.click('#add-second:visible, #add-doc-top:visible');

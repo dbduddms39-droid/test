@@ -192,11 +192,11 @@ try {
     await register('contract', QA_CONTRACT);
     wageFailure = false;
     const un = await groupText('unavailable');
-    check(`[${tag}] 임금 분석 확인 불가: 원인 표시 (값을 바꿔 쓴 응답)`, un.includes('근로계약서 · 임금') && un.includes('AI가 정리한 값이 인용한 원문 안에 글자 그대로 있지 않았어요'), un.slice(0, 160));
+    check(`[${tag}] 임금 분석 확인 불가: 원인 표시 (값을 바꿔 쓴 응답)`, un.includes('임금') && (await text('#cmp-item-01 .cmp-panel')).includes('근로계약서') && un.includes('AI가 정리한 값이 인용한 원문 안에 글자 그대로 있지 않았어요'), un.slice(0, 160));
     check(`[${tag}] 임금 분석 확인 불가: 검증되지 않은 값(3,600만원)·회사 질문 없음`, !(await text('#view-record')).includes('3,600만원') && !(await groupText('needs')).includes('급여'));
     await page.click('button[data-reanalyze]');
     await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'));
-    check(`[${tag}] 같은 텍스트로 재분석 → 임금 확인됨`, !(await page.$('[data-group="unavailable"]')) && !(await page.isVisible('#now-section')) && (await text('#contract-checklist-items > li:first-child')).includes('기재됨'), await text('#contract-checklist-items > li:first-child'));
+    check(`[${tag}] 같은 텍스트로 재분석 → 임금 확인됨`, !(await page.$('[data-group="unavailable"]')) && !(await page.isVisible('#now-section')) && (await text('#cmp-item-01 .badge-relation')) === '기재됨', await text('#cmp-item-01 .badge-relation'));
     // 시연 문서(주식회사 파란스텝): 협의 예정 → 범위 안에서 구체화 → 계약서에서 수습 급여 구체화
     if (tag === 'desk') {
       await page.goto(`${BASE}/#/new`);

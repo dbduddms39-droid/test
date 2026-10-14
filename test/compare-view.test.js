@@ -80,3 +80,40 @@ test('document title: file name, else first line clipped', () => {
   assert.equal(documentTitle({ confirmedText: '\n  [가상] 근로계약서\n본문' }), '[가상] 근로계약서');
   assert.equal(documentTitle({ confirmedText: 'ㄱ'.repeat(50) }, 10), `${'ㄱ'.repeat(10)}…`);
 });
+
+// ---- 문서 1개 결과 ----
+import { singleStatus, topicEvidence, SINGLE_STATUS } from '../public/compare-view.js';
+
+const crit = (id, status, evidence = [], extra = {}) => ({ id, label: id, status, required: true, evidence, ...extra });
+const topic = (status, criteria = [], extra = {}) => ({ id: '01', visible: true, status, criteria, notes: {}, ...extra });
+
+test('문서 1개: 채용공고·처우 안내는 적힌 조건만 카드, 미기재는 카드 없음', () => {
+  assert.equal(singleStatus('job_posting', topic('MAIN_FOUND')), 'stated');
+  assert.equal(singleStatus('offer', topic('MAIN_MISSING')), null);
+  assert.equal(singleStatus('offer', topic('MAIN_UNAVAILABLE')), 'unavailable');
+  assert.equal(singleStatus('job_posting', { visible: false, status: 'MAIN_FOUND' }), null);
+  const undecided = topic('MAIN_PARTIAL', [crit('01-a', 'PARTIAL', [{ line: 1, text: '연봉 협의' }], { basis: 'undecided' })]);
+  assert.equal(singleStatus('job_posting', undecided), 'deferred');
+});
+
+test('문서 1개: 근로계약서는 10개 기준 모두 카드 (추가 확인 · 기재 · 계산값 · 확인 불가)', () => {
+  assert.equal(singleStatus('contract', topic('MAIN_FOUND')), 'written');
+  assert.equal(singleStatus('contract', topic('MAIN_MISSING')), 'needs');
+  assert.equal(singleStatus('contract', topic('MAIN_FOUND'), { hasQuestion: true }), 'needs');
+  assert.equal(singleStatus('contract', topic('MAIN_UNAVAILABLE')), 'unavailable');
+  assert.deepEqual(SINGLE_STATUS.contract.order, ['needs', 'written', 'calculated', 'unavailable']);
+  assert.deepEqual(SINGLE_STATUS.brief.order, ['stated', 'deferred', 'unavailable']);
+});
+
+test('문서 1개 원문 근거: 기준별 인용을 한 번만, 확인 불가 기준 인용은 빼고, 원문 기재값만 강조', () => {
+  const t = topic('MAIN_FOUND', [
+    crit('01-a', 'CONFIRMED', [{ line: 3, text: '임금: 연봉 3,600만 원(세전)' }]),
+    crit('01-b', 'CONFIRMED', [{ line: 3, text: '임금: 연봉 3,600만 원(세전)' }]),
+    crit('01-f', 'UNAVAILABLE', [{ line: 9, text: '지급일 매월 25일' }]),
+  ]);
+  const rows = topicEvidence(t, { '01-a': { sourceValue: '연봉 3,600만 원' }, '01-b': { sourceValue: '연봉' } });
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0].facets, ['01-a', '01-b']);
+  assert.deepEqual(rows[0].highlight, ['연봉 3,600만 원', '연봉']);
+  assert.equal(rows[0].text, '임금: 연봉 3,600만 원(세전)');
+});

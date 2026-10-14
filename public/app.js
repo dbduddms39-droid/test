@@ -1,7 +1,7 @@
 import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-rules.js';
 import { copyText, josa } from './questions.js';
 import { el, fill, statusBadge, CONTRACT_STATUS_LABEL, sourcePanelLines, highlightText } from './components.js';
-import { compareStatus, evidenceFor, documentTitle, COMPARE_STATUS, STATUS_ORDER } from './compare-view.js';
+import { compareStatus, evidenceFor, topicEvidence, documentTitle, singleStatus, COMPARE_STATUS, STATUS_ORDER, SINGLE_STATUS } from './compare-view.js';
 import { ROUTES, checkText, editRouteFor, inputRouteFor, resolveRoute, classifyAnalyzeFailure, formatDateTime } from './flow.js';
 import { createTracker, applyEdit, confirmSpan, pendingRanges, unlocatedPending, summary as ocrSummary } from './ocr-spans.js';
 import {
@@ -9,7 +9,7 @@ import {
 } from './extract-issues.js';
 import { createStore, userAlias, StoreError, DEFAULT_ALIAS, NOTE_MAX, newId } from './store.js';
 import { buildFollowUps, BOUNDARY_TEXT, deferral, detailOnly, weeklyCalc } from './followups.js';
-import { contractSummaryGroup, summaryEvidence, externallyReferencedLeave } from './result-presentation.js';
+import { summaryEvidence, externallyReferencedLeave } from './result-presentation.js';
 import { comparisonPair, comparisonView, replaceComparedDocument } from './comparison-selection.js';
 import { initSampleDownloads } from './samples.js';
 import { alignLayout, headingHasMarker } from './text-layout.js';
@@ -1190,8 +1190,6 @@ function topicBadge(doc, t) {
   return statusBadge(t.status, statusLabelFor(doc.docType, t.status));
 }
 const ITEM_IDS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'];
-const TOPIC_CHECKLIST_LABELS = { '01': '임금', '02': '근무시간', '03': '근무장소', '04': '담당업무', '05': '고용형태', '06': '계약기간', '07': '수습기간', '08': '수습 중 임금', '09': '휴일', '10': '연차 유급휴가' };
-const CARD_IDS = new Set(['01', '02', '03', '04', '05', '06', '07', '08']); // 핵심 조건 요약 카드 (휴일·연차는 전체 목록에서)
 const topicOf = (doc, id) => doc.analysis?.topics?.find((t) => t.id === id) ?? null;
 // 화면에 보이는 항목명: 같은 항목은 '임금'으로 통일 (기준표의 주제명은 바꾸지 않고 표시만)
 const DISPLAY_LABEL = { '08': '수습 중 임금' };
@@ -1405,6 +1403,9 @@ function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendi
     el('p', { class: 'cmp-doc-name' }, documentTitle(d) || labels[d.id]),
     el('p', { class: 'cmp-doc-meta' }, `등록 ${formatDateTime(d.registeredAt)} · 원문 ${d.analysis?.lines?.length ?? 0}줄`));
   fill($('#cmp-docs'), docCard(A, 0), el('span', { class: 'cmp-vs', 'aria-hidden': 'true' }, '↔'), docCard(B, 1));
+  $('#cmp-summary-title').textContent = '비교 결과 요약';
+  $('#cmp-questions-desc').textContent = '다르게 적혔거나 추가로 대조할 조건의 질문이에요. 각 항목에서 고쳐 쓰고 하나씩 복사할 수 있어요. 일단확인은 회사에 보내지 않아요.';
+  $('#cmp-tiles').style.setProperty('--tiles', String(STATUS_ORDER.length));
 
   // 항목별 상태 (두 문서 모두에 없는 항목은 비교 대상이 아니므로 전체 목록에서)
   const rows = [];
@@ -1508,6 +1509,102 @@ function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendi
     return el('section', { class: `cgroup cmp-group is-${st}`, 'data-group': st, id: `cmp-group-${st}` }, el('h3', { class: 'cgroup-title' }, ...head), cards);
   });
   fill($('#condition-list'), ...groups);
+  return rows;
+}
+
+// 문서 1개 결과 (채용공고·처우 안내 미리보기 / 근로계약서 확인): 비교 화면과 같은 카드·요약 구조, 한 줄 단일 컬럼.
+// 판정·질문 생성은 그대로이고, 채용공고·처우 안내에는 질문이나 미기재 판정을 새로 만들지 않는다. 반환: 카드 행 (요약 숫자 = 카드 수)
+function renderSingle({ record, comparedRecord, fus, labels, saved, fuOf, layout }) {
+  const d = comparedRecord.documents.find((x) => x.analysis);
+  const kind = layout === 'contract' ? 'contract' : 'brief';
+  const S = SINGLE_STATUS[kind];
+  fill($('#cmp-docs'), el('div', { class: 'cmp-doc is-a is-single', 'data-doc': d.id },
+    el('p', { class: 'cmp-doc-label' }, labels[d.id], el('span', { class: 'tag tag-done' }, saved ? '등록 완료' : '저장 전')),
+    el('p', { class: 'cmp-doc-name' }, documentTitle(d) || labels[d.id]),
+    el('p', { class: 'cmp-doc-meta' }, `등록 ${formatDateTime(d.registeredAt)} · 원문 ${d.analysis.lines?.length ?? 0}줄`)));
+
+  const rows = [];
+  for (const id of ITEM_IDS) {
+    const t = topicOf(d, id);
+    const q = kind === 'contract' ? fuOf(id) : null; // 공고·처우 안내 1개에는 회사 질문을 만들지 않는다
+    const st = singleStatus(d.docType, t, { hasQuestion: Boolean(q?.question) });
+    if (st) rows.push({ id, st, t, q: q?.question ? q : null, relItem: fus.relation.items.find((i) => i.id === id) });
+  }
+  const count = (st) => rows.filter((r) => r.st === st).length;
+  $('#cmp-summary-title').textContent = kind === 'contract' ? '확인 결과 요약' : '주요 조건 요약';
+  const skipped = kind === 'contract' ? ITEM_IDS.length - rows.length : 0;
+  $('#cmp-summary-total').textContent = kind === 'contract'
+    ? `주요 근로조건 ${ITEM_IDS.length}개 기준${skipped ? ` · 수습이 적용된다고 적혀 있지 않은 등 해당하지 않는 기준 ${skipped}개 제외` : ''} · 법률 위반 여부는 판단하지 않아요`
+    : `문서에 적힌 근로조건 ${rows.length}개 · 적혀 있지 않은 조건은 따로 표시하지 않아요`;
+  const tiles = S.order.filter((st) => st !== 'unavailable' || count(st)); // 확인 불가는 있을 때만 칸을 만든다
+  $('#cmp-tiles').style.setProperty('--tiles', String(tiles.length));
+  fill($('#cmp-tiles'), ...tiles.map((st) => {
+    const n = count(st);
+    return el('button', { type: 'button', class: `cmp-tile is-${S[st].tone}`, 'data-jump': st, disabled: n === 0, 'aria-label': `${S[st].label} ${n}건${n ? ', 해당 항목으로 이동' : ''}` },
+      el('span', { class: 'cmp-tile-label' }, S[st].label),
+      el('span', { class: 'cmp-tile-count' }, el('strong', {}, String(n)), '건'),
+      el('span', { class: 'cmp-tile-items' }, rows.filter((r) => r.st === st).map((r) => itemLabel(record, r.id)).join(', ') || '없음'));
+  }));
+  const qCount = rows.filter((r) => r.q).length;
+  $('#cmp-questions').hidden = !qCount;
+  $('#cmp-q-count').textContent = `${qCount}건`;
+  $('#copy-all-top-status').textContent = '';
+  $('#cmp-questions-desc').textContent = '추가 확인이 필요한 조건의 질문이에요. 각 항목에서 고쳐 쓰고 하나씩 복사할 수 있어요. 일단확인은 회사에 보내지 않아요.';
+
+  let no = 0;
+  const card = (row) => {
+    no += 1;
+    const { id, st, t, q } = row;
+    const tone = S[st].tone;
+    const unavailable = st === 'unavailable';
+    const calc = kind === 'contract' && !unavailable ? weeklyCalc(t) : null;
+    const extLeave = kind === 'contract' && externallyReferencedLeave(t);
+    const v = !unavailable && row.relItem ? cardValue(row.relItem, d.id) : null;
+    const missing = t.status === 'MAIN_MISSING';
+    const value = unavailable ? '분석 확인 불가' : missing ? '문서에서 확인되지 않음' : v?.text ?? summaryEvidence(t)?.text ?? '원문에서 확인했어요';
+    const badgeText = unavailable ? '분석 확인 불가' : topicBadge(d, t).textContent;
+    const explain = unavailable ? null : topicExplain(t, d.docType);
+    const codes = unavailable ? t.criteria.filter((c) => c.required && c.status === 'UNAVAILABLE').flatMap((c) => [c.unavailableReason, ...(c.unavailableCodes ?? [])]) : [];
+    const evidence = unavailable ? [] : topicEvidence(t, d.analysis.criteria ?? {});
+    const memo = notesFor(record, id).length;
+    return el('li', { class: `cmp-card is-${tone} is-single`, id: `cmp-item-${id}`, 'data-item': id, 'data-topic': id, 'data-status': st },
+      el('div', { class: 'cmp-card-head' },
+        el('span', { class: 'cmp-no' }, two(no)),
+        el('h3', {}, itemLabel(record, id)),
+        memo ? el('span', { class: 'memo-flag' }, '내 메모 있음') : null,
+        el('span', { class: `badge badge-relation status-${tone}`, 'data-status': st }, badgeText)),
+      el('div', { class: 'cmp-panels is-single' },
+        el('div', { class: `cmp-panel is-a${missing || unavailable ? ' is-empty' : ''}` },
+          el('p', { class: 'cmp-panel-label' }, calc ? `${labels[d.id]} · 원문 기재값` : labels[d.id]),
+          el('p', { class: `cmp-value${v?.vague ? ' is-vague' : ''}` }, value),
+          calc ? el('p', { class: 'cmp-sub cmp-calc' }, el('span', { class: 'calc-value' }, `${calc.text} (계산값)`), ' 원문에 적힌 근무일·출퇴근 시각·휴게시간으로 계산했어요. 주 소정근로시간이 직접 기재된 것은 아니에요.') : null,
+          unavailable ? el('p', { class: 'cmp-sub' }, `${unavailableCause(codes)}. 적혀 있지 않다는 뜻은 아니에요.`) : null)),
+      explain || extLeave ? el('div', { class: 'cmp-note' },
+        el('p', { class: 'cmp-note-title' }, kind === 'contract' ? '기재 상태·구체성' : '확인 내용'),
+        explain ? el('p', {}, explain) : null,
+        extLeave ? el('p', {}, '법령·취업규칙을 참조하는 기준이 기재돼 있어요. 구체적인 부여 일수와 운영 방식은 해당 기준에서 별도 확인할 수 있어요. 미기재나 위반으로 보지 않아요.') : null) : null,
+      evidence.length ? el('details', { class: 'cmp-evidence' },
+        el('summary', {}, '원문 근거 보기'),
+        el('div', { class: 'cmp-evidence-doc is-a' },
+          el('ul', { class: 'cmp-evidence-list' }, evidence.map((r) => el('li', {},
+            el('p', { class: 'cmp-evidence-for' }, `${r.facets.join('·')}의 근거`, r.line != null ? el('span', { class: 'line-ref' }, ` · ${r.line}번째 줄`) : null),
+            el('blockquote', { class: 'cmp-quote' }, highlightText(r.text, r.highlight)))))),
+        el('p', { class: 'cmp-sub' }, '강조 표시는 원문에 적힌 값이에요. 문서 전체는 아래 \'등록된 안내 자료와 원문\'에서 볼 수 있어요.')) : null,
+      q ? el('div', { class: 'cmp-question' }, el('p', { class: 'cmp-question-title' }, `회사에 확인할 질문 · ${itemLabel(record, id)}`), questionBlock(q)) : null,
+      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary cmp-detail-link' }, '조건 상세·내 메모 →') : null);
+  };
+  fill($('#condition-list'), ...S.order.map((st) => {
+    const list = rows.filter((r) => r.st === st);
+    if (!list.length) return null;
+    return el('section', { class: `cgroup cmp-group is-${S[st].tone}`, 'data-group': st, id: `cmp-group-${st}` },
+      el('h3', { class: 'cgroup-title' }, S[st].label, el('span', { class: 'sum-count' }, String(list.length))),
+      // 분석 확인 불가: 같은 텍스트로 다시 분석 (문서가 하나라 버튼도 묶음에 하나)
+      st === 'unavailable' ? el('div', { class: 'reanalyze cmp-group-note' },
+        el('p', { class: 'small' }, '근거를 원문에서 확인하지 못해 확정하지 않은 항목이에요. 적혀 있지 않다는 뜻이 아니어서 회사 질문을 만들지 않았어요.'),
+        saved ? el('button', { type: 'button', class: 'btn-secondary', 'data-reanalyze': d.id }, `${labels[d.id]} 같은 텍스트로 다시 분석하기`) : null,
+        el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null,
+      el('ol', { class: 'cmp-cards' }, list.map(card)));
+  }));
   return rows;
 }
 
@@ -1617,176 +1714,23 @@ function renderRecord(record, { unsaved = false } = {}) {
   $('#conditions-title').textContent = { compare: '두 문서의 근로조건을 비교했어요', contract: '근로계약서 확인 결과', brief: '주요 조건 미리보기', none: '분석 결과' }[layout];
   $('#conditions-help').textContent = {
     compare: '두 문서에 적힌 근로조건을 항목별로 대조했어요. 어느 쪽이 최종 조건인지, 회사가 조건을 바꿨는지, 법적으로 문제가 있는지는 판단하지 않아요.',
-    contract: '주요 근로조건이 적혀 있는지, 내용이 구체적인지 확인했어요. 원문 근거는 \'자세히 보기\'에서 확인할 수 있어요.',
-    brief: '문서에 적힌 주요 조건이에요. 원문 근거와 전체 조건은 \'자세히 보기\'와 아래에서 볼 수 있어요.',
+    contract: '주요 근로조건 10개 기준으로 적혀 있는지, 내용이 구체적인지 확인했어요. 추가 확인이 필요한 조건을 먼저 보여 드려요. 법률 위반 여부나 계약의 적법성은 판단하지 않아요.',
+    brief: '문서에 적힌 근로조건과 원문 근거예요. 적혀 있지 않은 조건을 지적하거나 회사 질문을 만들지 않아요. 두 번째 문서를 추가하면 조건을 비교할 수 있어요.',
     none: '',
   }[layout];
-  // 근로계약서 단독 확인: 10개 기준 전체를 원문 기재·계산값·추가 확인으로 구분해 노출.
-  const checklist = $('#contract-checklist');
-  checklist.hidden = layout !== 'contract';
-  checklist.open = false;
-  if (layout === 'contract') {
-    const contract = analyzedDocs[0];
-    const statuses = {
-      MAIN_FOUND: '기재됨',
-      MAIN_PARTIAL: '내용이 모호함',
-      MAIN_MISSING: '문서에서 확인되지 않음',
-      MAIN_UNAVAILABLE: '분석 확인 불가',
-    };
-    fill($('#contract-checklist-items'), ...ITEM_IDS.map((id) => {
-      const t = topicOf(contract, id);
-      const calculated = t && weeklyCalc(t);
-      const label = calculated ? '계산으로 확인한 조건' : externallyReferencedLeave(t) ? '기재됨 · 외부 기준 참조' : t ? (detailOnly(t) ? '세부 확인 필요' : (statuses[t.status] ?? '분석 확인 불가')) : '분석 확인 불가';
-      const node = el(saved ? 'a' : 'span', {
-        class: 'contract-checklist-link',
-        ...(saved ? { href: ROUTES.item(record.id, id) } : {}),
-      }, el('span', { class: 'contract-checklist-name' }, TOPIC_CHECKLIST_LABELS[id]), el('span', { class: 'contract-checklist-state' }, label));
-      return el('li', { class: 'contract-checklist-item' }, node);
-    }));
-  }
-
-  // 등록 완료 (문서 1개)
-  const briefDoc = layout === 'brief' ? analyzedDocs[0] : null;
-  const done = $('#brief-done');
-  done.hidden = !briefDoc;
-  if (briefDoc) fill(done, el('span', { class: 'tag tag-done' }, saved ? '등록 완료' : '저장 전'), ` ${labels[briefDoc.id]}`, briefDoc.original?.name ? ` · ${briefDoc.original.name}` : '');
-
   const pendingOf = (id) => (sum.pending ?? []).find((x) => x.topicId === id);
-  const ids = ITEM_IDS.filter((id) => visibleIn(comparedRecord, id));
-  const restIds = [];
-  const rows = []; // { id, group, per, relItem, q }
-  for (const id of ids) {
-    const per = comparedRecord.documents.map((d) => ({ d, t: topicOf(d, id) })).filter((x) => x.t?.visible)
-      // 근로계약서가 없으면 그 항목이 없는 자료는 줄로 넣지 않는다 (자료가 여럿이면 관계 설명에 남음)
-      .filter((x) => hasContract || multi || x.t.status !== 'MAIN_MISSING');
-    const anyWritten = per.some((x) => x.t.status !== 'MAIN_MISSING');
-    const relItem = fus.relation.items.find((i) => i.id === id);
-    const q = fuOf(id);
-    const unavailable = per.some((x) => x.t.status === 'MAIN_UNAVAILABLE');
-    let group = null;
-    if (layout === 'none') group = null;
-    else if (layout === 'brief') group = anyWritten && CARD_IDS.has(id) ? 'preview' : null;
-    else if (layout === 'contract') {
-      const t = per[0]?.t;
-      group = unavailable ? null : externallyReferencedLeave(t) ? 'written' : contractSummaryGroup(t, Boolean(q)); // 외부 참조 기재는 미기재처럼 강조하지 않음
-    } else {
-      const rel = relItem?.relation;
-      if (!anyWritten && !q) group = null;
-      else if (rel === 'different_stated') group = 'different';
-      else if (rel === 'same' && !relItem.addedNote && !q && !pendingOf(id)) group = 'same';
-      else group = 'specified';
-    }
-    if (!group) { restIds.push(id); continue; }
-    rows.push({ id, group, per, relItem, q });
-  }
-
-  const card = ({ id, per, relItem, q }) => {
-    const memo = notesFor(record, id).length;
-    const compact = layout === 'brief';
-    const calcDoc = [...per].reverse().find(({ d, t }) => d.docType === 'contract' && weeklyCalc(t));
-    const calc = calcDoc ? weeklyCalc(calcDoc.t) : null;
-    // 카드 아래 한 줄: 자료 사이 관계(비교), 협의 예정(미리보기), 기재 상태(계약서)
-    let line = null;
-    if (layout === 'compare') line = relItem?.addedNote ?? cardInsight(comparedRecord, relItem, labels, fus) ?? pendingOf(id)?.line ?? null;
-    else if (layout === 'contract') line = calc ? null : topicExplain(per[0].t, 'contract');
-    const calcLine = calc ? el('p', { class: 'ccard-calc small' },
-      el('span', { class: 'calc-value' }, `${calc.text} (계산값)`),
-      ` ${multi ? `${labels[calcDoc.d.id]}: ` : ''}문서에 적힌 근무일과 휴게시간을 기준으로 계산했어요. 주 소정근로시간이 직접 기재된 것은 아니에요.`) : null;
-    // 비교: 근로계약서의 세부 확인 안내(주 소정근로시간 등)는 관계 설명 아래에 따로
-    const detailNote = layout === 'compare' && !calc ? (() => {
-      const c = [...per].reverse().find(({ d }) => d.docType === 'contract');
-      const note = c ? detailOnlyText(c.t) : null;
-      return note ? el('p', { class: 'ccard-note small' }, `${labels[c.d.id]}: ${note}`) : null;
-    })() : null;
-    const badge = layout === 'compare' ? (relItem?.addedNote ? el('span', { class: 'badge badge-relation', 'data-relation': 'same_added' }, '같은 내용 · 세부 조건 추가') : relationBadge(relItem?.relation)) : null;
-    return el('li', { class: `ccard${compact ? ' is-preview' : ''}`, 'data-item': id, 'data-topic': id },
-      el('div', { class: 'ccard-head' }, el('h3', {}, itemLabel(record, id)), badge, memo ? el('span', { class: 'memo-flag' }, '내가 기록한 답변 있음') : null),
-      el('ul', { class: 'ccard-docs' }, per.map(({ d, t }) => {
-        const v = t.status === 'MAIN_UNAVAILABLE' ? null : cardValue(relItem, d.id);
-        const showBadge = !v || (t.status !== 'MAIN_FOUND' && (d.docType === 'contract' || deferral(t) || t.status === 'MAIN_UNAVAILABLE'));
-        return el('li', { class: 'ccard-doc' },
-          multi ? el('span', { class: 'cd-doc' }, labels[d.id]) : null, // 자료가 하나면 자료 이름을 반복하지 않는다
-          v ? el('span', { class: `cd-value${v.vague ? ' is-vague' : ''}` }, v.text) : null,
-          showBadge ? topicBadge(d, t) : null);
-      })),
-      // 자료 사이 차이를 먼저, 계산값 안내는 그 아래
-      line && !compact ? el('p', { class: 'ccard-insight' }, line) : null,
-      calcLine,
-      detailNote,
-      // 질문은 해당 카드 안에서만 (채용공고·처우 안내 1개일 때는 만들지 않음)
-      layout !== 'brief' && q?.question ? el('details', { class: 'sum-q' }, el('summary', {}, '질문 보기·복사'), questionBlock(q)) : null,
-      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary' }, '자세히 보기 →') : null);
-  };
-  const GROUPS = {
-    compare: [['different', '서로 다른 조건'], ['specified', '새롭게 기재되거나 확인이 필요한 조건'], ['same', '같은 조건']],
-    contract: [['needs', '추가 확인이 필요한 조건']], // 나머지 10개 조건은 점검표·원문 상세로 확인
-    brief: [['preview', null]],
-    none: [],
-  }[layout];
-  const overview = $('#result-overview');
-  overview.hidden = layout !== 'contract'; // 비교는 아래 상태별 요약으로
-  if (!overview.hidden) {
-    const needsCount = layout === 'contract'
-      ? rows.filter((r) => r.group === 'needs').length + sum.unavailable.length
-      : rows.filter((r) => r.group === 'different').length;
-    const focusCount = layout === 'contract'
-      ? rows.filter((r) => r.group === 'needs').length + sum.unavailable.length
-      : rows.filter((r) => r.group === 'specified').length;
-    $('#result-count-main').textContent = layout === 'contract' ? String(ITEM_IDS.length) : String(needsCount);
-    $('#result-label-main').textContent = layout === 'contract' ? '확인 기준' : '서로 다른 조건';
-    $('#result-count-extra').textContent = String(layout === 'contract' ? needsCount : focusCount);
-    $('#result-label-extra').textContent = layout === 'contract' ? '추가 확인 항목' : '새로 기재·확인할 조건';
-  }
-  // 추가 확인 0건이면 '0'만 남겨 빈 결과처럼 보이지 않게,
-  // 원문에 적힌 대표 3개 조건과 법령 참조 안내를 짧게 보여준다.
-  const glance = $('#contract-glance');
-  const needsCountContract = layout === 'contract'
-    ? rows.filter((r) => r.group === 'needs').length + sum.unavailable.length
-    : 0;
-  glance.hidden = layout !== 'contract' || needsCountContract !== 0;
-  if (!glance.hidden) {
-    const doc = analyzedDocs[0];
-    $('#contract-glance-context').textContent =
-      '추가 확인 대상으로 분류된 조건은 없어요. 이는 법률 위반 여부나 계약의 적법성을 판정한 결과는 아니에요.';
-    const featured = ['01', '04', '02'].map((id) => rows.find((r) => r.id === id))
-      .filter((r) => r && r.per[0]?.t && !['MAIN_MISSING', 'MAIN_UNAVAILABLE'].includes(r.per[0].t.status));
-    fill($('#contract-glance-list'), ...featured.map((r) => {
-      const t = r.per[0].t;
-      const value = (r.relItem && cardValue(r.relItem, doc.id)?.text) || summaryEvidence(t)?.text || '원문에서 해당 내용을 확인했어요.';
-      const calc = weeklyCalc(t);
-      return el('li', { class: 'contract-glance-item' },
-        el('div', { class: 'contract-glance-topic' },
-          el('strong', {}, TOPIC_CHECKLIST_LABELS[r.id]),
-          el('span', { class: 'contract-glance-state' }, calc ? '원문 기준 계산' : '원문에서 확인')),
-        el('p', { class: 'contract-glance-value' }, value, calc ? ` · ${calc.text}(계산값)` : ''),
-        saved ? el('a', { href: ROUTES.item(record.id, r.id), class: 'btn-secondary' }, '원문 보기 →') : null);
-    }));
-    const refBox = $('#contract-glance-reference');
-    const refLeave = externallyReferencedLeave(topicOf(doc, '10'));
-    refBox.hidden = !refLeave;
-    fill(refBox, ...(refLeave ? [
-      el('strong', {}, '참고 · 연차 유급휴가'),
-      el('p', {}, '법령·취업규칙을 참조하는 기준이 기재돼 있어요. 구체적인 부여 일수와 운영 방식은 해당 기준에서 별도 확인할 수 있어요.'),
-      saved ? el('a', { class: 'btn-secondary', href: ROUTES.item(record.id, '10') }, '연차 원문 보기 →') : null,
-    ] : []));
-  }
-  const compareRows = layout === 'compare' ? renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendingOf }) : null;
-  for (const id of ['#cmp-docs', '#cmp-order-note', '#cmp-summary']) $(id).hidden = layout !== 'compare';
-  $('#record-doc-chips').hidden = layout === 'compare'; // 비교 화면은 아래 문서 A·B 카드가 같은 정보를 보여 준다
-  if (layout !== 'compare') $('#cmp-questions').hidden = true;
-  if (layout === 'compare') $('#now-section').hidden = true; // 분석 확인 불가는 비교 카드 안에서 (요약 숫자 = 카드 수)
-  const groupEls = layout === 'compare' ? [] : GROUPS.map(([key, title]) => {
-    const list = rows.filter((r) => r.group === key);
-    if (!list.length) return null;
-    const cards = el('ol', { class: `condition-cards${key === 'preview' ? ' is-preview' : ''}` }, list.map(card));
-    if (!title) return el('div', { class: `cgroup is-${key}`, 'data-group': key }, cards);
-    const head = [title, el('span', { class: 'sum-count' }, `${list.length}`)];
-    // 핵심과 차이만 바로 보여주고, 기재된 조건·계산값·동일 조건은 펼쳐보도록 분리한다.
-    if (['same', 'written', 'calculated'].includes(key)) return el('details', { class: `cgroup is-${key}`, 'data-group': key }, el('summary', { class: 'cgroup-title' }, ...head), cards);
-    return el('section', { class: `cgroup is-${key}`, 'data-group': key }, el('h3', { class: 'cgroup-title' }, ...head), cards);
-  });
-  if (layout !== 'compare') fill($('#condition-list'), ...groupEls);
-  const cardCount = compareRows ? compareRows.length : rows.length;
+  // 비교(문서 2개)와 문서 1개 결과는 같은 구조: 문서 정보 카드 → 상태별 요약 → (질문 모아보기) → 조건 카드
+  const cardRows = layout === 'compare' ? renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendingOf })
+    : layout === 'brief' || layout === 'contract' ? renderSingle({ record, comparedRecord, fus, labels, saved, fuOf, layout })
+      : [];
+  const hasCards = layout !== 'none';
+  for (const id of ['#cmp-docs', '#cmp-summary']) $(id).hidden = !hasCards;
+  $('#cmp-order-note').hidden = layout !== 'compare';
+  $('#record-doc-chips').hidden = hasCards; // 아래 문서 정보 카드가 같은 정보를 보여 준다
+  if (!hasCards) { $('#cmp-questions').hidden = true; fill($('#condition-list')); }
+  // 분석 확인 불가는 조건 카드 안에서 (다시 분석 버튼 포함, 요약 숫자 = 카드 수)
+  if (hasCards) { $('#now-section').hidden = true; fill($('#summary-groups')); }
+  const cardCount = cardRows.length;
   // 적힌 근로조건이 하나도 없으면 (예: 근로조건 없이 합격만 알린 안내) 오류가 아니라 그 사실만 알린다
   const condEmpty = $('#conditions-empty');
   condEmpty.hidden = cardCount > 0;
@@ -1799,7 +1743,7 @@ function renderRecord(record, { unsaved = false } = {}) {
   $('#add-doc-top').hidden = layout === 'brief';
 
   // 상세 확인 (접힘): 카드에 붙지 않은 질문만 (예: 요약 카드가 없는 항목), 전체 근로조건, 등록 자료와 원문
-  const onCard = new Set(layout === 'brief' ? [] : (compareRows ?? rows).map((r) => r.id));
+  const onCard = new Set(layout === 'brief' ? [] : cardRows.map((r) => r.id));
   const extraFus = layout === 'brief' ? [] : allFus.filter((f) => f.question && !f.topicIds.some((t) => onCard.has(t)));
   $('#more-box').hidden = !extraFus.length;
   $('#more-count').textContent = `${extraFus.length}건`;
@@ -1822,9 +1766,10 @@ function renderRecord(record, { unsaved = false } = {}) {
       saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary' }, '자세히 보기 →') : null);
   });
   fill($('#all-condition-list'), ...allRows);
-  $('#all-count').textContent = `${allRows.length}개 항목${restIds.length ? ` · 요약에 없는 항목 ${restIds.length}개 포함` : ''}`;
+  $('#all-count').textContent = `${allRows.length}개 항목`;
   $('#all-conditions').open = false;
-  $('#all-conditions').hidden = layout === 'contract' || !allRows.length; // 단독 확인에서 10개 점검표와 중복되지 않게
+  // 문서 1개는 조건 카드가 곧 전체 목록(계약서 10개 기준 / 공고·처우 안내에 적힌 조건 전체)이라 같은 조건을 다시 늘어놓지 않는다
+  $('#all-conditions').hidden = layout !== 'compare' || !allRows.length;
 
   $('#docs-count').textContent = `${record.documents.length}건`;
   fill($('#doc-list'), ...record.documents.map((d, i) => {
@@ -1863,7 +1808,7 @@ function renderRecord(record, { unsaved = false } = {}) {
   // 문서 1개(채용공고·처우 안내): 두 번째 문서 추가는 위 '다음 행동'에서, 여기는 기록 관리만
   $('#actions-title').textContent = layout === 'brief' ? '기록 관리' : '필요할 때 하기';
   // 같은 기능 버튼은 한 곳에만: 문서 추가는 기록 상단(문서 1개면 '다음 행동'), 비교 화면의 질문 전체 복사는 위쪽 질문 모아보기
-  $('#copy-all-questions').hidden = layout === 'compare' || !allFus.some((f) => f.question);
+  $('#copy-all-questions').hidden = layout === 'compare' || layout === 'contract' || !allFus.some((f) => f.question); // 위쪽 '질문 전체 복사'와 중복되지 않게
   $('#actions-status').textContent = '';
   $('#record-notice').textContent = `${analyzedDocs[0]?.analysis?.notice ?? ''} 이 기록은 이 브라우저에만 저장돼요. 다른 기기에서는 보이지 않아요.`.trim();
 }

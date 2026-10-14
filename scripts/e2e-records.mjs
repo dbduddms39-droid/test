@@ -126,7 +126,7 @@ try {
   check('T01 회사명을 자동으로 기록 이름에 쓰지 않음: 안내 문구 표시', (await text('#record-title')) === '기록 이름을 입력해 주세요' && !(await text('#record-title')).includes(MARK));
   const order = await page.evaluate(() => ['now-title', 'conditions-title', 'details-title', 'actions-title'].map((id) => document.getElementById(id).getBoundingClientRect().top));
   check('결과 화면 순서: 입사 전 확인할 내용 → 핵심 조건 요약 → 상세 확인(접힘) → 필요할 때 하기', order.every((v, i) => i === 0 || v > order[i - 1]), order.map(Math.round).join(' < '));
-  check('T01 공고에서 찾지 못한 항목을 우선 질문으로 쏟아내지 않음', (await page.$$('#summary-groups .sum-item')).length <= 3 && !(await text('#summary-groups')).includes('휴일'));
+  check('T01 공고에서 찾지 못한 항목을 질문·미기재로 쏟아내지 않음', (await page.$$('#view-record .q-text')).length === 0 && !(await text('#condition-list')).includes('문서에서 확인되지 않음'));
   check('T01 문제없음·안전 같은 단정 표현 없음', !/(문제\s*없|안전한)/.test(await text('#view-record')));
   check('390px 가로 넘침 없음 (기록 화면)', await noHScroll());
   await page.screenshot({ path: `${OUT}/s04-posting-390.png`, fullPage: true });
@@ -181,7 +181,7 @@ try {
   await register('offer', OFFER_3600_SHORT, { add: true });
   const wage2 = await page.locator('#condition-list [data-item="01"] .badge-relation').textContent();
   check('T06 공고에 없던 급여가 오퍼에 처음: \'한쪽에만 기재\' (변경·삭제로 보지 않음)', wage2 === '한쪽에만 기재' && (await text('#condition-list [data-item="01"] .cmp-panel.is-a')).includes('원문에 언급 없음'), wage2);
-  check('T06 급여를 서로 다른 안내·변경으로 표시하지 않음', !(await text('#summary-groups')).includes('서로 다르게 안내된 조건'));
+  check('T06 급여를 서로 다른 조건·변경으로 표시하지 않음', !(await page.$('[data-group="different"] [data-item="01"]')));
   const list2 = await idbRecords();
   check('T11 두 기록의 자료가 섞이지 않음', list2.find((r) => r.id === rec1).documents.length === 2 && list2.find((r) => r.id === rec2).documents.length === 2
     && !list2.find((r) => r.id === rec2).documents.some((d) => d.confirmedText.includes('데이터 품질')));
@@ -285,14 +285,14 @@ try {
   await page.goto(`${BASE}/#/new`);
   await register('job_posting', POSTING_3400);
   const rec7 = await recordId();
-  check('T08 근거 검증 실패: 재분석 안내 표시', await page.isVisible('#reanalyze-box'));
+  check('T08 근거 검증 실패: 분석 확인 불가 카드에 재분석 버튼', await page.isVisible('[data-group="unavailable"] button[data-reanalyze]') && !!(await page.$('[data-group="unavailable"] [data-item="01"]')));
   check('T08 원문에 없는 인용을 보여 주지 않음', !(await text('#view-record')).includes('9,999'));
   check('T08 \'찾지 못함\'이 아니라 \'분석 확인 불가\'', (await page.locator('#condition-list [data-item="01"]').textContent()).includes('분석 확인 불가'));
   check('T08 분석 확인 불가로 회사 질문을 만들지 않음', !((await page.$('[data-group="needs"]')) && (await text('[data-group="needs"]')).includes('급여')) && !(await text('#more-list')).includes('급여'));
   aiMode = 'normal';
   await page.click('button[data-reanalyze]');
   await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'));
-  check('T08 같은 텍스트로 재분석하면 복구', !(await page.isVisible('#reanalyze-box')) && (await page.locator('#condition-list [data-item="01"]').textContent()).includes('3,400만원'));
+  check('T08 같은 텍스트로 재분석하면 복구', !(await page.$('[data-group="unavailable"]')) && (await page.locator('#condition-list [data-item="01"]').textContent()).includes('3,400만원'));
   check('T08 재분석해도 확인 텍스트는 그대로', (await idbRecords()).find((r) => r.id === rec7).documents[0].confirmedText === POSTING_3400);
 
   // ---- T04 파일 추출 텍스트 수정본만 저장 ----

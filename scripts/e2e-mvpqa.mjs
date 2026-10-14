@@ -75,11 +75,18 @@ try {
     await page.goto(`${BASE}/#/new`);
     await register('job_posting', DEMO_POSTING);
     const g1 = await groups();
-    check(`[${tag}] 채용공고 단독: 등록 완료·미리보기·두 번째 문서 CTA`, (await text('#brief-done')).includes('등록 완료') && (await text('#brief-done')).includes('채용공고')
-      && (await text('#conditions-title')) === '주요 조건 미리보기' && g1.length === 1 && g1[0].key === 'preview' && g1[0].cards >= 4
-      && await page.isVisible('#add-second') && (await text('#add-second')).includes('비교할 두 번째 문서 추가하기') && (await text('#next-step')).includes('다른 문서를 추가하면 근로조건이 어떻게 달라졌는지 비교할 수 있어요.'));
-    check(`[${tag}] 채용공고 단독: 단독 분석 요약·확인 필요 집계·회사 질문 없음`, (await page.$$('#view-record .q-text')).length === 0 && !(await page.isVisible('#now-section')) && !(await text('#view-record')).includes('확인이 필요한 조건') && !(await page.isVisible('#copy-all-questions')));
-    check(`[${tag}] 채용공고 단독: 보조 기능(전체 근로조건·원문·기록 관리)은 유지하되 접힘`, await page.isVisible('#all-conditions') && !(await page.$eval('#all-conditions', (d) => d.open)) && !(await page.$eval('#docs-box', (d) => d.open)) && (await text('#actions-title')) === '기록 관리');
+    const single = async () => ({ doc: await text('#cmp-docs'), tl: await tiles(), cards: await page.$$eval('#condition-list .cmp-card', (els) => els.map((e) => ({ id: e.dataset.item, st: e.dataset.status, panels: e.querySelectorAll('.cmp-panel').length }))) });
+    const s1 = await single();
+    const sumMatches = (s, g) => g.every((x) => x.count === x.cards && s.tl[x.key] === x.cards) && Object.values(s.tl).reduce((a, b) => a + b, 0) === s.cards.length;
+    check(`[${tag}] 채용공고 단독: 문서 정보 카드(유형·등록 완료·등록일) → 요약 칸 → 조건 카드, 두 번째 문서 CTA`, s1.doc.includes('채용공고') && s1.doc.includes('등록 완료') && s1.doc.includes('등록 ')
+      && (await text('#conditions-title')) === '주요 조건 미리보기' && g1.map((g) => g.key).every((k) => ['stated', 'deferred', 'unavailable'].includes(k)) && s1.cards.length >= 4 && s1.cards.every((c) => c.panels === 1)
+      && await page.isVisible('#add-second') && (await text('#add-second')).includes('비교할 두 번째 문서 추가하기') && (await text('#next-step')).includes('다른 문서를 추가하면 근로조건이 어떻게 달라졌는지 비교할 수 있어요.'), JSON.stringify(s1.tl));
+    check(`[${tag}] 채용공고 단독: 요약 숫자 = 묶음 숫자 = 카드 수`, sumMatches(s1, g1), g1.map((g) => `${g.key}:${g.count}/${g.cards}`).join(' '));
+    check(`[${tag}] 채용공고 단독: 회사 질문·미기재 판정 없음`, (await page.$$('#view-record .q-text')).length === 0 && !(await page.isVisible('#now-section')) && !(await page.isVisible('#cmp-questions')) && !(await text('#condition-list')).includes('문서에서 확인되지 않음') && !(await page.isVisible('#copy-all-questions')));
+    check(`[${tag}] 채용공고 단독: 같은 조건 반복 없음 (전체 목록 중복 숨김), 원문·기록 관리 유지`, !(await page.isVisible('#all-conditions')) && await page.isVisible('#docs-box') && !(await page.$eval('#docs-box', (d) => d.open)) && (await text('#actions-title')) === '기록 관리');
+    await page.click('#cmp-item-01 details.cmp-evidence > summary');
+    const ev1 = await page.$eval('#cmp-item-01 details.cmp-evidence', (d) => ({ open: d.open, quotes: [...d.querySelectorAll('.cmp-quote')].map((q) => q.textContent), labels: [...d.querySelectorAll('.cmp-evidence-for')].map((x) => x.textContent) }));
+    check(`[${tag}] 채용공고 단독: 원문 근거 펼치기 (원문 그대로·대상 조건·줄 번호, 중복 없음)`, ev1.open && ev1.quotes.length > 0 && ev1.quotes.every((q) => DEMO_POSTING.includes(q)) && new Set(ev1.quotes).size === ev1.quotes.length && ev1.labels.every((l) => l.includes('의 근거') && l.includes('번째 줄')), ev1.quotes[0]);
     check(`[${tag}] 채용공고 단독: 미리보기 값 (임금 범위·협의 예정 표시)`, (await card('01')).includes('3,400만~3,800만') && (await card('01')).includes('협의 예정'));
     check(`[${tag}] 채용공고 단독: null 없음·가로 넘침 없음`, await noNull() && await noOverflow());
     await page.screenshot({ path: `${OUT}/${tag}-1-posting.png`, fullPage: true });
@@ -91,22 +98,28 @@ try {
     // ---- 문서 1개: 처우 안내 → 간결한 미리보기 ----
     await page.goto(`${BASE}/#/new`);
     await register('offer', QA2_OFFER);
-    check(`[${tag}] 처우 안내 단독: 미리보기·질문 없음`, (await text('#brief-done')).includes('처우·근로조건 안내') && (await groups())[0]?.key === 'preview' && (await page.$$('#view-record .q-text')).length === 0 && await page.isVisible('#add-second'));
+    const s2 = await single();
+    check(`[${tag}] 처우 안내 단독: 문서 카드·카드형 미리보기·질문 없음`, s2.doc.includes('처우·근로조건 안내') && s2.cards.length > 0 && sumMatches(s2, await groups()) && (await page.$$('#view-record .q-text')).length === 0 && await page.isVisible('#add-second'));
+    await page.screenshot({ path: `${OUT}/${tag}-1-offer.png`, fullPage: true });
 
     // ---- 문서 1개: 근로계약서 → 기재 내용 확인 ----
     await page.goto(`${BASE}/#/new`);
     await register('contract', QA2_CONTRACT);
     const g3 = await groups();
-    check(`[${tag}] 근로계약서 단독: 추가 확인 필요 조건을 먼저, 10개 기준 점검표(접힘)`, g3.map((g) => g.key).join() === 'needs' && await page.isVisible('#contract-checklist') && (await page.$$('#contract-checklist-items > li')).length === 10, g3.map((g) => `${g.key}:${g.count}/${g.cards}`).join(' '));
-    check(`[${tag}] 근로계약서 단독: '여전히' 없이 '추가 확인이 필요한 조건', 미리보기 CTA 없음`, (await text('#condition-list')).includes('추가 확인이 필요한 조건') && !(await text('#view-record')).includes('여전히') && !(await page.isVisible('#next-step')));
-    const c02 = await text('#contract-checklist-items > li:nth-child(2)');
-    check(`[${tag}] 계산값: 근무시간은 '계산으로 확인한 조건'으로 구분, '내용이 모호함' 아님`, c02.includes('근무시간') && c02.includes('계산으로 확인한 조건') && !c02.includes('내용이 모호함'), c02);
-    check(`[${tag}] 근로계약서 단독: 집계 숫자 = 카드 수`, g3.every((g) => g.count === g.cards));
+    const s3 = await single();
+    const order3 = g3.map((g) => g.key);
+    check(`[${tag}] 근로계약서 단독: 10개 기준 카드, 추가 확인 필요 → 기재된 조건 → 계산으로 확인 순서`, s3.cards.length === 10 && order3[0] === 'needs' && order3.every((k, i) => i === 0 || ['needs', 'written', 'calculated', 'unavailable'].indexOf(k) > ['needs', 'written', 'calculated', 'unavailable'].indexOf(order3[i - 1])), order3.join());
+    check(`[${tag}] 근로계약서 단독: 요약 숫자 = 묶음 숫자 = 카드 수, 법률 판단 안 함 안내`, sumMatches(s3, g3) && (await text('#cmp-summary-total')).includes('법률 위반 여부는 판단하지 않아요'), JSON.stringify(s3.tl));
+    check(`[${tag}] 근로계약서 단독: '여전히' 없이 '추가 확인이 필요한 조건', 미리보기 CTA 없음, 점검표·요약 중복 영역 없음`, (await text('#condition-list')).includes('추가 확인이 필요한 조건') && !(await text('#view-record')).includes('여전히') && !(await page.isVisible('#next-step')) && !(await page.$('#contract-checklist, #contract-glance, #result-overview')) && !(await page.isVisible('#all-conditions')));
+    const c02 = await card('02');
+    check(`[${tag}] 계산값: 근무시간은 '계산으로 확인한 조건' 묶음, 원문 기재값과 '(계산값)' 구분, '내용이 모호함' 아님`, (await page.getAttribute('#cmp-item-02', 'data-status')) === 'calculated' && c02.includes('10:00~19:00') && c02.includes('주 40시간 (계산값)') && c02.includes('원문 기재값') && !c02.includes('내용이 모호함'), c02.slice(0, 160));
+    check(`[${tag}] 요약 값에 원문 목차·항목명 없음 (근무장소·담당업무·수습기간)`, (await text('#cmp-item-03 .cmp-panels')).includes('서울 성동구 성수동 본사') && !(await text('#cmp-item-03 .cmp-panels')).includes('2. 근무장소') && !(await text('#cmp-item-04 .cmp-panels')).includes('업무의 내용') && (await text('#cmp-item-07 .cmp-panels')).includes('입사 후 3개월'));
+    const needQ = await page.$$eval('[data-group="needs"] .cmp-card', (els) => els.map((e) => e.querySelectorAll('.q-text').length));
+    check(`[${tag}] 근로계약서 단독: 질문은 추가 확인 카드 안 + 위쪽 '질문 전체 복사' 하나 (아래 중복 없음)`, (await page.$$('[data-group="written"] .q-text, [data-group="calculated"] .q-text')).length === 0 && needQ.length > 0 && (await page.isVisible('#copy-all-top')) && !(await page.isVisible('#copy-all-questions')), JSON.stringify(needQ));
     check(`[${tag}] 근로계약서 단독: null 없음·가로 넘침 없음`, await noNull() && await noOverflow());
     await page.screenshot({ path: `${OUT}/${tag}-3-contract.png`, fullPage: true });
     // 원문 근거 형광펜: 줄 전체가 아니라 글자에만
-    await page.click('#contract-checklist > summary');
-    await page.click('#contract-checklist-items > li:nth-child(3) a');
+    await page.click('#cmp-item-03 .cmp-detail-link');
     await view('item'); await page.waitForTimeout(150);
     const hl = await page.evaluate(() => {
       const li = document.querySelector('#item .doc-line.is-marked');

@@ -98,7 +98,7 @@ try {
     await page.waitForSelector('#original-list .original-view:not([aria-disabled])', { state: 'attached', timeout: 10_000 }); await openOriginals();
     const rec1 = await recordId();
     check(`[${tag}] TC01 공고 단독: 저장·원본 저장 안내`, /저장됐어요/.test(await text('#save-status')) && (await page.$$('#original-list .original-item')).length === 1);
-    check(`[${tag}] TC01 주요 조건 미리보기 표시 (등록 완료)`, (await text('#conditions-title')) === '주요 조건 미리보기' && (await page.$$('#condition-list .ccard')).length > 0 && (await text('#brief-done')).includes('등록 완료'));
+    check(`[${tag}] TC01 주요 조건 미리보기 표시 (등록 완료)`, (await text('#conditions-title')) === '주요 조건 미리보기' && (await page.$$('#condition-list .cmp-card')).length > 0 && (await text('#cmp-docs')).includes('등록 완료'));
     const recText = await text('#view-record');
     check(`[${tag}] TC01 10개 기준 미기재·불명확 경고와 확인 질문 없음`, !(await page.$('[data-group="needs"]')) && (await page.$$('#view-record .q-text')).length === 0
       && !/문서에서 확인되지 않음|내용이 모호함|일부만 확인돼요|찾지 못했어요/.test(await text('#condition-list')), recText.length);
@@ -108,7 +108,7 @@ try {
     check(`[${tag}] TC01 가로 넘침 없음`, await noOverflow());
     await shot('tc01-posting');
     // 항목 상세: 근거 있는 세부 기준만, 기준 출처 안내 없음
-    await page.click('#condition-list .ccard a[href*="/item/"]');
+    await page.click('#condition-list .cmp-card a[href*="/item/"]');
     await waitView('item');
     check(`[${tag}] TC01 항목 상세: '미기재' 세부 기준 없음, 기준 출처 아코디언 없음`, !(await page.$('#item .source-accordion')) && !/문서에서 확인되지 않음/.test(await text('#item')));
     await page.goBack(); await waitView('record');
@@ -144,13 +144,13 @@ try {
     check(`[${tag}] TC08 원본 저장 완료 / 분석 실패 표시`, (await text('#save-status')).includes('원본 PDF도 이 브라우저에 저장했어요') && (await text('#save-status')).includes('분석은 완료하지 못했어요')
       && (await text('#doc-list')).includes('원본 저장 완료') && (await text('#doc-list')).includes('분석 실패'));
     check(`[${tag}] TC08 분석 실패여도 원본 보기 가능 (바이트 동일)`, same(await viewBytes(), Array.from(CONTRACT_PDF)));
-    check(`[${tag}] TC08 분석 결과가 없으면 조건 카드·질문 없이 안내`, (await page.$$('#condition-list .ccard')).length === 0 && (await text('#conditions-empty')).includes('아직 분석된 자료가 없어요'));
+    check(`[${tag}] TC08 분석 결과가 없으면 조건 카드·질문 없이 안내`, (await page.$$('#condition-list .cmp-card')).length === 0 && (await text('#conditions-empty')).includes('아직 분석된 자료가 없어요'));
     await shot('tc08-failed');
     const filesBefore = (await idb(page, 'files')).length;
     await page.click('#doc-list button[data-reanalyze]');
     await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'), null, { timeout: 30_000 });
     const rec2Row = (await idb(page, 'records')).find((r) => r.id === rec2);
-    check(`[${tag}] TC08 같은 텍스트로 다시 분석 → 분석됨, 원본 다시 저장 안 함`, rec2Row.documents[0].status === 'analyzed' && (await idb(page, 'files')).length === filesBefore && (await page.$$('#condition-list .ccard, #contract-glance-list > li')).length > 0);
+    check(`[${tag}] TC08 같은 텍스트로 다시 분석 → 분석됨, 원본 다시 저장 안 함`, rec2Row.documents[0].status === 'analyzed' && (await idb(page, 'files')).length === filesBefore && (await page.$$('#condition-list .cmp-card')).length > 0);
     check(`[${tag}] TC06 계약서 단독: 기재 내용 확인 화면 유지 ('근로계약서 확인 결과')`, (await text('#conditions-title')) === '근로계약서 확인 결과');
     // 같은 PDF를 같은 기록에 다시 등록 → 원본은 한 번만
     await uploadPdf('contract', '파란스텝_근로계약서(사본).pdf', CONTRACT_PDF, { add: rec2 });
@@ -166,7 +166,7 @@ try {
     await page.waitForSelector('#original-list .original-item:nth-child(2) .original-view:not([aria-disabled])', { state: 'attached', timeout: 10_000 }); await openOriginals();
     const diff = (await page.$('[data-group="different"]')) ? await text('[data-group="different"]') : '';
     check(`[${tag}] TC02 공고 09:00~18:00 ↔ 계약서 10:00~19:00: 서로 다른 안내 + 질문`, diff.includes('근무시간') && (await page.$$('[data-group="different"] .q-text')).length >= 1, diff.slice(0, 100));
-    check(`[${tag}] TC04 공고 → 계약서 바로: 계약서가 있으면 '입사 전 확인할 내용'이 먼저, 원본 2개`, await page.$eval('#now-section', (n) => !!(n.compareDocumentPosition(document.querySelector('#conditions-section')) & Node.DOCUMENT_POSITION_FOLLOWING))
+    check(`[${tag}] TC04 공고 → 계약서 바로: 두 문서 A·B 비교 카드, 원본 2개`, (await page.$$('#cmp-docs .cmp-doc')).length === 2 && (await page.$$('#condition-list .cmp-card')).length > 0
       && (await page.$$('#original-list .original-item')).length === 2);
     check(`[${tag}] TC04 가로 넘침 없음`, await noOverflow());
     await shot('tc04-posting-contract');
@@ -236,7 +236,7 @@ try {
     const ver = await page.evaluate(() => new Promise((res) => { const q = indexedDB.open('ildan-hwagin'); q.onsuccess = () => { const v = { version: q.result.version, stores: [...q.result.objectStoreNames] }; q.result.close(); res(v); }; }));
     check('TC10 DB v1 → v2: files 저장소 추가, 기존 기록 유지', ver.version === 2 && ver.stores.includes('files') && ver.stores.includes('records'));
     check('TC10 예전 기록 열기: 원본 보기 버튼 없음, 안내 문구', (await page.$$('#original-list .original-item')).length === 0 && (await page.textContent('#doc-list')).includes('이전에 등록한 자료는 원본 파일이 보관되어 있지 않아요'));
-    check('TC10 예전 기록: 조건 카드·텍스트 그대로, 분석 실패로 보지 않음', (await page.$$('#condition-list .ccard')).length > 0 && !(await page.textContent('#doc-list')).includes('분석 실패'));
+    check('TC10 예전 기록: 조건 카드·텍스트 그대로, 분석 실패로 보지 않음', (await page.$$('#condition-list .cmp-card')).length > 0 && !(await page.textContent('#doc-list')).includes('분석 실패'));
     const stored = await idb(page, 'records');
     check('TC10 예전 기록은 열기만으로 바뀌지 않음', stored.length === 1 && stored[0].documents[0].status === undefined && stored[0].updatedAt === '2026-09-01T00:00:00.000Z');
     check('TC10 페이지 오류 없음', errors.length === 0, errors.join(' | ').slice(0, 200));

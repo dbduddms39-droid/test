@@ -69,10 +69,10 @@ try {
     await page.click('#submit-btn'); await view('analyzing'); await shot('analyzing'); await noOverflow('분석 중');
     release(); await view('record'); await page.unroute('**/api/analyze');
     await page.waitForTimeout(300); await shot('S04'); await noOverflow('S04'); await codesHidden('S04');
-    const rows = await page.$$eval('#condition-list .ccard', (e) => e.length);
+    const rows = await page.$$eval('#condition-list .cmp-card', (e) => e.length);
     check(`[${tag}] S04: 핵심 조건 요약 카드`, rows >= 4, `${rows}개`);
     check(`[${tag}] S04: 데모 결과 안내·저장 표시`, (await page.textContent('#analysis-source')).includes('데모') && /저장됐어요|추가됐어요/.test(await page.textContent('#save-status')));
-    await page.click('#condition-list .ccard a[href*="/item/"]'); await view('item'); await page.waitForTimeout(300);
+    await page.click('#condition-list .cmp-card a[href*="/item/"]'); await view('item'); await page.waitForTimeout(300);
     await shot('S05'); await noOverflow('S05'); await codesHidden('S05');
     // 상세: 카드에는 근거 건수만, 인용 전문은 아래 '원문 근거'에서 한 번만 (강조는 글자에만)
     const counts = await page.$$eval('#item .criterion .card-detail p', (e) => e.map((x) => x.textContent).filter((t) => t.includes('관련 원문 근거')));
@@ -106,7 +106,7 @@ try {
     await page.unroute('**/api/analyze');
     await page.click('#doc-list button[data-reanalyze]');
     await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'));
-    check(`[${tag}] 분석 실패 → 같은 텍스트로 다시 분석 → 기록`, (await page.$$('#condition-list .ccard, #contract-glance-list > li')).length > 0 && (await page.$$('#doc-list > li')).length === 1);
+    check(`[${tag}] 분석 실패 → 같은 텍스트로 다시 분석 → 기록`, (await page.$$('#condition-list .cmp-card')).length > 0 && (await page.$$('#doc-list > li')).length === 1);
 
     // B) 사진 업로드 → S03 → 분석
     await page.goto(`${BASE}/#/new`); await view('input');
