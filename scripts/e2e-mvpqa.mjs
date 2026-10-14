@@ -227,7 +227,7 @@ try {
     // ---- 개인정보 안내: 핵심은 항상, 상세는 펼쳐보기 ----
     await page.goto(`${BASE}/#/new`); await view('input');
     const core = await text('#privacy-note .privacy-core');
-    check(`[${tag}] 개인정보: 접힌 상태에서도 Gemini 사용·전달 시점·저장 범위·브라우저 저장 한계 표시`, /Gemini/.test(core) && core.includes('분석 버튼을 누르면') && core.includes('이 브라우저에만 저장') && core.includes('브라우저 데이터를 지우면') && !(await page.$eval('#privacy-more', (d) => d.open)));
+    check(`[${tag}] 개인정보: 접힌 상태에서도 Gemini 사용·전달 시점·저장 범위·브라우저 저장 한계 표시`, /Gemini/.test(core) && core.includes('분석 버튼을 누를 때') && core.includes('사진 원본은 저장하지 않아요') && core.includes('PDF는 원본도 함께 저장') && core.includes('이 브라우저에만 저장') && core.includes('브라우저 데이터를 지우면') && !(await page.$eval('#privacy-more', (d) => d.open)));
     await page.click('#privacy-more > summary');
     const more = await page.$eval('#privacy-more', (d) => ({ open: d.open, visible: d.querySelector('p').getBoundingClientRect().height > 0 }));
     await page.click('#privacy-more > summary');

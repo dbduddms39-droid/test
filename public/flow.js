@@ -15,6 +15,7 @@ export const ROUTES = {
   record: (id) => `#/records/${id}`,                     // S04 입사조건 기록
   add: (id) => `#/records/${id}/add`,                    // S07 새 안내 추가
   item: (id, itemId) => `#/records/${id}/item/${itemId}`, // S05 항목 상세
+  report: (id) => `#/records/${id}/report`,               // 비교 결과 정리본 (두 문서 비교 기록)
 };
 // 예전 화면 주소 → 지금 화면
 const LEGACY = { '#/input': '#/new', '#/compare': '#/new', '#/result': '#/records', '#/compare/result': '#/records' };
@@ -52,12 +53,13 @@ export function resolveRoute(hash, state) {
   }
   if (h === ROUTES.error) return state.hasError ? { view: 'error' } : { redirect: inputRouteFor(state.lastTarget) };
   if (h === ROUTES.unsaved) return state.hasUnsaved ? { view: 'record', unsaved: true } : { redirect: ROUTES.records };
-  const m = h.match(/^#\/records\/([^/]+)(?:\/(add|item)(?:\/([^/]+))?)?$/);
+  const m = h.match(/^#\/records\/([^/]+)(?:\/(add|item|report)(?:\/([^/]+))?)?$/);
   if (m && RECORD_ID.test(m[1])) {
     const [, recordId, sub, itemId] = m;
     if (!sub) return { view: 'record', recordId };
     if (sub === 'add' && !itemId) return { view: 'input', target: { kind: 'add', recordId } };
     if (sub === 'item' && ITEM_ID.test(itemId ?? '')) return { view: 'item', recordId, itemId };
+    if (sub === 'report' && !itemId) return { view: 'report', recordId };
     return { redirect: ROUTES.record(recordId) };
   }
   return { redirect: ROUTES.landing };

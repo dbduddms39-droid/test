@@ -13,6 +13,7 @@ import { summaryEvidence, externallyReferencedLeave } from './result-presentatio
 import { comparisonPair, comparisonView, replaceComparedDocument } from './comparison-selection.js';
 import { initSampleDownloads } from './samples.js';
 import { alignLayout, headingHasMarker } from './text-layout.js';
+import { reportText, questionsText, sideText, REPORT_NOTICES } from './compare-report.js';
 import { DOC_TYPE_LABEL, RELATION_LABEL, docLabels } from './relate.js';
 
 // 일단확인 클라이언트 (PRD v3.1: 자료 한 건으로 시작 → 지금 확인할 내용 → 입사 건별 기록 → 새 안내 추가).
@@ -141,7 +142,16 @@ $('#landing-how').addEventListener('click', () => {
   const target = $('#sample-download');
   target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   target.focus({ preventScroll: true });
+  flashTarget(target);
 });
+// 이동한 위치를 잠깐 강조한다 (모바일에서도 지금 어디를 보는지 알 수 있게)
+function flashTarget(node) {
+  if (!node) return;
+  node.classList.remove('is-arrived');
+  void node.offsetWidth; // 같은 곳으로 다시 이동해도 강조가 다시 보이게
+  node.classList.add('is-arrived');
+  setTimeout(() => node.classList.remove('is-arrived'), 2400);
+}
 
 // ---------- S02 자료 등록 · S07 새 안내 추가 ----------
 const textarea = $('#doc-text');
@@ -1301,6 +1311,9 @@ function followupCard(f, record, saved) {
 // ---------- 기록 이름 ----------
 // 이름은 사용자가 정한 경우에만. 이름이 없으면 제목 자리에 안내 문구(저장하지 않음), 다른 곳에서는 문서 유형·등록일로 구별
 const NAME_PLACEHOLDER = '기록 이름을 입력해 주세요';
+const QUESTION_HINT = '질문을 상황에 맞게 고쳐서 복사한 뒤 회사에 직접 확인해 보세요. 일단확인은 회사에 보내지 않아요.';
+const MEMO_HINT = '회사에서 받은 답변을 직접 기록해 두면 나중에 다시 확인할 수 있어요.';
+const MAX_MARKS = 3; // 한 인용에서 강조하는 표현 수 (너무 많으면 읽기 어려움)
 const firstRegistered = (r) => r.documents.map((d) => d.registeredAt).filter(Boolean).sort()[0] ?? r.updatedAt;
 function recordLabel(r) {
   const name = userAlias(r);
@@ -1394,20 +1407,10 @@ const formatBytes = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}M
 // 비교 대상 A/B, 상태별 요약(한 항목 = 한 상태), 회사 질문 모아보기, 항목별 A/B 대조 카드.
 // 값·관계·질문은 기존 비교 결과(relate.js·followups.js)를 그대로 쓰고, 화면에서 상태 5가지로만 나눈다.
 const two = (n) => String(n).padStart(2, '0');
-function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendingOf }) {
-  const [A, B] = comparedRecord.documents.filter((d) => d.analysis);
-  const docs = [A, B];
-  const side = (k) => `문서 ${'AB'[k]}`;
-  const docCard = (d, k) => el('div', { class: `cmp-doc is-${'ab'[k]}`, 'data-doc': d.id },
-    el('p', { class: 'cmp-doc-label' }, `${side(k)} · ${labels[d.id]}`),
-    el('p', { class: 'cmp-doc-name' }, documentTitle(d) || labels[d.id]),
-    el('p', { class: 'cmp-doc-meta' }, `등록 ${formatDateTime(d.registeredAt)} · 원문 ${d.analysis?.lines?.length ?? 0}줄`));
-  fill($('#cmp-docs'), docCard(A, 0), el('span', { class: 'cmp-vs', 'aria-hidden': 'true' }, '↔'), docCard(B, 1));
-  $('#cmp-summary-title').textContent = '비교 결과 요약';
-  $('#cmp-questions-desc').textContent = '다르게 적혔거나 추가로 대조할 조건의 질문이에요. 각 항목에서 고쳐 쓰고 하나씩 복사할 수 있어요. 일단확인은 회사에 보내지 않아요.';
-  $('#cmp-tiles').style.setProperty('--tiles', String(STATUS_ORDER.length));
-
-  // 항목별 상태 (두 문서 모두에 없는 항목은 비교 대상이 아니므로 전체 목록에서)
+// ---------- 두 문서 비교: 화면 카드와 정리본이 같이 쓰는 계산 (분류·값·안내는 한 곳에서만) ----------
+// 항목별 상태. 두 문서 모두에 없는 항목은 비교 대상이 아니므로 건너뛴다 (skipped)
+function compareRowsFor(comparedRecord, fus, fuOf, pendingOf) {
+  const docs = comparedRecord.documents.filter((d) => d.analysis).slice(0, 2);
   const rows = [];
   let skipped = 0;
   for (const id of ITEM_IDS) {
@@ -1419,6 +1422,44 @@ function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendi
     if (!st) { skipped += 1; continue; }
     rows.push({ id, st, relItem, q, ts });
   }
+  return { docs, rows, skipped };
+}
+// 한 문서 쪽 값: missing(원문에 언급 없음) / unavailable(분석 확인 불가, 원인) / present(검증된 원문 값, 계산값은 따로)
+function sideInfo(row, d, k) {
+  const t = row.ts[k];
+  if (!t || t.status === 'MAIN_MISSING') return { state: 'missing', value: '원문에 언급 없음' };
+  if (t.status === 'MAIN_UNAVAILABLE') {
+    const codes = t.criteria.filter((c) => c.required && c.status === 'UNAVAILABLE').flatMap((c) => [c.unavailableReason, ...(c.unavailableCodes ?? [])]);
+    return { state: 'unavailable', value: '분석 확인 불가', cause: unavailableCause(codes) };
+  }
+  const v = row.relItem ? cardValue(row.relItem, d.id) : null;
+  const calc = d.docType === 'contract' ? weeklyCalc(t) : null;
+  const def = d.docType !== 'contract' ? deferral(t) : null;
+  const badge = def || (t.status !== 'MAIN_FOUND' && d.docType === 'contract' && !calc);
+  return { state: 'present', value: v?.text ?? summaryEvidence(t)?.text ?? '원문에서 확인했어요', vague: Boolean(v?.vague), calc: calc?.text ?? null, badge: Boolean(badge), badgeText: badge ? topicBadge(d, t).textContent : null };
+}
+// 대조 요약 한 줄 + 근로계약서 세부 확인 안내
+function rowNotes(row, docs, { comparedRecord, labels, fus, pendingOf }) {
+  const line = row.relItem?.addedNote ?? cardInsight(comparedRecord, row.relItem, labels, fus) ?? pendingOf(row.id)?.line ?? null;
+  const c = docs.map((d, k) => ({ d, t: row.ts[k] })).reverse().find((x) => x.d.docType === 'contract' && x.t);
+  const detail = c && !weeklyCalc(c.t) ? detailOnlyText(c.t) : null;
+  return { line, detail: detail ? `${labels[c.d.id]}: ${detail}` : null };
+}
+
+function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendingOf }) {
+  const [A, B] = comparedRecord.documents.filter((d) => d.analysis);
+  const docs = [A, B];
+  const side = (k) => `문서 ${'AB'[k]}`;
+  const docCard = (d, k) => el('div', { class: `cmp-doc is-${'ab'[k]}`, 'data-doc': d.id },
+    el('p', { class: 'cmp-doc-label' }, `${side(k)} · ${labels[d.id]}`),
+    el('p', { class: 'cmp-doc-name' }, documentTitle(d) || labels[d.id]),
+    el('p', { class: 'cmp-doc-meta' }, `등록 ${formatDateTime(d.registeredAt)} · 원문 ${d.analysis?.lines?.length ?? 0}줄`));
+  fill($('#cmp-docs'), docCard(A, 0), el('span', { class: 'cmp-vs', 'aria-hidden': 'true' }, '↔'), docCard(B, 1));
+  $('#cmp-summary-title').textContent = '비교 결과 요약';
+  $('#cmp-questions-desc').textContent = `다르게 적혔거나 추가로 대조할 조건의 질문이에요. ${QUESTION_HINT}`;
+  $('#cmp-tiles').style.setProperty('--tiles', String(STATUS_ORDER.length));
+
+  const { rows, skipped } = compareRowsFor(comparedRecord, fus, fuOf, pendingOf);
   const count = (st) => rows.filter((r) => r.st === st).length;
   $('#cmp-summary-total').textContent = `비교한 조건 ${rows.length}개${skipped ? ` · 두 문서 모두에 없는 조건 ${skipped}개는 '전체 근로조건 목록'에서 볼 수 있어요` : ''}`;
   // 요약 칸: 상태 표시 + 해당 묶음으로 이동(버튼). 0건이면 누를 수 없다
@@ -1437,45 +1478,36 @@ function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendi
   $('#copy-all-top-status').textContent = '';
 
   const panel = (row, d, k) => {
-    const t = row.ts[k];
+    const info = sideInfo(row, d, k);
     const head = el('p', { class: 'cmp-panel-label' }, `${side(k)} · ${labels[d.id]}`);
-    if (!t || t.status === 'MAIN_MISSING') {
+    if (info.state === 'missing') {
       return el('div', { class: `cmp-panel is-${'ab'[k]} is-empty` }, head,
-        el('p', { class: 'cmp-value' }, '원문에 언급 없음'),
+        el('p', { class: 'cmp-value' }, info.value),
         el('p', { class: 'cmp-sub' }, '이 문서에서는 이 조건을 찾지 못했어요. 없어지거나 바뀐 것으로 보지 않아요.'));
     }
-    if (t.status === 'MAIN_UNAVAILABLE') {
-      const codes = t.criteria.filter((c) => c.required && c.status === 'UNAVAILABLE').flatMap((c) => [c.unavailableReason, ...(c.unavailableCodes ?? [])]);
+    if (info.state === 'unavailable') {
       return el('div', { class: `cmp-panel is-${'ab'[k]} is-unavailable` }, head,
-        el('p', { class: 'cmp-value' }, '분석 확인 불가'),
-        el('p', { class: 'cmp-sub' }, `${unavailableCause(codes)}. 적혀 있지 않다는 뜻은 아니에요.`));
+        el('p', { class: 'cmp-value' }, info.value),
+        el('p', { class: 'cmp-sub' }, `${info.cause}. 적혀 있지 않다는 뜻은 아니에요.`));
     }
-    const v = row.relItem ? cardValue(row.relItem, d.id) : null;
-    const calc = d.docType === 'contract' ? weeklyCalc(t) : null;
-    const def = d.docType !== 'contract' ? deferral(t) : null;
     return el('div', { class: `cmp-panel is-${'ab'[k]}` }, head,
-      el('p', { class: `cmp-value${v?.vague ? ' is-vague' : ''}` }, v?.text ?? summaryEvidence(t)?.text ?? '원문에서 확인했어요'),
-      calc ? el('p', { class: 'cmp-sub cmp-calc' }, el('span', { class: 'calc-value' }, `${calc.text} (계산값)`), ' 원문에 적힌 근무일·출퇴근 시각·휴게시간으로 계산했어요.') : null,
-      def ? el('p', { class: 'cmp-sub' }, topicBadge(d, t)) : null,
-      !def && t.status !== 'MAIN_FOUND' && d.docType === 'contract' && !calc ? el('p', { class: 'cmp-sub' }, topicBadge(d, t)) : null);
+      el('p', { class: `cmp-value${info.vague ? ' is-vague' : ''}` }, info.value),
+      info.calc ? el('p', { class: 'cmp-sub cmp-calc' }, el('span', { class: 'calc-value' }, `${info.calc} (계산값)`), ' 원문에 적힌 근무일·출퇴근 시각·휴게시간으로 계산했어요.') : null,
+      info.badge ? el('p', { class: 'cmp-sub' }, topicBadge(d, row.ts[k])) : null);
   };
   const evidenceCol = (row, d, k) => {
-    const list = evidenceFor(row.relItem, d.id);
+    const t = row.ts[k];
+    const list = t?.status === 'MAIN_UNAVAILABLE' ? [] : evidenceFor(row.relItem, d.id);
     return el('div', { class: `cmp-evidence-doc is-${'ab'[k]}` },
       el('p', { class: 'cmp-evidence-label' }, `${side(k)} · ${labels[d.id]}`),
-      list.length ? el('ul', { class: 'cmp-evidence-list' }, list.map((r) => el('li', {},
-        el('p', { class: 'cmp-evidence-for' }, `${r.facets.join('·')}의 근거`, r.line != null ? el('span', { class: 'line-ref' }, ` · ${r.line}번째 줄`) : null),
-        el('blockquote', { class: 'cmp-quote' }, highlightText(r.text, r.highlight)))))
-        : el('p', { class: 'cmp-sub' }, '이 문서에서는 관련 원문을 찾지 못했어요.'));
+      list.length ? evidenceItems(list, d, labels[d.id], row.id) : el('p', { class: 'cmp-sub' }, noEvidenceText(t)));
   };
   let no = 0;
   const card = (row) => {
     no += 1;
     const { id, st, relItem, q } = row;
     const memo = notesFor(record, id).length;
-    const line = relItem?.addedNote ?? cardInsight(comparedRecord, relItem, labels, fus) ?? pendingOf(id)?.line ?? null;
-    const c = docs.map((d, k) => ({ d, t: row.ts[k] })).reverse().find((x) => x.d.docType === 'contract' && x.t);
-    const detail = c && !weeklyCalc(c.t) ? detailOnlyText(c.t) : null;
+    const { line, detail } = rowNotes(row, docs, { comparedRecord, labels, fus, pendingOf });
     const badgeText = st === 'same' && relItem?.addedNote ? '같은 조건 · 세부 조건 추가' : COMPARE_STATUS[st].badge;
     const unavailDocs = st === 'unavailable' ? docs.filter((d, k) => row.ts[k]?.status === 'MAIN_UNAVAILABLE') : [];
     return el('li', { class: `cmp-card is-${st}`, id: `cmp-item-${id}`, 'data-item': id, 'data-topic': id, 'data-status': st },
@@ -1488,16 +1520,16 @@ function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendi
       line || detail ? el('div', { class: 'cmp-note' },
         el('p', { class: 'cmp-note-title' }, '대조 요약'),
         line ? el('p', {}, line) : null,
-        detail ? el('p', { class: 'small' }, `${labels[c.d.id]}: ${detail}`) : null) : null,
+        detail ? el('p', { class: 'small' }, detail) : null) : null,
       el('details', { class: 'cmp-evidence' },
         el('summary', {}, '원문 근거 보기'),
         el('div', { class: 'cmp-evidence-cols' }, docs.map((d, k) => evidenceCol(row, d, k))),
-        el('p', { class: 'cmp-sub' }, '강조 표시는 비교에 쓴 표현이에요. 문서 전체는 아래 \'등록된 안내 자료와 원문\'에서 볼 수 있어요.')),
+        el('p', { class: 'cmp-sub' }, '노란 강조는 비교에 쓴 원문 표현이에요. \'원문 전체에서 위치 보기\'를 누르면 아래 원문에서 그 줄을 펼쳐 보여 드려요.')),
       q?.question ? el('div', { class: 'cmp-question' }, el('p', { class: 'cmp-question-title' }, `회사에 확인할 질문 · ${itemLabel(record, id)}`), questionBlock(q)) : null,
       saved && unavailDocs.length ? el('div', { class: 'reanalyze' },
         unavailDocs.map((d) => el('button', { type: 'button', class: 'btn-secondary', 'data-reanalyze': d.id }, `${labels[d.id]} 같은 텍스트로 다시 분석하기`)),
         el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null,
-      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary cmp-detail-link' }, '조건 상세·내 메모 →') : null);
+      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary cmp-detail-link' }, '조건 상세·답변 메모 →') : null);
   };
   const groups = STATUS_ORDER.map((st) => {
     const list = rows.filter((r) => r.st === st);
@@ -1510,6 +1542,53 @@ function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendi
   });
   fill($('#condition-list'), ...groups);
   return rows;
+}
+
+// 원문 근거 목록: 어떤 조건의 근거인지 · 어느 문서 · 몇 번째 줄 · 원문 구절(검증된 인용 그대로, 강조는 원문에 그대로 있는 값만).
+// '원문 전체에서 위치 보기'는 같은 화면 아래의 원문 전체를 펼쳐 그 줄로 이동한다 (상세 화면 이동과 목적이 다름).
+function evidenceItems(list, d, docLabel, itemId) {
+  return el('ul', { class: 'cmp-evidence-list' }, list.map((r) => {
+    const marks = r.highlight.slice(0, MAX_MARKS);
+    return el('li', {},
+      el('p', { class: 'cmp-evidence-for' }, `${r.facets.join('·')}의 근거`, el('span', { class: 'line-ref' }, ` · ${docLabel}${r.line != null ? ` ${r.line}번째 줄` : ''}`)),
+      el('blockquote', { class: 'cmp-quote' }, marks.length ? highlightText(r.text, marks) : r.text),
+      r.line != null && d.analysis?.lines?.length ? el('button', {
+        type: 'button', class: 'btn-small cmp-goto', 'data-goto-doc': d.id, 'data-goto-line': String(r.line), 'data-goto-item': itemId,
+        'data-goto-text': r.text, 'data-goto-marks': JSON.stringify(marks),
+      }, '원문 전체에서 위치 보기') : null);
+  }));
+}
+// 근거 인용이 없을 때: '문서에서 확인되지 않음'과 '분석 확인 불가'의 뜻을 그대로 (임의 구절을 강조하지 않음)
+function noEvidenceText(t) {
+  if (!t || t.status === 'MAIN_MISSING') return '이 문서에서는 이 조건을 찾지 못했어요 (문서에서 확인되지 않음). 없어지거나 바뀐 것으로 보지 않아요.';
+  if (t.status === 'MAIN_UNAVAILABLE') return '근거를 원문에서 확인하지 못해 인용을 보여 드리지 않아요 (분석 확인 불가). 적혀 있지 않다는 뜻은 아니에요.';
+  return '관련 원문 줄을 특정하지 못했어요.';
+}
+
+// 결과 활용 안내: 문서 개수와 실제 결과에 맞춰 다음 행동만 짧게. 버튼은 새로 만들지 않고 기존 요소(카드의 원문 근거·질문·메모, 문서 추가)를 가리킨다.
+// 질문이 없으면 질문 복사 단계를 넣지 않는다. 비교 결과 정리본(두 문서 비교)은 여기 한 곳에서만 연다.
+function renderGuide(layout, rows, { record, saved }) {
+  const box = $('#result-guide');
+  box.hidden = !['brief', 'contract', 'compare'].includes(layout) || !rows.length;
+  if (box.hidden) return;
+  const n = (...st) => rows.filter((r) => st.includes(r.st)).length;
+  const hasQ = rows.some((r) => r.q?.question);
+  const memo = saved ? "회사에서 받은 답변은 카드의 '조건 상세·답변 메모'에 직접 기록해 두면 나중에 다시 확인할 수 있어요." : null;
+  const steps = {
+    brief: [
+      `문서에 적힌 주요 조건 ${rows.length}개와 '원문 근거 보기'를 확인하세요.`,
+      saved ? "필요하면 다른 문서를 추가해 두 문서를 나란히 비교해 보세요 (맨 아래 '비교할 두 번째 문서 추가하기')." : null,
+    ],
+    contract: n('needs')
+      ? [`추가 확인이 필요한 조건 ${n('needs')}개부터 확인하세요.`, "카드의 '원문 근거 보기'로 문서에 적힌 문장과 위치를 확인하세요.", hasQ ? QUESTION_HINT : null, memo]
+      : ['추가 확인이 필요한 조건으로 분류된 항목은 없어요. 기재된 조건과 원문 근거를 확인해 보세요. 법률 위반 여부를 판단한 결과는 아니에요.', memo],
+    compare: n('different', 'review')
+      ? [`서로 다른 조건 ${n('different')}개와 추가 대조가 필요한 조건 ${n('review')}개를 먼저 확인하세요.`, "카드의 '원문 근거 보기'로 두 문서에 실제로 적힌 문장과 위치를 확인하세요.", hasQ ? QUESTION_HINT : null, memo]
+      : ['서로 다르거나 추가 대조가 필요한 조건은 없어요. 한쪽에만 적힌 조건과 원문 근거를 확인해 보세요.', memo],
+  }[layout].filter(Boolean);
+  fill($('#result-guide-steps'), ...steps.map((t) => el('li', {}, t)));
+  fill($('#result-guide-actions'), layout === 'compare' && saved
+    ? el('a', { href: ROUTES.report(record.id), class: 'btn-secondary', id: 'open-report' }, '비교 결과 정리본 보기 (복사·인쇄)') : null);
 }
 
 // 문서 1개 결과 (채용공고·처우 안내 미리보기 / 근로계약서 확인): 비교 화면과 같은 카드·요약 구조, 한 줄 단일 컬럼.
@@ -1549,7 +1628,7 @@ function renderSingle({ record, comparedRecord, fus, labels, saved, fuOf, layout
   $('#cmp-questions').hidden = !qCount;
   $('#cmp-q-count').textContent = `${qCount}건`;
   $('#copy-all-top-status').textContent = '';
-  $('#cmp-questions-desc').textContent = '추가 확인이 필요한 조건의 질문이에요. 각 항목에서 고쳐 쓰고 하나씩 복사할 수 있어요. 일단확인은 회사에 보내지 않아요.';
+  $('#cmp-questions-desc').textContent = `추가 확인이 필요한 조건의 질문이에요. ${QUESTION_HINT}`;
 
   let no = 0;
   const card = (row) => {
@@ -1585,13 +1664,10 @@ function renderSingle({ record, comparedRecord, fus, labels, saved, fuOf, layout
         extLeave ? el('p', {}, '법령·취업규칙을 참조하는 기준이 기재돼 있어요. 구체적인 부여 일수와 운영 방식은 해당 기준에서 별도 확인할 수 있어요. 미기재나 위반으로 보지 않아요.') : null) : null,
       evidence.length ? el('details', { class: 'cmp-evidence' },
         el('summary', {}, '원문 근거 보기'),
-        el('div', { class: 'cmp-evidence-doc is-a' },
-          el('ul', { class: 'cmp-evidence-list' }, evidence.map((r) => el('li', {},
-            el('p', { class: 'cmp-evidence-for' }, `${r.facets.join('·')}의 근거`, r.line != null ? el('span', { class: 'line-ref' }, ` · ${r.line}번째 줄`) : null),
-            el('blockquote', { class: 'cmp-quote' }, highlightText(r.text, r.highlight)))))),
-        el('p', { class: 'cmp-sub' }, '강조 표시는 원문에 적힌 값이에요. 문서 전체는 아래 \'등록된 안내 자료와 원문\'에서 볼 수 있어요.')) : null,
+        el('div', { class: 'cmp-evidence-doc is-a' }, evidenceItems(evidence, d, labels[d.id], id)),
+        el('p', { class: 'cmp-sub' }, '노란 강조는 원문에 적힌 값이에요. \'원문 전체에서 위치 보기\'를 누르면 아래 원문에서 그 줄을 펼쳐 보여 드려요.')) : null,
       q ? el('div', { class: 'cmp-question' }, el('p', { class: 'cmp-question-title' }, `회사에 확인할 질문 · ${itemLabel(record, id)}`), questionBlock(q)) : null,
-      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary cmp-detail-link' }, '조건 상세·내 메모 →') : null);
+      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary cmp-detail-link' }, '조건 상세·답변 메모 →') : null);
   };
   fill($('#condition-list'), ...S.order.map((st) => {
     const list = rows.filter((r) => r.st === st);
@@ -1731,6 +1807,7 @@ function renderRecord(record, { unsaved = false } = {}) {
   // 분석 확인 불가는 조건 카드 안에서 (다시 분석 버튼 포함, 요약 숫자 = 카드 수)
   if (hasCards) { $('#now-section').hidden = true; fill($('#summary-groups')); }
   const cardCount = cardRows.length;
+  renderGuide(layout, cardRows, { record, saved });
   // 적힌 근로조건이 하나도 없으면 (예: 근로조건 없이 합격만 알린 안내) 오류가 아니라 그 사실만 알린다
   const condEmpty = $('#conditions-empty');
   condEmpty.hidden = cardCount > 0;
@@ -1813,6 +1890,45 @@ function renderRecord(record, { unsaved = false } = {}) {
   $('#record-notice').textContent = `${analyzedDocs[0]?.analysis?.notice ?? ''} 이 기록은 이 브라우저에만 저장돼요. 다른 기기에서는 보이지 않아요.`.trim();
 }
 
+// 원문 근거 → 같은 화면의 원문 전체에서 그 줄로 이동: 접힌 '등록된 안내 자료와 원문'과 그 문서의 텍스트를 펼치고,
+// 그 줄을 강조하고 검증된 인용 구절만 표시한다. 줄 바로 아래 '보던 카드로 돌아가기'로 원래 맥락에 돌아갈 수 있다.
+function clearGoto() {
+  for (const li of document.querySelectorAll('#doc-list .doc-line.is-goto')) {
+    li.classList.remove('is-goto', 'is-arrived');
+    const span = li.querySelector('.doc-line-text');
+    if (span && li.dataset.plain != null) span.textContent = li.dataset.plain;
+  }
+  for (const b of document.querySelectorAll('#doc-list .goto-return')) b.remove();
+}
+$('#view-record').addEventListener('click', (e) => {
+  const go = e.target.closest('button[data-goto-line]');
+  const back = e.target.closest('button[data-return-card]');
+  if (back) {
+    const card = document.getElementById(back.dataset.returnCard);
+    clearGoto();
+    if (card) { card.scrollIntoView({ block: 'center' }); flashTarget(card); card.querySelector('.cmp-goto, summary')?.focus({ preventScroll: true }); }
+    return;
+  }
+  if (!go) return;
+  const entry = document.querySelector(`#doc-list > li[data-doc="${go.dataset.gotoDoc}"]`);
+  const li = entry?.querySelector(`.doc-text .doc-line[data-line="${go.dataset.gotoLine}"]`);
+  if (!li) return;
+  clearGoto();
+  $('#docs-box').open = true;
+  entry.querySelector('details.doc-text').open = true;
+  const span = li.querySelector('.doc-line-text');
+  li.dataset.plain = span.textContent;
+  // 인용 구절과 비교에 쓴 값이 그 줄에 그대로 있을 때만 강조 (없으면 줄 강조만)
+  const phrases = [go.dataset.gotoText, ...JSON.parse(go.dataset.gotoMarks || '[]')].filter((p) => p && span.textContent.includes(p));
+  if (phrases.length) fill(span, highlightText(span.textContent, phrases.slice(0, 1)));
+  li.classList.add('is-goto');
+  const label = itemLabel(currentRecord ?? { documents: [] }, go.dataset.gotoItem);
+  li.after(el('li', { class: 'goto-return' },
+    el('span', { class: 'small' }, `${label} 근거 · ${go.dataset.gotoLine}번째 줄`),
+    el('button', { type: 'button', class: 'btn-small', 'data-return-card': go.closest('.cmp-card')?.id ?? '' }, `← ${label} 카드로 돌아가기`)));
+  li.scrollIntoView({ block: 'center' });
+  flashTarget(li);
+});
 $('#view-record').addEventListener('change', (e) => {
   if (!currentRecord) return;
   const input = e.target.closest('#compare-doc-a, #compare-doc-b');
@@ -1922,6 +2038,97 @@ $('#delete-record').addEventListener('click', async () => {
   }
 });
 
+// ---------- 비교 결과 정리본 ----------
+// 결과 화면에서 고른 두 문서(세 문서 이상이면 선택한 두 문서)를 화면 카드와 같은 계산으로 정리한다. AI를 다시 부르지 않는다.
+let reportModel = null;
+function buildReportModel(record) {
+  const comparedRecord = comparisonView(record, pairByRecord.get(record.id));
+  const fus = buildFollowUps(comparedRecord);
+  const labels = docLabels(record.documents);
+  const allFus = [...fus.primary, ...fus.more];
+  const fuOf = (topicId) => allFus.find((x) => x.topicIds.includes(topicId));
+  const pendingOf = (id) => (fus.summary.pending ?? []).find((x) => x.topicId === id);
+  const { docs, rows, skipped } = compareRowsFor(comparedRecord, fus, fuOf, pendingOf);
+  if (docs.length < 2) return null;
+  const questions = [];
+  const groups = STATUS_ORDER.map((st) => ({
+    key: st,
+    label: COMPARE_STATUS[st].label,
+    rows: rows.filter((r) => r.st === st).map((row) => {
+      const label = itemLabel(record, row.id);
+      const { line, detail } = rowNotes(row, docs, { comparedRecord, labels, fus, pendingOf });
+      const ev = (k) => (row.ts[k]?.status === 'MAIN_UNAVAILABLE' ? [] : evidenceFor(row.relItem, docs[k].id));
+      let questionNo = null;
+      if (row.q?.question) { questionNo = questions.length + 1; questions.push({ no: questionNo, label, text: row.q.question }); }
+      return {
+        id: row.id, label, badge: st === 'same' && row.relItem?.addedNote ? '같은 조건 · 세부 조건 추가' : COMPARE_STATUS[st].badge,
+        a: sideInfo(row, docs[0], 0), b: sideInfo(row, docs[1], 1), line, detail, evidence: { a: ev(0), b: ev(1) }, questionNo,
+      };
+    }),
+  })).filter((g) => g.rows.length);
+  return {
+    title: '비교 결과 정리본',
+    recordName: recordLabel(record),
+    createdAt: formatDateTime(new Date().toISOString()),
+    docs: docs.map((d, k) => ({ side: 'AB'[k], type: labels[d.id], name: documentTitle(d) || labels[d.id], registered: formatDateTime(d.registeredAt) })),
+    summary: STATUS_ORDER.map((st) => ({ key: st, label: COMPARE_STATUS[st].label, count: rows.filter((r) => r.st === st).length, items: rows.filter((r) => r.st === st).map((r) => itemLabel(record, r.id)) })),
+    skipped, groups, questions,
+  };
+}
+function renderReport(record) {
+  $('#report-back').setAttribute('href', ROUTES.record(record.id));
+  $('#report-status').textContent = '';
+  reportModel = buildReportModel(record);
+  const m = reportModel;
+  for (const id of ['#report-copy', '#report-copy-q', '#report-print']) $(id).hidden = !m;
+  if (!m) { fill($('#report'), el('p', {}, '두 문서를 비교한 기록에서만 정리본을 볼 수 있어요. 다른 문서를 추가해 비교해 주세요.')); return; }
+  $('#report-copy-q').hidden = !m.questions.length;
+  const quote = (e, side) => el('li', {},
+    el('span', { class: 'report-ev-ref' }, `문서 ${side}${e.line != null ? ` ${e.line}번째 줄` : ''} · ${e.facets.join('·')}`),
+    el('q', {}, e.text));
+  const sideCell = (s, k) => el('div', { class: `report-side is-${'ab'[k]}${s.state !== 'present' ? ' is-empty' : ''}` },
+    el('p', { class: 'report-side-label' }, `문서 ${'AB'[k]} · ${m.docs[k].type}`),
+    el('p', { class: 'report-side-value' }, sideText(s)));
+  fill($('#report'),
+    el('header', { class: 'report-head' },
+      el('p', { class: 'report-kicker' }, '일단확인'),
+      el('h1', {}, m.title),
+      el('p', { class: 'report-meta' }, `${m.recordName} · 정리한 때 ${m.createdAt}`)),
+    el('section', { class: 'report-sec' }, el('h2', {}, '비교한 문서'),
+      el('ul', { class: 'report-docs' }, m.docs.map((d) => el('li', { class: `is-${d.side.toLowerCase()}` }, el('strong', {}, `문서 ${d.side} · ${d.type}`), ` ${d.name} (등록 ${d.registered})`))),
+      el('p', { class: 'report-note' }, REPORT_NOTICES[0])),
+    el('section', { class: 'report-sec' }, el('h2', {}, '전체 비교 요약'),
+      el('table', { class: 'report-summary' }, el('tbody', {}, m.summary.map((g) => el('tr', { class: `is-${g.key}` },
+        el('th', { scope: 'row' }, g.label), el('td', { class: 'num' }, `${g.count}건`), el('td', {}, g.items.join(', ') || '—'))))),
+      m.skipped ? el('p', { class: 'report-note' }, `두 문서 모두에 적혀 있지 않은 조건 ${m.skipped}개는 정리본에 넣지 않았어요.`) : null),
+    ...m.groups.map((g) => el('section', { class: `report-sec report-group is-${g.key}`, 'data-group': g.key },
+      el('h2', {}, `${g.label} `, el('span', { class: 'report-count' }, `${g.rows.length}건`)),
+      g.rows.map((r) => el('article', { class: 'report-item', 'data-item': r.id },
+        el('h3', {}, r.label, el('span', { class: `badge badge-relation status-${g.key}` }, r.badge)),
+        el('div', { class: 'report-sides' }, sideCell(r.a, 0), sideCell(r.b, 1)),
+        r.line ? el('p', { class: 'report-line' }, el('strong', {}, '대조 요약 '), r.line) : null,
+        r.detail ? el('p', { class: 'report-line' }, el('strong', {}, '참고 '), r.detail) : null,
+        r.evidence.a.length || r.evidence.b.length ? el('div', { class: 'report-ev' },
+          el('p', { class: 'report-ev-title' }, '원문 근거'),
+          el('ul', {}, [...r.evidence.a.map((e) => quote(e, 'A')), ...r.evidence.b.map((e) => quote(e, 'B'))])) : null,
+        r.questionNo ? el('p', { class: 'report-qref' }, `→ 회사에 확인할 질문 ${r.questionNo}번`) : null)))),
+    el('section', { class: 'report-sec report-questions' }, el('h2', {}, '회사에 확인할 질문'),
+      m.questions.length ? el('ol', {}, m.questions.map((q) => el('li', {}, el('strong', {}, `${q.label} `), q.text)))
+        : el('p', {}, '이번 비교에서 만든 확인 질문은 없어요.'),
+      m.questions.length ? el('p', { class: 'report-note' }, '질문은 결과 화면에서 상황에 맞게 고쳐 쓸 수 있어요. 정리본에는 처음 만든 문장이 들어가요.') : null),
+    el('section', { class: 'report-sec report-notices' }, el('h2', {}, '원문 근거와 서비스 안내'),
+      el('ul', {}, REPORT_NOTICES.map((n) => el('li', {}, n)))));
+}
+$('#report-copy').addEventListener('click', async () => {
+  const ok = reportModel && await copyText(reportText(reportModel));
+  $('#report-status').textContent = ok ? '정리본 전체를 복사했어요. 메모장이나 메일에 붙여 넣을 수 있어요.' : '복사하지 못했어요. 정리본을 직접 선택해 복사해 주세요.';
+});
+$('#report-copy-q').addEventListener('click', async () => {
+  const ok = reportModel?.questions.length && await copyText(questionsText(reportModel));
+  $('#report-status').textContent = ok ? `질문 ${reportModel.questions.length}개만 복사했어요.` : '복사하지 못했어요. 질문을 직접 선택해 복사해 주세요.';
+});
+$('#report-print').addEventListener('click', () => window.print());
+
 // ---------- S05 항목 상세 ----------
 let memoEditing = null; // 편집 중인 메모 ID 또는 'new'
 
@@ -1951,7 +2158,8 @@ function renderItem(record, itemId) {
   const fuSec = f ? el('section', { class: 'item-followup' },
     el('h2', {}, f.tier === 'primary' ? '지금 확인할 내용' : '추가로 확인할 내용'),
     el('ul', { class: 'followup-reasons' }, f.reasons.map((r) => el('li', {}, r))),
-    questionBlock(f)) : null;
+    questionBlock(f),
+    el('p', { class: 'muted small' }, QUESTION_HINT)) : null;
   const reSec = fus.reanalyze.some((x) => x.topicId === itemId) ? el('p', { class: 'note note-hold' },
     '분석 확인 불가: 근거를 원문에서 확인하지 못했거나 글자 인식이 불확실해 확정하지 않았어요. 적혀 있지 않다는 뜻이 아니에요. 기록 화면의 \'등록된 안내 자료\'에서 같은 텍스트로 다시 분석할 수 있어요.') : null;
 
@@ -1997,8 +2205,8 @@ function renderItem(record, itemId) {
   // 내가 기록한 답변 (선택 입력)
   const memos = notesFor(record, itemId);
   const memoSec = el('section', { class: 'memo', 'aria-labelledby': 'memo-title' },
-    el('h2', { id: 'memo-title' }, '내가 기록한 답변 (선택)'),
-    el('p', { class: 'muted small' }, '회사에서 들은 답변을 직접 적어 둘 수 있어요. 내가 쓴 메모일 뿐 최종 조건으로 표시되지 않고, 분석 결과와 원문은 바뀌지 않아요.'),
+    el('h2', { id: 'memo-title' }, '회사 답변 메모 (선택)'),
+    el('p', { class: 'muted small' }, `${MEMO_HINT} 내가 쓴 메모일 뿐 공식 근로조건이나 확인된 사실로 표시되지 않고, 분석 결과와 원문은 바뀌지 않아요.`),
     el('ul', { class: 'memo-list' }, memos.map((n) => (memoEditing === n.id ? memoForm(n) : el('li', { class: 'memo-item', 'data-note': n.id },
       el('p', { class: 'memo-label' }, '내가 기록한 답변'),
       el('p', { class: 'memo-text' }, n.text),
@@ -2020,7 +2228,8 @@ function renderItem(record, itemId) {
         el('tbody', {}, t0.criteria.map((c) => el('tr', {}, el('td', {}, c.label), el('td', {}, c.sources.map((k) => el('span', { class: 'source-badge' }, SOURCE_LABEL[k]))))))),
       t0.links.length ? linkList(t0.links) : null)) : null;
 
-  fill($('#item'), head, relSec, fuSec, reSec, ...docSecs, memoSec, sourceSec,
+  // 질문 → 답변 메모 → 문서별 원문 순서 (메모가 긴 원문 아래에 묻히지 않게)
+  fill($('#item'), head, relSec, fuSec, reSec, memoSec, ...docSecs, sourceSec,
     el('div', { class: 'detail-actions' }, el('a', { href: ROUTES.record(record.id), class: 'btn-secondary' }, '← 기록으로 돌아가기')));
 }
 
@@ -2130,7 +2339,7 @@ $('#delete-all').addEventListener('click', async () => {
 });
 
 // ---------- 라우팅 ----------
-const VIEWS = ['landing', 'input', 'review', 'analyzing', 'error', 'record', 'item', 'records'];
+const VIEWS = ['landing', 'input', 'review', 'analyzing', 'error', 'record', 'item', 'records', 'report'];
 let pendingNotice = null;
 let routeSeq = 0;
 
@@ -2178,6 +2387,7 @@ async function route() {
   if (r.view === 'input') { state.targetRecord = record; await applyTarget(r.target); }
   else if (r.view === 'record') renderRecord(r.unsaved ? unsavedRecord() : record, { unsaved: Boolean(r.unsaved) });
   else if (r.view === 'item') renderItem(record, r.itemId);
+  else if (r.view === 'report') renderReport(record);
   else if (r.view === 'records') await renderRecords();
   else if (r.view === 'review') {
     $('#review-back').setAttribute('href', inputRoute());
@@ -2197,9 +2407,14 @@ async function route() {
   if (notice && pendingNotice) showMsg(notice, ROUTE_NOTICE[pendingNotice]);
   if (r.view !== 'analyzing') pendingNotice = null;
 
-  window.scrollTo(0, 0);
+  // 조건 상세·정리본 → 결과 화면으로 돌아오면(앱 안 링크·브라우저 뒤로 가기 모두) 보던 카드 위치로
+  const returnItem = r.view === 'record' && prevRoute?.recordId === r.recordId ? (prevRoute.view === 'item' ? prevRoute.itemId : null) : null;
+  prevRoute = { view: r.view, recordId: r.recordId ?? null, itemId: r.itemId ?? null };
+  const card = returnItem ? document.getElementById(`cmp-item-${returnItem}`) : null;
+  if (card) { card.scrollIntoView({ block: 'center' }); flashTarget(card); } else window.scrollTo(0, 0);
   if (r.view === 'analyzing' || r.view === 'error') $(`#${r.view}-title`).focus({ preventScroll: true });
 }
+let prevRoute = null;
 window.addEventListener('hashchange', route);
 route();
 updatePasteState();

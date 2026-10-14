@@ -1281,3 +1281,85 @@ details.cmp-group > summary::-webkit-details-marker { display: none; }
 .cmp-panels.is-single { grid-template-columns: minmax(0, 1fr); }
 .cmp-group-note { margin: 0 0 10px; padding: 12px 14px; background: var(--wash); border-radius: var(--radius); }
 .cmp-group-note p { margin: 0 0 8px; }
+
+/* 이동한 위치 강조 (가상문서 영역·원문 줄·돌아온 카드) */
+@keyframes arrived { 0% { box-shadow: 0 0 0 3px var(--brand); background-color: var(--brand-soft); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.is-arrived { animation: arrived 2.4s ease-out; border-radius: var(--card-radius); }
+@media (prefers-reduced-motion: reduce) { .is-arrived { animation: none; box-shadow: 0 0 0 3px var(--brand); } }
+.step-opt { display: inline-block; margin-left: 4px; padding: 0 7px; font-size: 11px; font-weight: 600; color: var(--ink-2); background: var(--wash); border-radius: 999px; vertical-align: middle; }
+.hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+
+/* 원문 전체: 줄 번호 표시, 이동한 줄 강조, 돌아가기 */
+.doc-text .doc-lines { counter-reset: none; }
+.doc-text .doc-line::before { content: attr(data-line); flex: none; min-width: 2.2em; text-align: right; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.doc-line.is-goto { background: var(--brand-soft); border-left-color: var(--brand); color: var(--ink); }
+.goto-return { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 4px 0 8px; padding: 8px 10px; background: #FFFFFF; border: 1px dashed var(--brand); border-radius: var(--radius); list-style: none; }
+.cmp-goto { margin-top: 6px; }
+
+/* 결과 활용 안내 */
+.result-guide { margin: 0 0 16px; padding: 14px 18px; background: var(--paper); border: 1px solid var(--rule); border-left: 4px solid var(--green); border-radius: var(--card-radius); }
+.result-guide h3 { margin: 0 0 6px; font-size: 15px; }
+.result-guide-steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+.result-guide-actions:empty { display: none; }
+.result-guide-actions { margin-top: 10px; }
+/* 내 메모: 분석 결과·공식 안내와 구분 (점선, 옅은 노랑) */
+.memo-item { background: #FFFDF5; border: 1px dashed #E8CF7A; border-radius: var(--radius); padding: 10px 12px; }
+.memo-label { font-size: 12px; font-weight: 700; color: var(--brand-ink); }
+
+/* ---------- 비교 결과 정리본 (화면 + A4 인쇄) ---------- */
+.report-toolbar { display: grid; gap: 10px; margin-bottom: 16px; }
+.report-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.report-toolbar p { margin: 0; }
+.report-status:empty { display: none; }
+.report { max-width: 860px; margin: 0 auto; padding: 32px 36px; background: #FFFFFF; border: 1px solid var(--rule); border-radius: var(--card-radius); color: var(--ink); font-size: 14px; line-height: 1.65; }
+.report-head { padding-bottom: 14px; border-bottom: 2px solid var(--ink); }
+.report-kicker { margin: 0; font-size: 12px; font-weight: 700; color: var(--ink-3); }
+.report-head h1 { margin: 2px 0 4px; font-size: 26px; }
+.report-meta { margin: 0; color: var(--ink-2); font-size: 13px; }
+.report-sec { margin-top: 22px; }
+.report-sec > h2 { margin: 0 0 10px; padding-bottom: 6px; font-size: 17px; border-bottom: 1px solid var(--rule); }
+.report-count { font-size: 13px; font-weight: 600; color: var(--ink-3); }
+.report-docs { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.report-docs li { padding: 8px 12px; border-left: 4px solid var(--brand); background: var(--desk); }
+.report-docs li.is-b { border-left-color: var(--green); }
+.report-note { margin: 8px 0 0; font-size: 12px; color: var(--ink-3); }
+.report-summary { width: 100%; border-collapse: collapse; font-size: 13px; }
+.report-summary th, .report-summary td { padding: 6px 8px; border-bottom: 1px solid var(--rule-soft); text-align: left; vertical-align: top; }
+.report-summary th { width: 34%; font-weight: 600; }
+.report-summary td.num { width: 12%; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.report-item { padding: 12px 0 14px; border-bottom: 1px solid var(--rule-soft); break-inside: avoid; page-break-inside: avoid; }
+.report-item h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 8px; font-size: 15px; }
+.report-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.report-side { padding: 8px 10px; border: 1px solid var(--rule-soft); border-left: 3px solid var(--brand); border-radius: var(--radius); min-width: 0; }
+.report-side.is-b { border-left-color: var(--green); }
+.report-side.is-empty { background: var(--wash); }
+.report-side p { margin: 0; overflow-wrap: anywhere; }
+.report-side-label { font-size: 11px; color: var(--ink-3); }
+.report-side-value { font-weight: 600; }
+.report-line { margin: 6px 0 0; font-size: 13px; }
+.report-ev { margin-top: 6px; font-size: 13px; }
+.report-ev-title { margin: 0 0 2px; font-weight: 700; font-size: 12px; color: var(--ink-2); }
+.report-ev ul { margin: 0; padding-left: 16px; }
+.report-ev-ref { display: block; font-size: 11px; color: var(--ink-3); }
+.report-ev q { quotes: '“' '”'; overflow-wrap: anywhere; }
+.report-qref { margin: 6px 0 0; font-size: 12px; color: var(--green); font-weight: 600; }
+.report-questions ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.report-notices ul { margin: 0; padding-left: 18px; font-size: 12px; color: var(--ink-2); display: grid; gap: 3px; }
+@media (max-width: 640px) {
+  .report { padding: 18px 14px; }
+  .report-sides { grid-template-columns: 1fr; }
+  .report-head h1 { font-size: 22px; }
+}
+@media print {
+  @page { size: A4 portrait; margin: 14mm 12mm; }
+  body[data-view="report"] { background: #FFFFFF !important; }
+  body[data-view="report"] .topbar, body[data-view="report"] .site-footer, body[data-view="report"] .no-print { display: none !important; }
+  body[data-view="report"] main { padding: 0; max-width: none; }
+  body[data-view="report"] .report { max-width: none; padding: 0; border: 0; font-size: 10.5pt; }
+  .report-sec > h2 { break-after: avoid; page-break-after: avoid; }
+  .report-item, .report-summary tr, .report-questions li { break-inside: avoid; page-break-inside: avoid; }
+  .report-sides { grid-template-columns: 1fr 1fr; }
+  .badge { border: 1px solid #999 !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+.report-toolbar .back { justify-self: start; margin-bottom: 0; }

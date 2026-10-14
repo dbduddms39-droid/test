@@ -42,7 +42,7 @@ try {
     check(`[${tag}] S01: 대표 비주얼 = 문서 카드 3장 + 조건 차이 확인 (가상 예시 표시, 헤드라인 반복 없음)`, ['채용공고', '처우 안내', '근로계약서', '조건 차이 확인', '가상 예시'].every((x) => hero.includes(x)) && !hero.includes('놓치지 말고'));
     check(`[${tag}] S01: 비주얼 안에는 누를 수 있는 요소 없음 (실제 CTA만)`, (await page.$$('.hero-visual a, .hero-visual button')).length === 0);
     const steps = await page.$$eval('.step-list > li h3', (els) => els.map((e) => e.textContent));
-    check(`[${tag}] S01: 이용 방법 4단계`, steps.join('|') === '문서 등록하기|새로운 문서 추가하기|근로조건 비교하기|원문 확인하고 질문 준비하기', steps.join('|'));
+    check(`[${tag}] S01: 이용 방법 4단계`, steps.join('|') === '문서 한 개 등록하기|주요 근로조건 확인하기|다른 문서 추가해 비교하기 선택|원문 근거 보고 질문 준비하기', steps.join('|'));
     const flow = await page.textContent('#landing-workflow');
     check(`[${tag}] S01: 주요 기능 두 가지 구분 (문서 2개 비교 / 근로계약서 단독 확인, 10개 조건)`, flow.includes('문서 2개 비교') && flow.includes('근로계약서 단독 확인') && (await page.$$('#landing-workflow .use-cards > li')).length === 2 && (await page.$$('#landing-criteria li')).length === 10);
     check(`[${tag}] S01: 처우 안내는 세 문서 중 하나(필수 단계 아님), 순서·필수 표현 없음`, landing.includes('처우·근로조건 안내') && landing.includes('등록 순서는 정해져 있지 않아요') && !/최종합격 안내|필수|반드시|순서대로/.test(landing));

@@ -37,8 +37,9 @@
           <p class="lead">받은 문서 하나부터 등록하세요. 나중에 받은 문서를 더하면 <strong>근로조건 차이와 원문 근거</strong>를 나란히 비교해요.</p>
           <div class="hero-actions">
             <a href="#/new" class="btn-primary btn-auto" id="landing-start">첫 문서 등록하기 →</a>
+            <button type="button" class="btn-secondary btn-auto" id="landing-how" hidden>문서가 없다면 · 가상문서 받기 ↓</button>
           </div>
-          <p class="hero-sub">문서 하나만 있어도 시작할 수 있어요. <button type="button" class="btn-small" id="landing-how" hidden>체험용 가상문서 받기 ↓</button></p>
+          <p class="hero-sub">문서 하나만 있어도 시작할 수 있어요. 근로계약서 한 장이면 10개 조건을 단독으로 확인해요.</p>
         </div>
         <!-- 설명용 비주얼 (가상 예시, 누를 수 없음): 문서 세 장과 조건 차이 확인 카드 -->
         <figure class="hero-visual" aria-label="문서 세 장과 조건 차이 확인 예시 (가상)">
@@ -67,10 +68,10 @@
         <h2 id="steps-title">문서 하나로 시작해서, 받을 때마다 더해요.</h2>
         <p class="muted section-intro">채용공고·처우·근로조건 안내·근로계약서 중 가진 문서부터 등록하세요. 등록 순서는 정해져 있지 않아요.</p>
         <ol class="step-list">
-          <li class="step"><span class="step-no">01</span><h3>문서 등록하기</h3><p>사진·PDF를 올리거나 텍스트를 붙여넣어요. 추출한 글자는 분석 전에 직접 확인하고 고칠 수 있어요.</p></li>
-          <li class="step"><span class="step-no">02</span><h3>새로운 문서 추가하기</h3><p>나중에 받은 안내를 같은 기록에 더해요. 등록일과 PDF 원본이 이 브라우저에 함께 보관돼요.</p></li>
-          <li class="step"><span class="step-no">03</span><h3>근로조건 비교하기</h3><p>두 문서의 조건을 서로 다른 조건·같은 조건·한쪽에만 기재·추가 대조 필요·분석 확인 불가로 나눠 보여줘요.</p></li>
-          <li class="step"><span class="step-no">04</span><h3>원문 확인하고 질문 준비하기</h3><p>조건마다 원문 근거를 확인하고, 회사에 물어볼 질문을 고쳐 쓰고 복사해요.</p></li>
+          <li class="step"><span class="step-no">01</span><h3>문서 한 개 등록하기</h3><p>채용공고·처우 안내·근로계약서 중 가진 문서 하나를 사진·PDF·텍스트로 올려요. 읽은 글자는 분석 전에 직접 확인하고 고칠 수 있어요.</p></li>
+          <li class="step"><span class="step-no">02</span><h3>주요 근로조건 확인하기</h3><p>문서에 적힌 주요 조건과 원문 근거를 보여줘요. <strong>근로계약서는 한 개만으로도</strong> 10개 기준으로 단독 확인할 수 있어요.</p></li>
+          <li class="step"><span class="step-no">03</span><h3>다른 문서 추가해 비교하기 <span class="step-opt">선택</span></h3><p>나중에 받은 문서를 같은 기록에 더하면 두 문서의 조건을 A·B로 나란히 비교해요. 등록 순서와 문서 종류는 상관없어요.</p></li>
+          <li class="step"><span class="step-no">04</span><h3>원문 근거 보고 질문 준비하기</h3><p>차이나 확인이 필요한 조건의 원문을 확인하고, 회사에 물어볼 질문을 고쳐 복사해요. 받은 답변은 메모로 남겨요.</p></li>
         </ol>
       </section>
 
@@ -195,8 +196,8 @@
             <!-- 분석 전에 꼭 알아야 할 내용은 항상 보이게 (실제 동작: /api/analyze로 확인한 텍스트만 전송, 기록은 IndexedDB) -->
             <ul class="privacy-core">
               <li>분석에는 외부 AI(Google Gemini)를 사용해요.</li>
-              <li>분석 버튼을 누르면 <strong>확인한 텍스트</strong>가 일단확인 서버를 거쳐 Gemini로 전달돼요. 사진·PDF 파일 자체는 보내지 않아요.</li>
-              <li>분석 결과와 기록(PDF로 올렸다면 원본 PDF 포함)은 <strong>지금 쓰는 이 브라우저</strong>에만 저장돼요.</li>
+              <li><strong>분석 버튼을 누를 때</strong>(확인 화면에서 '읽기 쉽게 정리'를 누를 때도) <strong>확인한 텍스트</strong>만 일단확인 서버를 거쳐 Gemini로 전달돼요. 사진·PDF 파일 자체는 보내지 않아요.</li>
+              <li>확인한 텍스트·분석 결과·원문 근거·메모는 <strong>지금 쓰는 이 브라우저</strong>에만 저장돼요. <strong>PDF는 원본도 함께 저장</strong>하고, <strong>사진 원본은 저장하지 않아요</strong>.</li>
               <li>다른 기기에서는 볼 수 없고, 브라우저 데이터를 지우면 함께 사라질 수 있어요.</li>
             </ul>
             <details class="privacy-more" id="privacy-more">
@@ -391,10 +392,16 @@
           </div>
           <div class="cmp-tiles" id="cmp-tiles"></div>
         </section>
+        <!-- 결과 활용 안내: 문서 개수·결과에 따라 다음 행동만 짧게 (단계는 아래 카드의 원문 근거·질문·메모로 이어짐) -->
+        <section class="result-guide" id="result-guide" aria-labelledby="result-guide-title" hidden>
+          <h3 id="result-guide-title">확인한 결과, 이렇게 활용해 보세요</h3>
+          <ol class="result-guide-steps" id="result-guide-steps"></ol>
+          <div class="result-guide-actions" id="result-guide-actions"></div>
+        </section>
         <section class="cmp-questions" id="cmp-questions" aria-labelledby="cmp-questions-title" hidden>
           <div>
             <h3 id="cmp-questions-title">회사에 확인할 질문 <span class="cmp-q-count" id="cmp-q-count"></span></h3>
-            <p class="small" id="cmp-questions-desc">다르게 적혔거나 추가로 대조할 조건의 질문이에요. 각 항목에서 고쳐 쓰고 하나씩 복사할 수 있어요. 일단확인은 회사에 보내지 않아요.</p>
+            <p class="small" id="cmp-questions-desc"></p>
           </div>
           <button type="button" class="btn-secondary btn-auto" id="copy-all-top">질문 전체 복사</button>
           <p class="small muted" id="copy-all-top-status" role="status" aria-live="polite"></p>
@@ -445,6 +452,21 @@
     <section id="view-item" class="view view-wide" hidden>
       <a class="btn-secondary back" id="item-back" hidden>← 기록으로 돌아가기</a>
       <div id="item"></div>
+    </section>
+
+    <!-- 비교 결과 정리본: 두 문서 비교 결과를 한 문서로 (복사·인쇄/PDF 저장, 서버 저장 없음) -->
+    <section id="view-report" class="view view-wide" hidden>
+      <div class="report-toolbar no-print">
+        <a class="btn-secondary back" id="report-back">← 비교 결과로 돌아가기</a>
+        <div class="report-actions">
+          <button type="button" class="btn-secondary" id="report-copy">정리본 전체 복사</button>
+          <button type="button" class="btn-secondary" id="report-copy-q">질문만 복사</button>
+          <button type="button" class="btn-secondary" id="report-print">인쇄 · PDF로 저장</button>
+        </div>
+        <p class="small muted">정리본 전체 복사는 비교한 문서·조건별 값·원문 근거·질문을 모두, 질문만 복사는 회사에 물어볼 문장만 복사해요. PDF는 인쇄 창에서 'PDF로 저장'을 고르면 돼요. 서버에 저장하거나 보내지 않아요.</p>
+        <p class="small report-status" id="report-status" role="status" aria-live="polite"></p>
+      </div>
+      <article class="report" id="report"></article>
     </section>
 
     <!-- S06 내 기록 목록 -->
