@@ -172,6 +172,10 @@
           <!-- 파일 업로드: S-02 → S-03 → S-04 -->
           <div id="panel-upload" role="tabpanel" aria-labelledby="tab-upload" hidden>
             <div class="upload">
+              <div class="ai-layout-opt">
+                <label><input type="checkbox" id="ai-layout" checked> 추출한 텍스트를 <strong>Google Gemini로 보내</strong> 제목·항목별로 줄바꿈 정리하기</label>
+                <p class="small muted" id="ai-layout-help">켜 두면 글자 추출이 끝난 뒤 <strong>추출한 텍스트</strong>(파일 자체는 아님)가 일단확인 서버를 거쳐 Google Gemini로 전송돼요. Gemini는 줄만 나누고 글자·숫자는 바꾸지 않아요. 끄면 AI로 보내지 않고 추출한 텍스트를 그대로 확인해요.</p>
+              </div>
               <label class="upload-drop" id="upload-drop">
                 <input type="file" id="file-input" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
                 <span class="upload-title">이미지나 PDF 파일 선택</span>
@@ -181,11 +185,11 @@
                 <p class="image-panel-help">같은 문서를 이어서 캡처한 이미지로 보고, 아래 순서대로 글자를 읽어 하나의 문서로 합쳐요. 순서를 확인해 주세요.</p>
                 <ol id="image-list" class="image-list"></ol>
                 <div class="image-actions">
-                  <button type="button" id="extract-btn" class="btn-secondary">텍스트 추출</button>
+                  <button type="button" id="extract-btn" class="btn-secondary">텍스트 추출 + Gemini 줄바꿈 정리</button>
                   <button type="button" id="clear-images" class="btn-small">이미지 모두 지우기</button>
                 </div>
               </div>
-              <p class="upload-note">파일은 이 브라우저 안에서만 읽고 서버로 보내거나 저장하지 않아요. 추출한 텍스트는 다음 화면에서 원본과 비교해 확인·수정한 뒤, '이 내용으로 계속하기'를 눌렀을 때만 분석을 위해 전송돼요.</p>
+              <p class="upload-note">파일(사진·PDF)은 이 브라우저 안에서 글자를 읽고 서버로 보내지 않아요. 추출한 텍스트는 위 줄바꿈 정리를 켰을 때 추출 직후, 그리고 다음 화면에서 '이 내용으로 계속하기'를 눌렀을 때 분석을 위해 Gemini로 전송돼요.</p>
               <p id="upload-status" class="upload-status" role="status" aria-live="polite" hidden></p>
               <p id="review-resume" class="review-resume" hidden>추출한 텍스트가 있어요. <a href="#/review">추출 텍스트 확인 화면으로 돌아가기</a></p>
             </div>
@@ -196,7 +200,7 @@
             <!-- 분석 전에 꼭 알아야 할 내용은 항상 보이게 (실제 동작: /api/analyze로 확인한 텍스트만 전송, 기록은 IndexedDB) -->
             <ul class="privacy-core">
               <li>분석에는 외부 AI(Google Gemini)를 사용해요.</li>
-              <li><strong>분석 버튼을 누를 때</strong>(확인 화면에서 '읽기 쉽게 정리'를 누를 때도) <strong>확인한 텍스트</strong>만 일단확인 서버를 거쳐 Gemini로 전달돼요. 사진·PDF 파일 자체는 보내지 않아요.</li>
+              <li><strong>분석 버튼을 누를 때</strong>, 그리고 사진·PDF를 올리며 <strong>'Gemini 줄바꿈 정리'를 켜 두면 추출 직후</strong>에 <strong>텍스트</strong>만 일단확인 서버를 거쳐 Gemini로 전달돼요. 사진·PDF 파일 자체는 보내지 않아요.</li>
               <li>확인한 텍스트·분석 결과·원문 근거·메모는 <strong>지금 쓰는 이 브라우저</strong>에만 저장돼요. <strong>PDF는 원본도 함께 저장</strong>하고, <strong>사진 원본은 저장하지 않아요</strong>.</li>
               <li>다른 기기에서는 볼 수 없고, 브라우저 데이터를 지우면 함께 사라질 수 있어요.</li>
             </ul>
@@ -260,29 +264,24 @@
         </section>
         <section id="review-editor" class="review-pane" role="tabpanel" aria-labelledby="rtab-text">
           <div class="pane-bar">
-            <p class="pane-title"><label for="review-text">추출된 텍스트</label><span class="tag">편집 가능</span></p>
+            <p class="pane-title"><label for="review-text">추출된 텍스트</label><span class="tag" id="review-mode-tag">읽기 화면</span></p>
             <div class="pane-tools">
-              <button type="button" class="btn-small" id="review-select">전체 선택</button>
-              <button type="button" class="btn-small" id="review-clear">비우기</button>
-              <button type="button" class="btn-small" id="review-restore">원래 내용으로</button>
+              <button type="button" class="btn-secondary" id="review-edit">텍스트 수정하기</button>
+              <button type="button" class="btn-small" id="review-select" hidden>전체 선택</button>
+              <button type="button" class="btn-small" id="review-clear" hidden>비우기</button>
+              <button type="button" class="btn-small" id="review-restore">원래 추출 텍스트로</button>
             </div>
           </div>
-          <textarea id="review-text" rows="18" maxlength="20000"></textarea>
+          <p class="small layout-status" id="layout-status" role="status" aria-live="polite"></p>
+          <!-- 기본: 읽기 화면 (제목·항목·문단 구분). 글자는 입력칸과 같고, 제목의 [ ]는 화면 표시로만 -->
+          <div class="read-view" id="read-view" tabindex="0" aria-label="추출된 텍스트 (읽기 화면)"></div>
+          <textarea id="review-text" rows="18" maxlength="20000" hidden></textarea>
           <div class="editor-foot"><span class="mono-meta muted-mono">글자 <span id="review-chars">0</span>자 · 줄 <span id="review-lines">0</span>행</span></div>
-          <p class="margin-note">수정한 텍스트를 기준으로 분석해요. 분석이 끝나 기록으로 저장되기 전까지는 이 창에서만 유지돼요.</p>
-          <!-- 읽기 쉽게 정리해서 보기 (선택): 버튼을 눌렀을 때만 Gemini로 전송. 결과는 보기 전용, 원문과 대조해 일치할 때만 표시 -->
-          <section id="layout-box" class="layout-box" aria-labelledby="layout-title">
-            <div class="layout-head">
-              <div>
-                <h2 id="layout-title" class="layout-title">읽기 쉽게 정리해서 보기 <span class="tag">선택</span></h2>
-                <p class="small muted" id="layout-notice">버튼을 누르면 위 텍스트가 일단확인 서버를 거쳐 <strong>Google Gemini로 전송</strong>돼요. Gemini는 제목·항목·문장 단위로 줄만 나누고 글자·숫자·날짜·금액은 바꾸지 않아요. 정리된 보기는 읽기용이며, 분석과 저장에는 위 텍스트가 그대로 쓰여요.</p>
-              </div>
-              <button type="button" class="btn-secondary btn-auto" id="layout-run">Gemini로 정리해서 보기</button>
-            </div>
-            <p class="small layout-status" id="layout-status" role="status" aria-live="polite"></p>
-            <div class="layout-view" id="layout-view" aria-label="읽기 쉽게 정리한 보기 (원문과 같은 글자)" hidden></div>
-            <button type="button" class="btn-small" id="layout-close" hidden>정리된 보기 닫기</button>
-          </section>
+          <details class="original-text" id="original-text">
+            <summary>원래 추출 텍스트 보기 (정리 전, 글자 인식 결과 그대로)</summary>
+            <pre id="original-text-body"></pre>
+          </details>
+          <p class="margin-note">원본과 비교해 확인하고, 틀린 곳은 '텍스트 수정하기'로 고쳐 주세요. 확인한 텍스트를 기준으로 분석해요. 분석이 끝나 기록으로 저장되기 전까지는 이 창에서만 유지돼요.</p>
           <section id="ocr-check" class="ocr-check" aria-labelledby="ocr-check-title" hidden>
             <h2 id="ocr-check-title">확인이 필요한 글자 <span id="ocr-check-count" class="ocr-check-count"></span></h2>
             <p class="small">글자 인식(OCR)이 불확실한 곳이에요. 원본과 대조해 고치거나, 맞다면 '원본과 대조해 확인했어요'를 눌러 주세요.

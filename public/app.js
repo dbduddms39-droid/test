@@ -3,16 +3,15 @@ import { copyText, josa } from './questions.js';
 import { el, fill, statusBadge, CONTRACT_STATUS_LABEL, sourcePanelLines, highlightText } from './components.js';
 import { compareStatus, evidenceFor, topicEvidence, documentTitle, singleStatus, COMPARE_STATUS, STATUS_ORDER, SINGLE_STATUS } from './compare-view.js';
 import { ROUTES, checkText, editRouteFor, inputRouteFor, resolveRoute, classifyAnalyzeFailure, formatDateTime } from './flow.js';
-import { createTracker, applyEdit, confirmSpan, pendingRanges, unlocatedPending, summary as ocrSummary } from './ocr-spans.js';
+import { createTracker, applyEdit, confirmSpan, pendingRanges, unlocatedPending, summary as ocrSummary, remapTracker } from './ocr-spans.js';
 import {
-  buildIssues, resolveIssue, unresolve, blockingIssues, resetTextDependent, resultNotes, isResolved, setSupplement, shiftAnchors, assembleText,
-} from './extract-issues.js';
+  buildIssues, resolveIssue, unresolve, blockingIssues, resetTextDependent, resultNotes, isResolved, setSupplement, shiftAnchors, assembleText, remapAnchors } from './extract-issues.js';
 import { createStore, userAlias, StoreError, DEFAULT_ALIAS, NOTE_MAX, newId } from './store.js';
 import { buildFollowUps, BOUNDARY_TEXT, deferral, detailOnly, weeklyCalc } from './followups.js';
 import { summaryEvidence, externallyReferencedLeave } from './result-presentation.js';
 import { comparisonPair, comparisonView, replaceComparedDocument } from './comparison-selection.js';
 import { initSampleDownloads } from './samples.js';
-import { alignLayout, headingHasMarker } from './text-layout.js';
+import { alignLayout, headingHasMarker, layoutText, positionMap } from './text-layout.js';
 import { reportText, questionsText, sideText, REPORT_NOTICES } from './compare-report.js';
 import { DOC_TYPE_LABEL, RELATION_LABEL, docLabels } from './relate.js';
 
@@ -404,7 +403,7 @@ $('#clear-images').addEventListener('click', () => {
 // pdfFile: 올린 PDF 원본 (기록에 원본으로 저장한다. 이미지는 원본을 저장하지 않음)
 function applyExtracted(text, source, previews, ownUrls = [], words = [], issues = [], pdfFile = null) {
   const reviewText = $('#review-text');
-  if (state.file && reviewText.value.trim() && reviewText.value !== state.file.original
+  if (state.file && reviewText.value.trim() && reviewText.value !== state.file.original && reviewText.value !== state.file.formatted
     && !confirm('확인·수정하던 추출 텍스트를 새로 추출한 내용으로 바꿀까요?')) {
     ownUrls.forEach((u) => URL.revokeObjectURL(u));
     return false;
@@ -420,6 +419,13 @@ function applyExtracted(text, source, previews, ownUrls = [], words = [], issues
   reviewText.value = text;
   preview.page = 0;
   preview.zoom = 100;
+  $('#original-text-body').textContent = text;
+  $('#original-text').open = false;
+  setReviewEditing(false);
+  // 업로드 화면에서 'Gemini 줄바꿈 정리'를 켠 경우에만 (끄면 AI로 보내지 않고 추출 텍스트 그대로)
+  state.file.layoutStatus = $('#ai-layout').checked && text.trim() ? 'pending' : 'off';
+  showLayoutStatus();
+  if (state.file.layoutStatus === 'pending') runAutoLayout(state.file);
   return true;
 }
 
@@ -551,60 +557,91 @@ function updateReviewState() {
   if (blocking.length) blockedMsg.push(`분석 전에 확인할 추출 문제 ${blocking.length}건을 먼저 처리해 주세요. 위의 '분석 전에 확인할 추출 문제'에서 처리할 수 있어요.`);
   if (unlocated.length) blockedMsg.push(`위치를 찾을 수 없는 불확실한 글자 ${unlocated.length}곳이 있어요. 어느 조건에 영향을 주는지 알 수 없어, '확인이 필요한 글자'에서 원본과 대조해 확인하기 전에는 분석할 수 없어요.`);
   showMsg($('#review-blocked'), blockedMsg.join(' '));
-  syncLayout();
+  if (!reviewEditing) renderReadView();
 }
 
-// ---------- S-03 읽기 쉽게 정리해서 보기 (선택) ----------
-// 사용자가 버튼을 눌렀을 때만 확인 중인 텍스트를 /api/layout(Gemini)으로 보낸다.
-// 응답 블록은 브라우저에서도 원문과 다시 대조하고, 일치할 때만 보기 전용으로 그린다.
-// 추출 원본(state.file.original)과 사용자가 고친 텍스트(textarea)는 바꾸지 않으며, 정리 결과는 저장·분석에 쓰지 않는다.
-let layoutState = null; // { source, blocks } — 이 창의 메모리에만
-function renderLayoutView(blocks) {
-  fill($('#layout-view'), ...blocks.map((b) => el(b.kind === 'heading' ? 'h3' : 'p', {
-    class: `layout-${b.kind}${b.kind === 'heading' && !headingHasMarker(b.text) ? ' with-marker' : ''}`,
-  }, b.text)));
+// ---------- S-03 읽기 화면 · 자동 줄바꿈 정리 ----------
+// 추출이 끝나면(업로드 화면에서 'Gemini 줄바꿈 정리'를 켠 경우만) 추출 텍스트를 /api/layout으로 보내
+// 제목·항목·문장 단위로 줄을 나눈 결과를 받는다. 서버와 브라우저가 모두 원문과 글자 단위로 대조해 같을 때만 적용한다.
+// 적용은 공백·줄바꿈만 바꾸는 편집이라 불확실한 글자·직접 입력 위치를 글자 단위로 옮긴다 (확인 상태는 그대로).
+// 원래 추출 텍스트(state.file.original)는 그대로 두고 '원래 추출 텍스트로'로 되돌릴 수 있다.
+let reviewEditing = false;
+const LAYOUT_STATUS = {
+  off: 'AI 줄바꿈 정리 없이 추출한 텍스트를 그대로 보여 드려요. 원본과 비교해 확인해 주세요.',
+  pending: 'Gemini로 제목·항목별 줄바꿈을 정리하는 중이에요… 잠시 추출한 텍스트를 그대로 보여 드려요.',
+  done: 'Gemini가 제목·항목별로 줄만 나눴어요. 글자·숫자·금액은 원문과 같은지 확인했어요. 원본과 비교해 확인해 주세요.',
+  failed: '줄바꿈 정리를 적용하지 못해 추출한 텍스트를 그대로 보여 드려요. 필요한 곳은 직접 고쳐 주세요.',
+  skipped: '텍스트를 먼저 고쳐서 줄바꿈 정리 결과는 적용하지 않았어요.',
+  restored: '정리 전 추출 텍스트로 되돌렸어요.',
+};
+function showLayoutStatus() {
+  const f = state.file;
+  $('#layout-status').textContent = f ? `${LAYOUT_STATUS[f.layoutStatus ?? 'off']}${f.layoutStatus === 'failed' && f.layoutError ? ` (${f.layoutError})` : ''}` : '';
 }
-function syncLayout() {
-  const fresh = layoutState && layoutState.source === reviewText.value;
-  if (layoutState && !fresh) {
-    layoutState = null;
-    $('#layout-status').textContent = '텍스트가 바뀌어 정리된 보기를 닫았어요. 필요하면 다시 정리해 주세요.';
+function renderReadView() {
+  const lay = state.file?.layout;
+  const heads = new Set(lay?.headings ?? []);
+  const items = new Set(lay?.items ?? []);
+  const lines = reviewText.value.split('\n');
+  const nodes = [];
+  let gap = false;
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) { if (nodes.length && !gap) { nodes.push(el('div', { class: 'rv-gap', 'aria-hidden': 'true' })); gap = true; } continue; }
+    gap = false;
+    if (heads.has(t)) nodes.push(el('h3', { class: `rv-heading${headingHasMarker(t) ? '' : ' with-marker'}` }, t));
+    else nodes.push(el('p', { class: items.has(t) ? 'rv-item' : 'rv-text' }, t));
   }
-  $('#layout-view').hidden = !fresh;
-  $('#layout-close').hidden = !fresh;
+  fill($('#read-view'), ...(nodes.length ? nodes : [el('p', { class: 'muted' }, "추출된 텍스트가 없어요. '텍스트 수정하기'를 눌러 직접 입력해 주세요.")]));
 }
-$('#layout-run').addEventListener('click', async () => {
-  const source = reviewText.value;
-  if (!source.trim()) { $('#layout-status').textContent = '정리할 텍스트가 없어요.'; return; }
-  const btn = $('#layout-run');
-  btn.disabled = true;
-  layoutState = null;
-  syncLayout();
-  $('#layout-status').textContent = 'Gemini로 줄을 나누는 중이에요…';
-  let message;
+function setReviewEditing(on) {
+  reviewEditing = on;
+  reviewText.hidden = !on;
+  $('#read-view').hidden = on;
+  $('#review-select').hidden = !on;
+  $('#review-clear').hidden = !on;
+  $('#review-edit').textContent = on ? '수정 완료 · 읽기 화면으로' : '텍스트 수정하기';
+  $('#review-mode-tag').textContent = on ? '수정 중' : '읽기 화면';
+  if (on) reviewText.focus({ preventScroll: true });
+  else renderReadView();
+}
+$('#review-edit').addEventListener('click', () => setReviewEditing(!reviewEditing));
+async function runAutoLayout(file) {
+  const source = file.original;
+  file.layoutStatus = 'pending';
+  if (state.file === file) showLayoutStatus();
+  let blocks = null;
   try {
     const res = await fetch('/api/layout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: source }) });
     const data = await res.json().catch(() => ({}));
-    if (reviewText.value !== source) message = '정리하는 동안 텍스트가 바뀌어 결과를 표시하지 않았어요. 다시 정리해 주세요.';
-    else if (!res.ok) message = data.error ?? '읽기 쉽게 정리하지 못했어요. 원래 텍스트를 그대로 확인해 주세요.';
-    else {
-      const blocks = alignLayout(source, data.blocks); // 서버 검증과 별도로 다시 대조
-      if (!blocks) message = '정리 결과가 원문과 글자 단위로 일치하지 않아 표시하지 않았어요. 원래 텍스트를 그대로 확인해 주세요.';
-      else {
-        layoutState = { source, blocks };
-        renderLayoutView(blocks);
-        message = `원문과 글자가 모두 같은지 확인했어요. 줄바꿈과 제목 표시만 달라요.${data.mode === 'demo' ? ' (데모 모드: AI가 아닌 줄 단위 규칙으로 나눴어요)' : ''}`;
-      }
-    }
-  } catch {
-    message = '서버에 연결하지 못해 정리하지 못했어요. 원래 텍스트를 그대로 확인해 주세요.';
-  } finally {
-    btn.disabled = false;
+    if (res.ok) blocks = alignLayout(source, data.blocks); // 서버 검증과 별도로 다시 대조
+    else file.layoutError = data.error ?? null;
+  } catch { file.layoutError = '서버에 연결하지 못했어요'; }
+  if (state.file !== file) return; // 그사이 다른 파일을 추출함
+  const text = blocks ? layoutText(blocks) : null;
+  const map = text ? positionMap(source, text) : null;
+  if (!map) {
+    file.layoutStatus = 'failed';
+    if (blocks && !file.layoutError) file.layoutError = '정리 결과가 원문과 일치하지 않음';
+  } else if (reviewText.value !== source || file.lastText !== source) {
+    file.layoutStatus = 'skipped'; // 사용자가 이미 고친 텍스트는 덮어쓰지 않는다
+  } else {
+    file.tracker = remapTracker(file.tracker, map, text);
+    file.issues = remapAnchors(file.issues ?? [], map);
+    reviewText.value = text;
+    file.lastText = text;
+    file.formatted = text;
+    file.layout = { headings: blocks.filter((b) => b.kind === 'heading').map((b) => b.text), items: blocks.filter((b) => b.kind === 'item').map((b) => b.text) };
+    file.layoutStatus = 'done';
+    renderOcrCheck();
+    renderExtractIssues();
   }
-  $('#layout-status').textContent = message;
-  syncLayout();
+  showLayoutStatus();
+  updateReviewState();
+}
+$('#ai-layout').addEventListener('change', () => {
+  $('#extract-btn').textContent = $('#ai-layout').checked ? '텍스트 추출 + Gemini 줄바꿈 정리' : '텍스트만 추출 (AI 전송 없음)';
 });
-$('#layout-close').addEventListener('click', () => { layoutState = null; $('#layout-status').textContent = ''; syncLayout(); });
 function reviewBlocking() { return state.file ? blockingIssues(state.file.issues ?? []) : []; }
 // 텍스트가 바뀔 때마다 저신뢰 구간의 위치·상태를 갱신한다
 function trackReviewText() {
@@ -658,6 +695,7 @@ $('#ocr-check-list').addEventListener('click', (e) => {
     updateReviewState();
   } else if (span?.start != null) {
     $('#rtab-text').click();
+    setReviewEditing(true); // 글자 위치는 입력칸에서 보여 준다
     reviewText.focus();
     reviewText.setSelectionRange(span.start, span.end);
   }
@@ -795,7 +833,7 @@ $('#extract-issues-list').addEventListener('input', (e) => {
 $('#review-select').addEventListener('click', () => { reviewText.focus(); reviewText.select(); });
 $('#review-clear').addEventListener('click', () => {
   // 사용자가 고친 내용이 있으면 지우기 전에 묻는다 (처음 추출한 내용은 '원래 내용으로'로 되돌릴 수 있음)
-  const edited = state.file && reviewText.value.trim() && reviewText.value !== state.file.original;
+  const edited = state.file && reviewText.value.trim() && reviewText.value !== state.file.original && reviewText.value !== state.file.formatted;
   if (edited && !confirm('수정한 내용을 모두 지울까요? 처음 추출한 내용은 \'원래 내용으로\'로 되돌릴 수 있어요.')) return;
   reviewText.value = '';
   trackReviewText();
@@ -805,8 +843,12 @@ $('#review-clear').addEventListener('click', () => {
 $('#review-restore').addEventListener('click', () => {
   if (!state.file) return;
   const hasSupplement = (state.file.issues ?? []).some((x) => x.supplement?.trim());
-  if ((reviewText.value.trim() || hasSupplement) && !confirm('수정한 내용과 직접 입력한 내용을 지우고 처음 추출한 내용으로 되돌릴까요?')) return;
+  const untouched = reviewText.value === state.file.original || reviewText.value === state.file.formatted;
+  if ((!untouched || hasSupplement) && !confirm('수정한 내용과 직접 입력한 내용을 지우고 처음 추출한 내용(줄바꿈 정리 전)으로 되돌릴까요?')) return;
   reviewText.value = state.file.original;
+  state.file.layout = null;
+  state.file.layoutStatus = state.file.formatted ? 'restored' : state.file.layoutStatus;
+  showLayoutStatus();
   // 처음 추출한 상태로 되돌리면 불확실한 글자 표시도 처음 상태(모두 확인 필요)로 돌아간다
   state.file.tracker = createTracker(state.file.original, state.file.words);
   state.file.lastText = state.file.original;
@@ -2393,6 +2435,8 @@ async function route() {
     $('#review-back').setAttribute('href', inputRoute());
     reviewSubmit.textContent = state.target.kind === 'add' ? '이 내용으로 계속하기 (기록에 추가) →' : '이 내용으로 계속하기 →';
     $('#review-stale').hidden = state.file.source !== 'ocr' || state.file.imagesVersion === imagesVersion;
+    $('#original-text-body').textContent = state.file.original;
+    showLayoutStatus();
     renderOcrCheck();
     renderExtractIssues();
     updateReviewState();

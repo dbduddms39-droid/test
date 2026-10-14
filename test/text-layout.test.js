@@ -114,3 +114,40 @@ test('/api/layout: 원문과 다르면 422로 표시하지 않음, 입력 오류
     assert.equal((await post({ text: '가' })).status, 429);
   });
 });
+
+// ---- 확인 화면 기본 적용: 줄바꿈 정리 텍스트와 위치 옮기기 ----
+import { layoutText, positionMap } from '../public/text-layout.js';
+import { createTracker, remapTracker, pendingRanges } from '../public/ocr-spans.js';
+import { remapAnchors } from '../public/extract-issues.js';
+
+const OCR = '[가상] 근로계약서 근로조건 1. 임금: 월 3,000,000원(세전) 2. 지급일: 매월 25일\n근무시간은 09:00부터\n18:00까지로 한다.';
+const BLOCKS = [B('heading', '[가상] 근로계약서'), B('heading', '근로조건'), B('item', '1. 임금: 월 3,000,000원(세전)'), B('item', '2. 지급일: 매월 25일'), B('text', '근무시간은 09:00부터 18:00까지로 한다.')];
+
+test('정리 텍스트: 블록마다 한 줄, 제목 앞 빈 줄, 괄호를 새로 넣지 않음, 글자는 원문과 같음', () => {
+  const v = alignLayout(OCR, BLOCKS);
+  const t = layoutText(v);
+  assert.equal(t, '[가상] 근로계약서\n\n근로조건\n1. 임금: 월 3,000,000원(세전)\n2. 지급일: 매월 25일\n근무시간은 09:00부터 18:00까지로 한다.');
+  assert.equal(t.replace(/\s/g, ''), OCR.replace(/\s/g, ''));
+  assert.ok(positionMap(OCR, t));
+});
+
+test('위치 대응: 공백만 다르면 글자 위치를 그대로 옮기고, 글자가 다르면 null', () => {
+  const t = layoutText(alignLayout(OCR, BLOCKS));
+  const map = positionMap(OCR, t);
+  for (const word of ['3,000,000', '25일', '18:00']) assert.equal(t.slice(map(OCR.indexOf(word)), map(OCR.indexOf(word) + word.length - 1) + 1), word);
+  assert.equal(positionMap('월 300만원', '월 3,000,000원'), null);
+  assert.ok(positionMap('월 300만원', '월 300만원\n'));
+});
+
+test('불확실한 글자 구간은 정리 후에도 같은 글자를 가리키고 확인 필요 상태 그대로, 직접 입력 위치도 함께 옮김', () => {
+  const tr = createTracker(OCR, ['3,000,000원', '25일']);
+  const t = layoutText(alignLayout(OCR, BLOCKS));
+  const map = positionMap(OCR, t);
+  const moved = remapTracker(tr, map, t);
+  assert.equal(moved.spans.length, 2);
+  assert.ok(moved.spans.every((s) => s.state === 'pending' && t.slice(s.start, s.end) === s.text));
+  assert.deepEqual(moved.spans.map((s) => s.text), ['3,000,000원', '25일']);
+  assert.equal(pendingRanges(moved, t).length, 2);
+  const at = OCR.indexOf('근무시간');
+  assert.equal(t.slice(remapAnchors([{ id: 'p2', anchor: at }], map)[0].anchor).startsWith('근무시간'), true);
+});

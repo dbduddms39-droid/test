@@ -18,6 +18,12 @@ import { createServer } from '../server.js';
 import { createDemoAnalyzer } from '../src/ai/demo.js';
 import { AIError } from '../src/ai/errors.js';
 import { createRateLimiter } from '../src/rateLimit.js';
+const editReview = async (p) => { // S-03 기본은 읽기 화면: 고치려면 '텍스트 수정하기'
+  if (await p.isVisible('#review-text')) return;
+  if (!(await p.isVisible('#review-edit'))) await p.click('#rtab-text');
+  await p.click('#review-edit');
+};
+
 
 const OUT = 'e2e-artifacts/records';
 const checks = [];
@@ -299,12 +305,12 @@ try {
   await page.goto(`${BASE}/#/new`);
   await waitView('input');
   await page.check('input[name="doc-type"][value="contract"]');
-  await page.click('#tab-upload');
+  await page.click('#tab-upload'); if (await page.isChecked('#ai-layout')) await page.uncheck('#ai-layout'); // 줄바꿈 정리는 e2e-layout에서 검사
   await page.setInputFiles('#file-input', 'test/fixtures/upload/contract-text.pdf');
   await waitView('review');
   const extracted = await page.inputValue('#review-text');
   check('T04 PDF 텍스트 추출 → S03 확인 화면', extracted.includes('2,600,000원'));
-  await page.fill('#review-text', extracted.replace('월 2,600,000원', '월 2,700,000원'));
+  await editReview(page); await page.fill('#review-text', extracted.replace('월 2,600,000원', '월 2,700,000원'));
   const reqText = page.waitForRequest('**/api/analyze').then((r) => JSON.parse(r.postData()).text);
   await page.click('#review-submit');
   const sent = await reqText;

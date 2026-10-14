@@ -52,3 +52,27 @@ export function alignLayout(original, blocks) {
 export function headingHasMarker(text) {
   return /^\s*[[【〔<《〈(（■□◆◇●○▶▷※]/.test(text);
 }
+
+// 검증된 블록 → 확인 화면에 둘 텍스트. 글자는 그대로, 줄바꿈만: 블록마다 한 줄, 제목 앞에는 빈 줄 하나.
+// (제목을 감싸는 [ ]는 넣지 않는다. 화면에서만 표시)
+export function layoutText(blocks) {
+  return blocks.map((b, i) => (b.kind === 'heading' && i > 0 ? `\n${b.text}` : b.text)).join('\n');
+}
+
+// 공백만 다른 두 문자열의 위치 대응표. before의 위치 i → after의 위치. 공백이 아닌 글자가 하나라도 다르면 null.
+// 공백 위치는 다음 글자의 위치로 옮긴다 (끝이면 after.length).
+export function positionMap(before, after) {
+  const map = new Array(before.length + 1);
+  let j = 0;
+  for (let i = 0; i < before.length; i += 1) {
+    if (isWs(before[i])) continue;
+    while (j < after.length && isWs(after[j])) j += 1;
+    if (after[j] !== before[i]) return null;
+    map[i] = j;
+    j += 1;
+  }
+  while (j < after.length) { if (!isWs(after[j])) return null; j += 1; }
+  map[before.length] = after.length;
+  for (let i = before.length - 1; i >= 0; i -= 1) if (map[i] === undefined) map[i] = map[i + 1];
+  return (i) => map[Math.max(0, Math.min(before.length, i))];
+}

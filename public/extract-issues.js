@@ -180,3 +180,8 @@ export function resultNotes(issues) {
   }
   return notes;
 }
+
+// 공백·줄바꿈만 바뀐 경우 직접 입력할 쪽의 위치(anchor)를 글자 단위로 옮긴다
+export function remapAnchors(issues, map) {
+  return issues.map((x) => (x.anchor == null ? x : { ...x, anchor: map(x.anchor) }));
+}

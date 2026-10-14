@@ -11,6 +11,12 @@ import { mkdir } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { FIXTURES } from '../test/v22-fixtures.js';
+const editReview = async (p) => { // S-03 기본은 읽기 화면: 고치려면 '텍스트 수정하기'
+  if (await p.isVisible('#review-text')) return;
+  if (!(await p.isVisible('#review-edit'))) await p.click('#rtab-text');
+  await p.click('#review-edit');
+};
+
 
 const PORT = Number(process.env.E2E_PORT) || 3212;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -100,7 +106,7 @@ try {
   check('짧은 입력도 분석 버튼 활성 + 한계 안내', !(await page.isDisabled('#submit-btn')) && (await page.textContent('#submit-hint')).includes('짧은 내용도'));
   await page.fill('#doc-text', sample.text);
   // 탭을 오가도 입력한 텍스트 유지
-  await page.click('#tab-upload');
+  await page.click('#tab-upload'); if (await page.isChecked('#ai-layout')) await page.uncheck('#ai-layout'); // 줄바꿈 정리는 e2e-layout에서 검사
   await page.click('#tab-paste');
   check('탭을 오가도 직접 입력한 텍스트 유지', (await page.inputValue('#doc-text')) === sample.text);
 
@@ -214,26 +220,26 @@ try {
   // 6-1) 파일 경로: S-02 → S-03 → (실패) S-07 → 문서 내용 확인은 S-03, 수정한 추출 텍스트 유지
   await page.goto(`${BASE}/#/new`);
   await waitView('input');
-  await page.click('#tab-upload');
+  await page.click('#tab-upload'); if (await page.isChecked('#ai-layout')) await page.uncheck('#ai-layout'); // 줄바꿈 정리는 e2e-layout에서 검사
   const reqBeforeFile = requests.length;
   await page.setInputFiles('#file-input', 'test/fixtures/upload/contract-text.pdf');
   await waitView('review');
   const extracted = await page.inputValue('#review-text');
   check('파일 경로: S-02 → S-03 (자동 분석 없음), 직접 입력란은 그대로', extracted.length > 20 && (await page.inputValue('#doc-text')) === EDITED && requests.length === reqBeforeFile);
   const FILE_EDITED = `${extracted}\n수정한 줄 (가상 예시)`;
-  await page.fill('#review-text', FILE_EDITED);
+  await editReview(page); await page.fill('#review-text', FILE_EDITED);
   // 고친 내용이 있으면 '비우기' 전에 확인: 취소하면 그대로, 확인하면 비우고 '원래 내용으로' 복구 가능
   dialogAnswer = 'dismiss';
   const d0 = dialogs.length;
-  await page.click('#review-clear');
+  await editReview(page); await page.click('#review-clear');
   const keptOnCancel = dialogs.length === d0 + 1 && (await page.inputValue('#review-text')) === FILE_EDITED;
   dialogAnswer = 'accept';
-  await page.click('#review-clear');
+  await editReview(page); await page.click('#review-clear');
   const cleared = (await page.inputValue('#review-text')) === '' && (await page.isDisabled('#review-submit'));
   await page.click('#review-restore');
   const restored = (await page.inputValue('#review-text')) === extracted;
   check("S-03 수정 후 '비우기'는 확인을 받음 (취소 시 유지, 확인 시 비움, 원래 내용으로 복구)", keptOnCancel && cleared && restored);
-  await page.fill('#review-text', FILE_EDITED);
+  await editReview(page); await page.fill('#review-text', FILE_EDITED);
   await page.click('#review-back');
   await waitView('input');
   await page.click('#review-resume a');

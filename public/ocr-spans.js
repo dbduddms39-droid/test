@@ -132,3 +132,15 @@ export function summary(tracker) {
     confirmed: all.filter((x) => x.state === 'confirmed').length,
   };
 }
+
+// 공백·줄바꿈만 바뀐 경우(S-03 줄바꿈 정리) 위치를 글자 단위로 옮긴다. map: before 위치 → after 위치 (text-layout.js positionMap).
+// 어느 구간도 해제하거나 대응 불가로 바꾸지 않는다 (확인 필요 상태 그대로).
+export function remapTracker(tracker, map, after) {
+  const spans = tracker.spans.map((s) => {
+    if (s.start == null) return s;
+    const start = map(s.start);
+    const end = s.end > s.start ? map(s.end - 1) + 1 : start;
+    return { ...s, start, end, text: s.state === 'pending' ? after.slice(start, end) : s.text };
+  });
+  return { ...tracker, spans };
+}

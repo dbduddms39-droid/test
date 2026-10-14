@@ -10,6 +10,12 @@ import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
+const editReview = async (p) => { // S-03 기본은 읽기 화면: 고치려면 '텍스트 수정하기'
+  if (await p.isVisible('#review-text')) return;
+  if (!(await p.isVisible('#review-edit'))) await p.click('#rtab-text');
+  await p.click('#review-edit');
+};
+
 
 const PORT = Number(process.env.E2E_PORT) || 3211;
 const REMOTE = process.env.E2E_BASE_URL ? new URL(process.env.E2E_BASE_URL).origin : null;
@@ -113,7 +119,7 @@ try {
     await page.waitForSelector('#view-input:not([hidden])');
     await page.check(`input[name="doc-type"][value="${docType}"]`);
     if (prefill) await page.fill('#doc-text', prefill);
-    await page.click('#tab-upload');
+    await page.click('#tab-upload'); if (await page.isChecked('#ai-layout')) await page.uncheck('#ai-layout'); // 줄바꿈 정리는 e2e-layout에서 검사
     dialogAnswer = 'accept';
   };
   const reviewValue = () => page.inputValue('#review-text');
@@ -146,9 +152,9 @@ try {
     const edited = `${extracted}\n문의: 인사팀 (가상 예시)`;
     // 내용을 비우면 분석 버튼이 비활성 → 요청이 나가지 않아야 한다 (고친 내용이 없으면 확인 없이 비움)
     const before = analyzeCount();
-    await page.click('#review-clear');
+    await editReview(page); await page.click('#review-clear');
     check(`[${label}] S-03: 내용을 비우면 분석 버튼 비활성`, (await page.isDisabled('#review-submit')) && analyzeCount() === before);
-    await page.fill('#review-text', edited);
+    await editReview(page); await page.fill('#review-text', edited);
     const reqPromise = page.waitForRequest((r) => r.url().endsWith('/api/analyze'));
     const resPromise = page.waitForResponse((r) => r.url().endsWith('/api/analyze'), { timeout: 150_000 });
     await page.click('#review-submit');
@@ -229,7 +235,7 @@ try {
     const extracted = await reviewValue();
     const sim = similarity(extracted, TRUTH.multi);
     // 좁은 화면: 원본 탭으로 바꿨다가 돌아와도 텍스트 유지, 원본 미리보기 3쪽
-    await page.fill('#review-text', `${extracted}\n(탭 전환 확인)`);
+    await editReview(page); await page.fill('#review-text', `${extracted}\n(탭 전환 확인)`);
     await page.click('#rtab-source');
     const srcShown = (await page.isVisible('#preview-img')) && !(await page.isVisible('#review-text'));
     const pageLabel = await page.textContent('#preview-page');
@@ -237,7 +243,7 @@ try {
     const pageLabel2 = await page.textContent('#preview-page');
     await page.click('#rtab-text');
     check(`[${label}] S-03 모바일 탭: 원본 미리보기 ↔ 텍스트, 수정 내용 유지`, srcShown && pageLabel === '1 / 3' && pageLabel2 === '2 / 3' && (await reviewValue()) === `${extracted}\n(탭 전환 확인)`, `${pageLabel} → ${pageLabel2}`);
-    await page.fill('#review-text', extracted);
+    await editReview(page); await page.fill('#review-text', extracted);
     accuracy.push({ file: '연속 캡처 3장', sim, secs });
     const pos = (t) => extracted.replace(/\s/g, '').indexOf(t);
     check(`[${label}] 3장 추출 완료`, status.kind === 'done' && status.text.includes('3장 중 3장'), `${status.kind}, ${secs}초`);
@@ -267,7 +273,7 @@ try {
     check(`[${label}] 빈 이미지 확인은 글자를 찾지 못한 장에만 (손상 파일 제외)`, (await blankBtn('failed-2')) === 1 && (await blankBtn('failed-3')) === 0
       && issues[1].title.includes('파일을 열지 못했어요'), issues[1].title);
     // 추출 텍스트 전체에서 한 글자를 고쳐도 실패한 장의 복구로 보지 않는다
-    await page.fill('#review-text', extracted.replace('240', '250'));
+    await editReview(page); await page.fill('#review-text', extracted.replace('240', '250'));
     await page.click('#extract-issues-list [data-issue-id="failed-2"] [data-issue-resolve=manual_input]');
     check(`[${label}] 다른 장의 글자만 고치면 직접 입력 표시 거부`, (await page.textContent('#extract-issues-list [data-issue-id="failed-2"] .issue-error')).includes('이 쪽의 입력 칸') && (await page.isDisabled('#review-submit')));
     await page.fill('#extract-issues-list [data-issue-input="failed-2"]', '   ');
@@ -341,7 +347,7 @@ try {
     check(`[${label}] 빈 페이지 확인은 사용자 선택지로만 (안내에 '찾지 못했다는 것만으로 빈 페이지로 보지 않아요')`,
       (await page.textContent('#extract-issues-list [data-issue-id="failed-2"]')).includes('글자를 찾지 못했다는 것만으로 빈 페이지로 보지 않아요'));
     check(`[${label}] 1쪽·3쪽 텍스트는 추출됨`, extracted.includes('둔산로') && extracted.includes('연차 유급휴가') && !extracted.includes('휴일: 매주'));
-    await page.fill('#review-text', extracted.replace('2,500,000원', '2,600,000원')); // 1쪽만 수정
+    await editReview(page); await page.fill('#review-text', extracted.replace('2,500,000원', '2,600,000원')); // 1쪽만 수정
     await page.click('#extract-issues-list [data-issue-id="failed-2"] [data-issue-resolve=manual_input]');
     check(`[${label}] 1쪽만 수정하면 2쪽 복구로 보지 않음`, (await page.isDisabled('#review-submit')) && analyzeCount() === before
       && (await page.isVisible('#extract-issues-list [data-issue-id="failed-2"] .issue-error')));
@@ -408,7 +414,7 @@ try {
     // '빠진 내용 직접 보완'은 그 쪽의 보완 칸에 넣은 내용만 인정 (다른 이미지 텍스트 수정·공백은 불인정)
     const sid = suspects.find((x) => x.title.includes('2번째 이미지')).id;
     const firstLine = extracted.split('\n')[0];
-    await page.fill('#review-text', extracted.replace(firstLine, `${firstLine} (가상 확인)`)); // 1번째 이미지 텍스트만 수정
+    await editReview(page); await page.fill('#review-text', extracted.replace(firstLine, `${firstLine} (가상 확인)`)); // 1번째 이미지 텍스트만 수정
     await page.click(`#extract-issues-list [data-issue-id="${sid}"] [data-issue-resolve=supplemented]`);
     check(`[${label}] 다른 이미지 텍스트만 고치면 '직접 보완했어요' 거부`, await page.isVisible(`#extract-issues-list [data-issue-id="${sid}"] .issue-error`) && await page.isDisabled('#review-submit'));
     await page.fill(`#extract-issues-list [data-issue-input="${sid}"]`, '  \n ');
@@ -463,7 +469,7 @@ try {
     await page.waitForSelector('#view-review:not([hidden])');
     for (const x of (await issueList()).filter((i) => !i.resolved)) await page.click(`#extract-issues-list [data-issue-id="${x.id}"] [data-issue-resolve=range_checked]`);
     const lostBefore = analyzeCount();
-    await page.fill('#review-text', `[가상] 원본을 보고 처음부터 다시 옮겨 적은 내용입니다. 이 줄은 위치 대응을 잃게 하려고 길게 씁니다.\n${extracted.split('\n').filter((l) => !items.some((i) => l.includes(i.text))).join('\n')}`);
+    await editReview(page); await page.fill('#review-text', `[가상] 원본을 보고 처음부터 다시 옮겨 적은 내용입니다. 이 줄은 위치 대응을 잃게 하려고 길게 씁니다.\n${extracted.split('\n').filter((l) => !items.some((i) => l.includes(i.text))).join('\n')}`);
     const lostMsg = await page.textContent('#review-blocked');
     check(`[${label}] 위치를 잃은 불확실한 글자가 남으면 분석 불가·안내`, (await page.isDisabled('#review-submit')) && lostMsg.includes('위치를 찾을 수 없는 불확실한 글자')
       && (await page.isVisible('#ocr-check-list .ocr-unlocated')), lostMsg.slice(0, 80));
@@ -522,7 +528,7 @@ try {
     await page.waitForSelector('#view-review:not([hidden])');
     check('[separate] 파일 추출 후에도 직접 입력란 내용 유지', s5a.kind !== 'error' && (await page.inputValue('#doc-text')) === KEEP && dialogs === dialogs0);
     const EDITED = `${await reviewValue()}\n수정한 줄 (가상 예시)`;
-    await page.fill('#review-text', EDITED);
+    await editReview(page); await page.fill('#review-text', EDITED);
     await page.click('#review-back');
     await page.waitForSelector('#view-input:not([hidden])');
     dialogAnswer = 'dismiss';
