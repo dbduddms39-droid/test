@@ -33,28 +33,28 @@ try {
     // A) S01 → S02 직접 입력 → 분석 중 → S04 → S05
     await page.goto(BASE);
     await view('landing'); await shot('S01'); await noOverflow('S01');
-    // S01 시작 화면(v3.2): 3개 영역(히어로·이용 방식·마지막 CTA), 첫 화면의 주요 CTA, 자료 하나로 시작, 가상 시연 예시 표시
+    // S01 시작 화면(Stitch 30): 히어로(단일 CTA) · 이용 방법 4단계 · 주요 기능 2개 · 가상 문서 · 안내
     const landing = await page.textContent('#view-landing');
-    check(`[${tag}] S01: 헤드라인·서브 카피·보조 문구`, landing.includes('입사 전, 놓치지 말고') && landing.includes('채용공고를 저장해 두고, 근로계약서까지 안내받은 조건을 이어서 확인해요.') && landing.includes('자료 하나만 있어도 시작할 수 있어요'));
-    check(`[${tag}] S01: 주요 CTA가 첫 화면에 보임`, await page.$eval('#landing-start', (e) => e.getBoundingClientRect().bottom <= window.innerHeight));
-    check(`[${tag}] S01: 영역 3개 (점검 주제 목록·확인 순서·원문 대조 섹션 없음)`, (await page.$$('#view-landing > *')).length === 3 && !(await page.$('.topic-grid, .steps, figure.compare')));
-    const hero = await page.textContent('.sample-card');
-    check(`[${tag}] S01: 대표 비주얼은 저장된 채용 기록(가상 시연 예시), 처우 안내를 출발점으로 보이지 않음`, hero.includes('주식회사 파란스텝') && hero.includes('채용공고 저장됨') && hero.includes('원본 PDF 다시 보기') && hero.includes('새 안내 추가하기') && hero.includes('가상 시연 예시') && hero.includes('실제 저장된 기록이 아니에요') && !/합격 안내|처우/.test(hero));
-    check(`[${tag}] S01: 비주얼 안에는 누를 수 있는 요소 없음 (실제 CTA만)`, (await page.$$('.sample-card a, .sample-card button')).length === 0);
+    check(`[${tag}] S01: 헤드라인·서브 카피(문서 하나로 시작, 나중에 추가해 비교)·보조 문구`, landing.includes('입사 전, 놓치지 말고') && landing.includes('받은 문서 하나부터 등록하세요') && landing.includes('나중에 받은 문서를 더하면') && landing.includes('문서 하나만 있어도 시작할 수 있어요'));
+    check(`[${tag}] S01: 주요 CTA '첫 문서 등록하기'가 첫 화면에 보임`, (await page.textContent('#landing-start')).includes('첫 문서 등록하기') && await page.$eval('#landing-start', (e) => e.getBoundingClientRect().bottom <= window.innerHeight));
+    check(`[${tag}] S01: CTA는 히어로 하나뿐 (내 기록 보기·하단 CTA·기능 카드 버튼 없음), 내 기록은 헤더에만`, (await page.$$('#view-landing a[href="#/new"]')).length === 1 && (await page.$$('#view-landing a[href="#/records"]')).length === 0 && !(await page.$('#landing-records, #landing-start-bottom, .landing-cta')) && (await page.$$('#landing-workflow a, #landing-workflow button')).length === 0 && await page.isVisible('#nav-records'));
+    const hero = await page.textContent('.hero-visual');
+    check(`[${tag}] S01: 대표 비주얼 = 문서 카드 3장 + 조건 차이 확인 (가상 예시 표시, 헤드라인 반복 없음)`, ['채용공고', '처우 안내', '근로계약서', '조건 차이 확인', '가상 예시'].every((x) => hero.includes(x)) && !hero.includes('놓치지 말고'));
+    check(`[${tag}] S01: 비주얼 안에는 누를 수 있는 요소 없음 (실제 CTA만)`, (await page.$$('.hero-visual a, .hero-visual button')).length === 0);
+    const steps = await page.$$eval('.step-list > li h3', (els) => els.map((e) => e.textContent));
+    check(`[${tag}] S01: 이용 방법 4단계`, steps.join('|') === '문서 등록하기|새로운 문서 추가하기|근로조건 비교하기|원문 확인하고 질문 준비하기', steps.join('|'));
     const flow = await page.textContent('#landing-workflow');
-    check(`[${tag}] S01: 이용 방법 두 기능 구분 (문서 2개 비교 / 근로계약서 단독 확인)`, flow.includes('문서 2개 비교') && flow.includes('두 문서를 선택해 근로조건의 차이를 확인해요.') && flow.includes('근로계약서 단독 확인') && flow.includes('근로계약서 하나만 등록해도'));
-    check(`[${tag}] S01: 근로계약서 확인 기준과 법률 판단 안 함 안내`, flow.includes('주요 근로조건의 기재 여부') && flow.includes('원문에 직접 적힌 값과 계산으로 확인한 값의 구분') && flow.includes('법률 위반 여부나 계약의 적법성을 판정하지 않아요'));
-    check(`[${tag}] S01: 처우 안내는 세 문서 중 하나(필수 단계 아님), 순서·필수 표현 없음`, flow.includes('처우·근로조건 안내') && flow.includes('등록 순서는 정해져 있지 않아요') && !/최종합격 안내|필수|반드시|순서대로/.test(landing) && (await page.$$('#landing-workflow .use-cards > li')).length === 2);
-    check(`[${tag}] S01: 마지막 CTA 보조 문구`, landing.includes('채용공고, 근로계약서 또는 처우 안내 중 하나만 등록해도 괜찮아요.') && !/변경됐|변경되었|위반입니다/.test(landing));
-    for (const [sel, hash, v] of [['#landing-records', '#/records', 'records'], ['#landing-start-bottom', '#/new', 'input']]) {
-      await page.goto(BASE); await view('landing');
-      await page.click(sel); await view(v);
-      check(`[${tag}] S01: ${sel} → ${hash}`, page.url().endsWith(hash));
-    }
+    check(`[${tag}] S01: 주요 기능 두 가지 구분 (문서 2개 비교 / 근로계약서 단독 확인, 10개 조건)`, flow.includes('문서 2개 비교') && flow.includes('근로계약서 단독 확인') && (await page.$$('#landing-workflow .use-cards > li')).length === 2 && (await page.$$('#landing-criteria li')).length === 10);
+    check(`[${tag}] S01: 처우 안내는 세 문서 중 하나(필수 단계 아님), 순서·필수 표현 없음`, landing.includes('처우·근로조건 안내') && landing.includes('등록 순서는 정해져 있지 않아요') && !/최종합격 안내|필수|반드시|순서대로/.test(landing));
+    check(`[${tag}] S01: 정확한 안내 (Gemini 사용·브라우저 저장·법률 판단 안 함, '100% 로컬' 없음)`, landing.includes('Google Gemini') && landing.includes('브라우저에만 저장') && landing.includes('법률 위반 여부') && !/100% ?로컬|변경됐|변경되었|위반입니다/.test(landing));
     await page.goto(BASE); await view('landing');
+    await page.click('#nav-records'); await view('records');
+    check(`[${tag}] S01: 헤더 '내 기록' → #/records`, page.url().endsWith('#/records'));
+    await page.goto(BASE); await view('landing');
+    await page.waitForSelector('#landing-how:not([hidden])', { timeout: 5000 }).catch(() => {});
     await page.click('#landing-how');
     await page.waitForTimeout(600);
-    check(`[${tag}] S01: '어떻게 이용하나요?' → 이용 방식 영역으로 이동`, await page.$eval('#landing-workflow', (e) => e.getBoundingClientRect().top < window.innerHeight));
+    check(`[${tag}] S01: '체험용 가상문서 받기 ↓' → 가상 문서 영역으로 이동`, await page.$eval('#sample-download', (e) => e.getBoundingClientRect().top < window.innerHeight));
     await page.click('#landing-start'); await view('input');
     await page.check('input[name="doc-type"][value="job_posting"]');
     // S02 안내 문구가 실제 문서 유형 선택지와 일치 (오퍼 등 예전 명칭 없음)
@@ -71,19 +71,18 @@ try {
     await page.waitForTimeout(300); await shot('S04'); await noOverflow('S04'); await codesHidden('S04');
     const rows = await page.$$eval('#condition-list .ccard', (e) => e.length);
     check(`[${tag}] S04: 핵심 조건 요약 카드`, rows >= 4, `${rows}개`);
-    check(`[${tag}] S04: 데모 결과 안내·저장 표시`, (await page.textContent('#analysis-source')).includes('데모') && (await page.textContent('#save-status')).includes('저장했어요'));
+    check(`[${tag}] S04: 데모 결과 안내·저장 표시`, (await page.textContent('#analysis-source')).includes('데모') && /저장됐어요|추가됐어요/.test(await page.textContent('#save-status')));
     await page.click('#condition-list .ccard a.btn-text'); await view('item'); await page.waitForTimeout(300);
     await shot('S05'); await noOverflow('S05'); await codesHidden('S05');
-    const chips = await page.$$eval('#item .evidence-chip', (e) => e.map((x) => x.textContent));
-    check(`[${tag}] S05: 원문 인용 칩`, chips.length > 0, chips[0]?.slice(0, 40));
-    if (chips.length) {
-      await page.click('#item .evidence-chip');
-      check(`[${tag}] S05: 인용을 누르면 원문 줄 강조`, (await page.$$('#item .doc-line.is-focused')).length === 1);
-    }
+    // 상세: 카드에는 근거 건수만, 인용 전문은 아래 '원문 근거'에서 한 번만 (강조는 글자에만)
+    const counts = await page.$$eval('#item .criterion .card-detail p', (e) => e.map((x) => x.textContent).filter((t) => t.includes('관련 원문 근거')));
+    const marked = await page.$$eval('#item .paper-sheet > .doc-lines .doc-line.is-marked mark', (e) => e.length);
+    check(`[${tag}] S05: 카드에는 근거 건수, 원문 근거는 아래에 한 번만 (강조 표시)`, counts.length > 0 && marked > 0 && (await page.$$('#item .evidence-chip')).length === 0, `${counts[0] ?? ''} · 강조 ${marked}곳`);
     check(`[${tag}] S05: 답변 메모는 선택 (추가 버튼)`, await page.isVisible('#memo-add'));
 
     // S07 새 안내 추가 → 같은 기록
-    await page.click('#item-back'); await view('record');
+    check(`[${tag}] S05: 위쪽 '돌아가기' 중복 없음, 아래 돌아가기만`, !(await page.isVisible('#item-back')) && (await page.$$('#item .detail-actions a')).length === 1);
+    await page.click('#item .detail-actions a'); await view('record');
     const recUrl = page.url();
     await page.click('#add-doc:visible, #add-second:visible'); await view('input');
     await page.check('input[name="doc-type"][value="offer"]');
@@ -107,7 +106,7 @@ try {
     await page.unroute('**/api/analyze');
     await page.click('#doc-list button[data-reanalyze]');
     await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'));
-    check(`[${tag}] 분석 실패 → 같은 텍스트로 다시 분석 → 기록`, (await page.$$('#condition-list .ccard')).length > 0 && (await page.$$('#doc-list > li')).length === 1);
+    check(`[${tag}] 분석 실패 → 같은 텍스트로 다시 분석 → 기록`, (await page.$$('#condition-list .ccard, #contract-glance-list > li')).length > 0 && (await page.$$('#doc-list > li')).length === 1);
 
     // B) 사진 업로드 → S03 → 분석
     await page.goto(`${BASE}/#/new`); await view('input');

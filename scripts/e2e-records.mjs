@@ -109,9 +109,9 @@ try {
   // ---- S01 ----
   await page.goto(`${BASE}/#/`);
   await waitView('landing');
-  check('S01: 핵심 행동은 \'입사조건 확인하기\'', (await text('#landing-start')).includes('입사조건 확인하기'));
+  check('S01: 핵심 행동은 \'첫 문서 등록하기\'', (await text('#landing-start')).includes('첫 문서 등록하기'));
   // 두 문서 비교는 기능 안내로만 (별도 비교 모드·두 문서 필수 없음, 문서 하나로 시작 가능)
-  check('S01: 두 문서를 필수로 요구하지 않음', !(await page.isVisible('#landing-compare')) && (await page.textContent('#view-landing')).includes('하나만 등록해도'));
+  check('S01: 두 문서를 필수로 요구하지 않음', !(await page.isVisible('#landing-compare')) && (await page.textContent('#view-landing')).includes('문서 하나만 있어도 시작할 수 있어요'));
   await page.click('#landing-start');
   await waitView('input');
   check('S02: 문서 유형 3개(채용공고·오퍼·계약서) 선택지', (await page.$$('input[name="doc-type"]')).length === 3);
@@ -122,7 +122,7 @@ try {
   await register('job_posting', POSTING_3400);
   const rec1 = await recordId();
   check('T01 채용공고 하나로 결과·기록 도달', Boolean(rec1));
-  check('T01 저장을 확인한 뒤에만 \'저장했어요\' 표시', (await text('#save-status')).includes('저장했어요'));
+  check('T01 저장을 확인한 뒤에만 \'저장했어요\' 표시', /저장됐어요|추가됐어요/.test(await text('#save-status')));
   check('T01 회사명이 분명하면 기록 이름으로 제안', (await text('#record-title')) === MARK);
   const order = await page.evaluate(() => ['now-title', 'conditions-title', 'details-title', 'actions-title'].map((id) => document.getElementById(id).getBoundingClientRect().top));
   check('결과 화면 순서: 입사 전 확인할 내용 → 핵심 조건 요약 → 상세 확인(접힘) → 필요할 때 하기', order.every((v, i) => i === 0 || v > order[i - 1]), order.map(Math.round).join(' < '));
@@ -139,7 +139,7 @@ try {
   check('S07 → 같은 기록으로 돌아옴', (await recordId()) === rec1);
   check('T05 자료 2건이 한 기록에', (await page.$$('#doc-list > li')).length === 2);
   const wageRow = page.locator('#condition-list [data-item="01"]');
-  check('T05 급여: 서로 다른 안내가 있어요', (await wageRow.locator('.badge-relation').textContent()) === '서로 다른 안내가 있어요');
+  check('T05 급여: 서로 다른 조건', (await wageRow.locator('.badge-relation').textContent()) === '서로 다른 조건' && (await wageRow.getAttribute('data-status')) === 'different');
   const nowText = await text('#condition-list [data-group="different"]');
   check('T05 서로 다른 조건에 두 출처·원문을 함께', nowText.includes('3,400만원') && nowText.includes('3,600만원') && nowText.includes('채용공고') && nowText.includes('처우·근로조건 안내'));
   check('T05 \'변경됨\'으로 단정하지 않음', !/변경됐|변경되었|조건이 변경/.test(await text('#view-record')));
@@ -180,7 +180,7 @@ try {
   await page.click('#add-doc:visible, #add-second:visible');
   await register('offer', OFFER_3600_SHORT, { add: true });
   const wage2 = await page.locator('#condition-list [data-item="01"] .badge-relation').textContent();
-  check('T06 공고에 없던 급여가 오퍼에 처음: \'이번 안내에 새롭게 적혔어요\'', wage2 === '이번 안내에 새롭게 적혔어요', wage2);
+  check('T06 공고에 없던 급여가 오퍼에 처음: \'한쪽에만 기재\' (변경·삭제로 보지 않음)', wage2 === '한쪽에만 기재' && (await text('#condition-list [data-item="01"] .cmp-panel.is-a')).includes('원문에 언급 없음'), wage2);
   check('T06 급여를 서로 다른 안내·변경으로 표시하지 않음', !(await text('#summary-groups')).includes('서로 다르게 안내된 조건'));
   const list2 = await idbRecords();
   check('T11 두 기록의 자료가 섞이지 않음', list2.find((r) => r.id === rec1).documents.length === 2 && list2.find((r) => r.id === rec2).documents.length === 2
@@ -193,14 +193,14 @@ try {
   await page.click('#add-doc:visible, #add-second:visible');
   await register('offer', OFFER_MONTHLY, { add: true });
   const wage3 = await page.locator('#condition-list [data-item="01"] .badge-relation').textContent();
-  check('T07 연 3,600만원 ↔ 월 300: 같다고 추측하지 않고 \'서로 비교하기 어려워요\'', wage3 === '서로 비교하기 어려워요', wage3);
+  check('T07 연 3,600만원 ↔ 월 300: 같다고 추측하지 않고 \'추가 대조 필요\' (단위 환산·합산 없음)', wage3 === '추가 대조 필요' && !(await page.$('#cmp-group-same [data-item="01"]')), wage3);
 
   // ---- T03 근로계약서 하나 ----
   await page.goto(`${BASE}/#/new`);
   await register('contract', CONTRACT);
   const rec4 = await recordId();
   const condText = await text('#all-condition-list');
-  check('T03 계약서 하나로 결과·저장', Boolean(rec4) && (await text('#save-status')).includes('저장했어요'));
+  check('T03 계약서 하나로 결과·저장', Boolean(rec4) && /저장됐어요|추가됐어요/.test(await text('#save-status')));
   check('T03 계약서는 기재 상태 라벨(기재됨 등)로', condText.includes('기재됨'));
   check('T15 수습 없음이면 수습 중 급여 항목·질문 없음', !(await page.$('#condition-list [data-item="08"]')) && !(await text('#view-record')).includes('수습 중 급여에 관한'));
   check('계약서 결과에 법 위반·효력 판정 표현 없음', !/(위반입니다|불법|합법|무효|위험도)/.test(await text('#view-record')));
@@ -242,13 +242,13 @@ try {
   await page.click('#submit-btn');
   await waitView('record');
   check('T12 저장 실패: \'저장되지 않았어요\'와 다시 저장 버튼', (await text('#save-status')).includes('저장되지 않았어요') && await page.isVisible('#save-retry'));
-  check('T12 저장 실패를 성공으로 표시하지 않음', !(await text('#save-status')).includes('저장했어요') && (await page.evaluate(() => location.hash)) === '#/unsaved');
+  check('T12 저장 실패를 성공으로 표시하지 않음', !/저장했어요|저장됐어요|추가됐어요/.test(await text('#save-status')) && (await page.evaluate(() => location.hash)) === '#/unsaved');
   check('T12 저장 안 된 기록은 목록·저장소에 없음', (await idbRecords()).length === 5);
   await page.evaluate(() => sessionStorage.removeItem('e2e-fail-put'));
   await page.click('#save-retry');
   await page.waitForFunction(() => /#\/records\/rec_/.test(location.hash));
   await waitView('record');
-  check('T12 같은 세션에서 다시 저장하면 정상 저장', (await text('#save-status')).includes('저장했어요') && (await idbRecords()).length === 6);
+  check('T12 같은 세션에서 다시 저장하면 정상 저장', /저장됐어요|추가됐어요/.test(await text('#save-status')) && (await idbRecords()).length === 6);
   // 기존 기록에 추가하다 저장 실패 → 이전 기록 훼손 없음
   await page.evaluate(() => sessionStorage.setItem('e2e-fail-put', '1'));
   await page.goto(`${BASE}/#/records/${rec4}/add`);

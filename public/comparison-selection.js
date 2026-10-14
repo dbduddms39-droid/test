@@ -11,7 +11,7 @@ export function comparisonPair(documents, preferred = []) {
 
 export function comparisonView(record, preferred = []) {
   const available = (record?.documents ?? []).filter((d) => d.analysis);
-  if (available.length < 2) return record;
+  if (available.length <= 2) return record; // 두 문서 이하면 고를 것이 없다: 기록을 그대로 (기존 흐름)
   const pair = comparisonPair(record.documents, preferred);
   // Preserve original registered order, even when the dropdowns show the pair in reverse order.
   const chosen = new Set(pair);

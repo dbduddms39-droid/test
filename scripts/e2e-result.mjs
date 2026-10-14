@@ -84,10 +84,10 @@ try {
   for (const t of visible5) {
     await d.goto(`${BASE}/#/records/${rec5}/item/${t.id}`);
     await d.waitForSelector('#view-item:not([hidden])');
-    const cards = await d.$$eval('#item .criterion', (els) => els.map((e) => ({ id: e.dataset.criterion, status: e.querySelector('.badge').textContent, chips: [...e.querySelectorAll('.evidence-chip')].map((c) => ({ line: Number(c.dataset.line), text: c.querySelector('.evidence-text').textContent })) })));
+    const cards = await d.$$eval('#item .criterion', (els) => els.map((e) => ({ id: e.dataset.criterion, status: e.querySelector('.badge').textContent, count: Number([...e.querySelectorAll('.card-detail p')].map((p) => p.textContent.match(/관련 원문 근거 (\d+)곳/)?.[1]).find(Boolean) ?? 0) })));
     for (const c of t.criteria) {
       const card = cards.find((x) => x.id === c.id);
-      if (!card || card.status !== c.statusLabel || !sameSet(card.chips.map((x) => `${x.line}:${x.text}`), c.evidence.map((e) => `${e.line}:${e.text}`))) chipProblems.push(c.id);
+      if (!card || card.status !== c.statusLabel || card.count !== c.evidence.length) chipProblems.push(c.id);
     }
     const ev = evidenceOf(t);
     const shown = await d.$$eval('#item .doc-block .paper-sheet > .doc-lines .doc-line', (els) => els.map((e) => ({ line: Number(e.dataset.line), marks: [...e.querySelectorAll('mark')].map((m) => m.textContent) })));
@@ -95,13 +95,8 @@ try {
     const marksOk = ev.every((e) => shown.find((x) => x.line === e.line)?.marks.some((mk) => mk.includes(e.text)))
       && shown.every((x) => x.marks.every((mk) => ev.some((e) => e.line === x.line && mk.includes(e.text)) && r5.lines[x.line - 1].text.includes(mk)));
     if (!linesOk || !marksOk) chipProblems.push(`${t.id} 원문 근거 줄`);
-    const chips = await d.$$('#item .doc-block > .card-list .evidence-chip'); // 접힌 추가 세부 기준은 제외
-    for (const chip of chips.slice(0, 3)) {
-      await chip.click();
-      const { line, quote } = await chip.evaluate((c) => ({ line: c.dataset.line, quote: c.querySelector('.evidence-text').textContent }));
-      const focused = await d.$eval('#item .doc-line.is-focused', (e) => ({ line: e.dataset.line, text: e.textContent })).catch(() => null);
-      if (!focused || focused.line !== line || !focused.text.includes(quote)) chipProblems.push(`${t.id} 칩 이동`);
-    }
+    // 카드에는 근거 건수만 (인용 전문은 아래 '원문 근거'에서 한 번만), 카드 안 인용 칩 없음
+    if ((await d.$$('#item .evidence-chip')).length) chipProblems.push(`${t.id} 인용 반복`);
     const text = await d.$eval('main', (m) => m.innerText);
     if (INTERNAL_CODE.test(text)) chipProblems.push(`${t.id} 내부 코드 노출: ${text.match(INTERNAL_CODE)[0]}`);
     const hrefs = await d.$$eval('#item .source-accordion a', (as) => as.map((a) => ({ href: a.getAttribute('href'), target: a.target, rel: a.rel })));
@@ -109,7 +104,7 @@ try {
     const notes = await d.$$eval('#item .doc-block .note', (els) => els.length);
     if (notes !== ['neutral', 'applicability', 'probationHold'].filter((k) => t.notes[k]).length) chipProblems.push(`${t.id} 안내`);
   }
-  check('상세: 세부 상태·원문 근거 칩·근거 줄이 API와 같고, 칩은 원문의 같은 줄·구절로 이동', chipProblems.length === 0, chipProblems.slice(0, 6).join(', '));
+  check('상세: 세부 상태·근거 건수·원문 근거 줄과 강조가 API와 같고, 인용은 한 번만', chipProblems.length === 0, chipProblems.slice(0, 6).join(', '));
   check('상세: 내부 코드(세부기준 ID·C/D·출처 코드) 비노출, 공식 링크 정확, 안내 영역 분리', !chipProblems.some((p) => /노출|링크|안내/.test(p)));
   await d.goto(`${BASE}/#/records/${rec5}/item/03`);
   await d.waitForSelector('#view-item:not([hidden])');

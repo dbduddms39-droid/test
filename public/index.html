@@ -10,96 +10,115 @@
 <body>
   <header class="topbar">
     <div class="topbar-inner">
-      <a href="#/" class="brand">일단확인</a>
+      <a href="#/" class="brand" aria-label="일단확인 처음으로">
+        <!-- 로고: 접힌 모서리가 있는 노란 문서 + 세 줄 (제출한 로고 이미지 기준) -->
+        <svg class="brand-mark" viewBox="0 0 40 40" width="28" height="28" aria-hidden="true" focusable="false">
+          <path d="M8 3h18l11 11v17a6 6 0 0 1-6 6H8a6 6 0 0 1-6-6V9a6 6 0 0 1 6-6z" fill="#FEDF7F"/>
+          <path d="M26 3l11 11h-6a5 5 0 0 1-5-5z" fill="#FFF1C2"/>
+          <rect x="9" y="12" width="15" height="4" rx="2" fill="#1C1F24"/>
+          <rect x="9" y="19" width="10" height="4" rx="2" fill="#1C1F24"/>
+          <rect x="9" y="26" width="19" height="4" rx="2" fill="#1C1F24"/>
+        </svg>
+        <span class="brand-name">일단확인</span>
+      </a>
       <span id="mode-badge" class="mode-badge" hidden>데모 모드 · AI 아님</span>
-      <nav class="topnav" aria-label="주요 메뉴"><a href="#/records" id="nav-records">내 기록</a></nav>
+      <nav class="topnav" aria-label="주요 메뉴"><a href="#/records" id="nav-records" class="nav-records">내 기록</a></nav>
     </div>
   </header>
 
   <main id="main">
     <!-- S-01 시작 -->
     <section id="view-landing" class="view view-landing" hidden>
-      <!-- 1. 히어로 -->
+      <!-- 1. 히어로 (Stitch 30): 핵심 행동은 '첫 문서 등록하기' 하나 -->
       <div class="hero">
         <div class="hero-copy">
-          <p class="eyebrow"><span class="mono-meta">§ 입사 전 확인</span><span>근로조건 비교 · 계약서 단독 확인</span></p>
-          <h1 class="hero-title">입사 전, 놓치지 말고<br><mark class="hero-mark">확인</mark>.</h1>
-          <p class="lead">채용공고·처우 안내·근로계약서 중 원하는 두 문서의 <strong>근로조건 차이와 원문 근거</strong>를 비교해요.</p>
-          <p class="hero-support">근로계약서 한 장만 있어도 <strong>10개 주요 조건의 기재 상태와 구체성</strong>을 확인할 수 있어요. 문서 등록 순서는 자유로워요.</p>
+          <p class="eyebrow">채용공고 · 처우 안내 · 근로계약서</p>
+          <h1 class="hero-title">입사 전, 놓치지 말고 <mark class="hero-mark">확인</mark>.</h1>
+          <p class="lead">받은 문서 하나부터 등록하세요. 나중에 받은 문서를 더하면 <strong>근로조건 차이와 원문 근거</strong>를 나란히 비교해요.</p>
           <div class="hero-actions">
-            <a href="#/new" class="btn-primary btn-auto" id="landing-start">입사조건 확인하기 →</a>
-            <a href="#/records" class="btn-editorial btn-auto" id="landing-records">내 기록 보기</a>
+            <a href="#/new" class="btn-primary btn-auto" id="landing-start">첫 문서 등록하기 →</a>
           </div>
-          <p class="hero-sub">자료 하나만 있어도 시작할 수 있어요. <button type="button" class="btn-text" id="landing-how">어떻게 이용하나요?</button></p>
+          <p class="hero-sub">문서 하나만 있어도 시작할 수 있어요. <button type="button" class="btn-text" id="landing-how" hidden>체험용 가상문서 받기 ↓</button></p>
         </div>
-        <!-- 설명용 비주얼 (가상 예시): 저장된 채용 기록 하나. 안의 항목은 누를 수 없다 -->
-        <figure class="sample-card" aria-label="문서 두 건에 적힌 담당업무 차이 예시">
-          <figcaption class="sample-card-head"><span>주식회사 파란스텝 · 콘텐츠 마케터</span><span class="mono-meta">가상 시연 예시</span></figcaption>
-          <p class="sample-status"><span class="mono-meta">채용공고 + 처우 안내</span><span class="sample-file">문서 2건 비교</span></p>
-          <div class="sample-diff">
-            <p class="sample-diff-title"><span>담당업무</span><span class="sample-diff-label">서로 다른 안내가 있어요</span></p>
-            <div class="sample-diff-docs">
-              <div class="sample-diff-doc">
-                <p class="sample-diff-doc-label">채용공고</p>
-                <p>브랜드 공식 SNS 채널 운영 및 <mark>콘텐츠 기획</mark></p>
-              </div>
-              <div class="sample-diff-doc">
-                <p class="sample-diff-doc-label">처우·근로조건 안내</p>
-                <p>브랜드 공식 SNS 채널 운영</p>
-              </div>
+        <!-- 설명용 비주얼 (가상 예시, 누를 수 없음): 문서 세 장과 조건 차이 확인 카드 -->
+        <figure class="hero-visual" aria-label="문서 세 장과 조건 차이 확인 예시 (가상)">
+          <span class="hero-visual-tag">가상 예시</span>
+          <div class="doc-stack" aria-hidden="true">
+            <div class="doc-card doc-card-1"><p class="doc-card-type">채용공고</p><span class="ph-line w80"></span><span class="ph-line w60"></span><span class="ph-line w70"></span></div>
+            <div class="doc-card doc-card-2"><p class="doc-card-type">처우 안내</p><span class="ph-line w70"></span><span class="ph-line w85"></span><span class="ph-line w50"></span></div>
+            <div class="doc-card doc-card-3"><p class="doc-card-type">근로계약서</p><span class="ph-line w85"></span><span class="ph-line w60"></span><span class="ph-line w75"></span></div>
+          </div>
+          <div class="diff-card">
+            <p class="diff-card-head"><span>조건 차이 확인</span><span class="badge badge-relation status-different">서로 다른 조건</span></p>
+            <p class="diff-card-topic">담당업무</p>
+            <div class="diff-card-sides">
+              <div><p class="diff-card-label">문서 A · 채용공고</p><p>SNS 채널 운영 및 <mark>콘텐츠 기획</mark></p></div>
+              <div><p class="diff-card-label">문서 B · 처우 안내</p><p>SNS 채널 운영</p></div>
             </div>
-            <p class="sample-diff-caption">처우 안내에는 ‘콘텐츠 기획’이 명시되어 있지 않아요.</p>
+            <p class="diff-card-q">질문 예시: “담당업무에 콘텐츠 기획도 포함되나요?”</p>
           </div>
-          <div class="margin-note sample-note">
-            <p class="mono-meta">회사에 확인할 질문 예시</p>
-            <p>“실제 담당업무에 콘텐츠 기획도 포함되나요?”</p>
-            <p class="muted small">가상 사례예요. 문서 내용의 차이를 보여주며 실제 업무 변경 여부는 판단하지 않아요.</p>
-          </div>
+          <figcaption class="hero-visual-caption">가상 회사·가상 조건으로 만든 화면 예시예요.</figcaption>
         </figure>
       </div>
 
-      <!-- 2. 이용 방법: 문서 2개 비교 / 근로계약서 단독 확인 (순서·조합을 강제하지 않음) + 확인 기준 -->
+      <!-- 2. 이용 방법 -->
+      <section class="band landing-steps" aria-labelledby="steps-title">
+        <p class="section-kicker">이용 방법</p>
+        <h2 id="steps-title">문서 하나로 시작해서, 받을 때마다 더해요.</h2>
+        <p class="muted section-intro">채용공고·처우·근로조건 안내·근로계약서 중 가진 문서부터 등록하세요. 등록 순서는 정해져 있지 않아요.</p>
+        <ol class="step-list">
+          <li class="step"><span class="step-no">01</span><h3>문서 등록하기</h3><p>사진·PDF를 올리거나 텍스트를 붙여넣어요. 추출한 글자는 분석 전에 직접 확인하고 고칠 수 있어요.</p></li>
+          <li class="step"><span class="step-no">02</span><h3>새로운 문서 추가하기</h3><p>나중에 받은 안내를 같은 기록에 더해요. 등록일과 PDF 원본이 이 브라우저에 함께 보관돼요.</p></li>
+          <li class="step"><span class="step-no">03</span><h3>근로조건 비교하기</h3><p>두 문서의 조건을 서로 다른 조건·같은 조건·한쪽에만 기재·추가 대조 필요·분석 확인 불가로 나눠 보여줘요.</p></li>
+          <li class="step"><span class="step-no">04</span><h3>원문 확인하고 질문 준비하기</h3><p>조건마다 원문 근거를 확인하고, 회사에 물어볼 질문을 고쳐 쓰고 복사해요.</p></li>
+        </ol>
+      </section>
+
+      <!-- 3. 주요 기능: 비교 / 근로계약서 단독 확인 -->
       <section class="band landing-flow" id="landing-workflow" aria-labelledby="flow-title" tabindex="-1">
-        <div class="band-head">
-          <div>
-            <p class="mono-meta">§ 이용 방법</p>
-            <h2 id="flow-title">두 가지 방법으로 확인해요.</h2>
-            <p class="muted landing-flow-intro">채용공고·처우 안내·근로계약서 중 가진 자료부터 등록하세요. 등록 순서는 상관없어요.</p>
-          </div>
-        </div>
-        <ul class="flow-docs use-cards">
-          <li class="flow-doc use-card">
-            <p class="flow-doc-type"><span class="mono-index">A</span> 문서 2개 비교</p>
-            <h3 class="use-card-title">문서 사이 조건을 비교해요.</h3>
-            <p class="use-card-body">등록한 두 문서에 적힌 근로조건을 나란히 확인해요. 다르게 안내된 부분과 원문 근거, 회사에 확인할 질문을 보여줘요.</p>
+        <p class="section-kicker">주요 기능</p>
+        <h2 id="flow-title">두 가지 방법으로 확인해요.</h2>
+        <ul class="use-cards">
+          <li class="use-card">
+            <p class="use-card-kicker">문서 2개 비교</p>
+            <h3 class="use-card-title">문서 사이 조건을 나란히 비교해요.</h3>
+            <p class="use-card-body">등록한 두 문서에 적힌 근로조건을 A·B로 나란히 보여줘요. 다르게 적힌 조건, 한쪽에만 적힌 조건, 원문 근거와 회사에 확인할 질문을 함께 보여줘요.</p>
+            <p class="use-card-note">한쪽에만 적힌 조건은 없어졌거나 바뀐 것으로 보지 않아요.</p>
           </li>
-          <li class="flow-doc use-card">
-            <p class="flow-doc-type"><span class="mono-index">B</span> 근로계약서 단독 확인</p>
+          <li class="use-card">
+            <p class="use-card-kicker">근로계약서 단독 확인</p>
             <h3 class="use-card-title">근로계약서 한 장도 확인해요.</h3>
-            <p class="use-card-body">주요 근로조건 10가지를 점검하고, 항목별 기재 상태와 원문 근거를 보여줘요.</p>
+            <p class="use-card-body">주요 근로조건 10가지의 기재 여부와 구체성을 점검하고, 원문 기재값과 계산값을 구분해 보여줘요.</p>
             <div class="use-card-criteria" id="landing-criteria">
-              <p class="mono-meta">확인하는 기준</p>
-              <p>기재 여부 · 내용의 구체성 · 원문 기재값과 계산값의 구분</p>
+              <p class="use-card-criteria-title">확인하는 10가지 조건</p>
+              <ul class="criteria-chips">
+                <li>임금</li><li>근무시간</li><li>근무장소</li><li>담당업무</li><li>고용형태</li><li>계약기간</li><li>수습기간</li><li>수습 중 임금</li><li>휴일</li><li>연차 유급휴가</li>
+              </ul>
             </div>
           </li>
         </ul>
       </section>
 
-      <!-- 3. 마지막 CTA + 체험용 가상 문서 다운로드 (파일이 있을 때만 표시) -->
-      <section class="landing-cta" aria-labelledby="cta-title">
-        <h2 id="cta-title">지금 받은 문서부터 확인해 보세요.</h2>
-        <p class="muted">채용공고, 근로계약서 또는 처우 안내 중 하나만 등록해도 괜찮아요.</p>
-        <div class="cta-actions">
-          <a href="#/new" class="btn-primary btn-auto" id="landing-start-bottom">입사조건 확인하기 →</a>
+      <!-- 4. 체험용 가상 문서 (파일이 모두 있을 때만 표시) -->
+      <section class="band sample-download" id="sample-download" aria-labelledby="sample-dl-title" tabindex="-1" hidden>
+        <p class="section-kicker">체험하기</p>
+        <h2 class="sample-dl-title" id="sample-dl-title">가상 문서로 직접 체험해 보세요</h2>
+        <p class="muted section-intro">실제 문서가 없어도 괜찮아요. 가상 회사와 가상의 근로조건으로 만든 문서를 받아 등록해 보세요.</p>
+        <ul class="sample-dl-list" id="sample-dl-list"></ul>
+        <div class="sample-zip-card">
+          <div><p class="sample-zip-title">가상 문서 3종 한 번에 받기</p><p class="small muted">세 PDF를 ZIP 하나로 묶어 받아요.</p></div>
+          <button type="button" class="btn-editorial btn-auto sample-zip" id="sample-zip">전체 다운로드</button>
         </div>
-        <div class="sample-download" id="sample-download" hidden>
-          <p class="sample-dl-title">가상 문서로 직접 체험해 보세요</p>
-          <p class="muted small">실제 문서가 없어도 괜찮아요. 예시 문서를 다운로드해 근로조건 비교를 체험할 수 있어요. 가상 회사와 가상의 근로조건으로 만든 문서예요.</p>
-          <ul class="sample-dl-list" id="sample-dl-list"></ul>
-          <button type="button" class="btn-text sample-zip" id="sample-zip">전체 다운로드</button>
-          <p class="muted small" id="sample-status" role="status" aria-live="polite"></p>
-        </div>
-        <p class="disclaimer">§ 일단확인은 문서에 적힌 내용과 원문 근거를 보여줘요. 법률 위반 여부나 계약의 적법성, 기업의 신뢰도는 판단하지 않아요.</p>
+        <p class="muted small" id="sample-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- 5. 안내 -->
+      <section class="landing-notice" aria-label="이용 안내">
+        <ul>
+          <li>분석할 때 확인한 텍스트는 일단확인 서버를 거쳐 외부 AI 모델(Google Gemini)에 전달돼요.</li>
+          <li>기록과 PDF 원본은 계정 없이 지금 쓰는 브라우저에만 저장돼요. 다른 기기에서는 보이지 않아요.</li>
+          <li>문서에 적힌 내용과 원문 근거를 보여줄 뿐, 법률 위반 여부나 계약의 적법성, 회사의 신뢰도는 판단하지 않아요.</li>
+        </ul>
       </section>
     </section>
 
@@ -306,7 +325,17 @@
       <div class="record-head">
         <div class="record-head-main">
           <p class="crumb">내 입사조건 기록</p>
-          <h1 id="record-title"></h1>
+          <div class="record-title-row" id="record-title-row">
+            <h1 id="record-title"></h1>
+            <button type="button" class="btn-text rename-open" id="rename-open">이름 바꾸기</button>
+          </div>
+          <form id="rename-form" class="rename-form rename-inline" hidden>
+            <label for="rename-input" class="sr-only">기록 이름 (회사명·직무 등, 선택)</label>
+            <input id="rename-input" maxlength="40" autocomplete="off" placeholder="회사명·직무 등 · Enter로 저장">
+            <button type="submit" class="icon-btn">저장</button>
+            <button type="button" class="btn-text" id="rename-cancel">취소</button>
+            <p class="error small" id="rename-error" role="alert" hidden></p>
+          </form>
           <p class="record-meta muted small" id="record-meta"></p>
           <div class="record-doc-chips" id="record-doc-chips" aria-label="등록한 문서 종류"></div>
           <div class="record-tools" id="record-tools">
@@ -317,18 +346,6 @@
             </details>
           </div>
         </div>
-        <details class="record-more" id="record-more">
-          <summary>⋯ 더보기</summary>
-          <div class="record-more-panel" id="record-rename-box">
-            <button type="button" class="btn-text" id="rename-open">기록 이름 바꾸기</button>
-            <form id="rename-form" class="rename-form" hidden>
-              <label for="rename-input" class="small">기록 이름 (회사명·직무 등, 선택)</label>
-              <input id="rename-input" maxlength="40" autocomplete="off">
-              <div class="rename-actions"><button type="submit" class="icon-btn">저장</button><button type="button" class="btn-text" id="rename-cancel">취소</button></div>
-              <p class="error small" id="rename-error" role="alert" hidden></p>
-            </form>
-          </div>
-        </details>
       </div>
       <p id="demo-warning" class="analysis-source analysis-source-demo" role="note" hidden></p>
 
@@ -355,6 +372,7 @@
           <ul class="contract-glance-list" id="contract-glance-list"></ul>
           <div class="contract-glance-reference" id="contract-glance-reference" hidden></div>
         </section>
+        <!-- 두 문서 비교 (Stitch 26): 비교 대상 A/B → 상태별 요약 → 질문 모아보기 → 항목별 A/B 대조 -->
         <div class="compare-pair" id="compare-pair" hidden>
           <p class="compare-pair-title">비교할 문서 2개 선택</p>
           <div class="compare-pair-fields">
@@ -363,6 +381,23 @@
           </div>
           <p class="small muted">선택한 두 문서만 비교해요. 등록한 문서와 분석 결과는 그대로 보관돼요.</p>
         </div>
+        <div class="cmp-docs" id="cmp-docs" hidden></div>
+        <p class="cmp-order-note" id="cmp-order-note" hidden>문서 A·B는 등록한 순서대로 표시해요. 등록 순서는 실제 안내 순서나 조건이 바뀐 순서를 뜻하지 않아요.</p>
+        <section class="cmp-summary" id="cmp-summary" aria-labelledby="cmp-summary-title" hidden>
+          <div class="cmp-summary-head">
+            <h3 id="cmp-summary-title">비교 결과 요약</h3>
+            <p class="small muted" id="cmp-summary-total"></p>
+          </div>
+          <div class="cmp-tiles" id="cmp-tiles"></div>
+        </section>
+        <section class="cmp-questions" id="cmp-questions" aria-labelledby="cmp-questions-title" hidden>
+          <div>
+            <h3 id="cmp-questions-title">회사에 확인할 질문 <span class="cmp-q-count" id="cmp-q-count"></span></h3>
+            <p class="small">다르게 적혔거나 추가로 대조할 조건의 질문이에요. 각 항목에서 고쳐 쓰고 하나씩 복사할 수 있어요. 일단확인은 회사에 보내지 않아요.</p>
+          </div>
+          <button type="button" class="btn-editorial btn-auto" id="copy-all-top">질문 전체 복사</button>
+          <p class="small muted" id="copy-all-top-status" role="status" aria-live="polite"></p>
+        </section>
         <details class="contract-checklist" id="contract-checklist" hidden>
           <summary class="contract-checklist-toggle">10개 기준 점검표 전체 보기 <span>기재 여부·구체성·계산값 구분</span></summary>
           <ol class="contract-checklist-items" id="contract-checklist-items"></ol>
@@ -413,7 +448,7 @@
 
     <!-- S05 항목 상세 -->
     <section id="view-item" class="view view-wide" hidden>
-      <a class="back" id="item-back">← 기록으로 돌아가기</a>
+      <a class="back" id="item-back" hidden>← 기록으로 돌아가기</a>
       <div id="item"></div>
     </section>
 

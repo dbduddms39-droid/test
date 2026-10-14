@@ -4,9 +4,9 @@
 // '전체 다운로드'는 같은 세 파일을 브라우저에서 ZIP 하나로 묶는다 (압축 없이 저장, 서버 전송 없음).
 
 export const SAMPLE_FILES = [
-  { path: 'samples/ildan-sample-1-job-posting.pdf', name: '일단확인_가상문서_1_채용공고.pdf', label: '채용공고 PDF' },
-  { path: 'samples/ildan-sample-2-offer-mail.pdf', name: '일단확인_가상문서_2_처우·근로조건안내.pdf', label: '처우·근로조건 안내 PDF' },
-  { path: 'samples/ildan-sample-3-contract.pdf', name: '일단확인_가상문서_3_근로계약서.pdf', label: '근로계약서 PDF' },
+  { path: 'samples/ildan-sample-1-job-posting.pdf', name: '일단확인_가상문서_1_채용공고.pdf', label: '채용공고 PDF', desc: '직무·근무지·급여 범위가 적힌 공고' },
+  { path: 'samples/ildan-sample-2-offer-mail.pdf', name: '일단확인_가상문서_2_처우·근로조건안내.pdf', label: '처우·근로조건 안내 PDF', desc: '합격 후 받은 연봉·근무 조건 안내' },
+  { path: 'samples/ildan-sample-3-contract.pdf', name: '일단확인_가상문서_3_근로계약서.pdf', label: '근로계약서 PDF', desc: '10가지 조건을 점검할 수 있는 계약서' },
 ];
 export const SAMPLE_ZIP_NAME = '일단확인_가상문서_3종.zip';
 
@@ -72,7 +72,10 @@ export function buildZip(files, date = new Date()) {
 // 시작 화면 영역 연결: 파일이 모두 있을 때만 개별 링크와 '전체 다운로드'를 보여 준다
 export async function initSampleDownloads({ root, list, zipButton, status, el }) {
   if (!(await samplesAvailable())) { root.hidden = true; return false; }
-  list.replaceChildren(...SAMPLE_FILES.map((f) => el('li', {}, el('a', { href: f.path, download: f.name, class: 'btn-text sample-dl-link' }, `${f.label} 다운로드`))));
+  list.replaceChildren(...SAMPLE_FILES.map((f, i) => el('li', { class: 'sample-dl-item' },
+    el('p', { class: 'sample-dl-no' }, `가상 문서 ${i + 1}`),
+    el('p', { class: 'sample-dl-desc' }, f.desc ?? ''),
+    el('a', { href: f.path, download: f.name, class: 'btn-text sample-dl-link' }, `${f.label} 다운로드`))));
   zipButton.addEventListener('click', async () => {
     zipButton.disabled = true;
     status.textContent = '파일을 묶는 중이에요…';

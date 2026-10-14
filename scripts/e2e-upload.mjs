@@ -173,7 +173,7 @@ try {
       if (first) {
         await page.goto(`${page.url().replace(/#.*/, '')}#/records/${page.url().match(/rec_\w+/)[0]}/item/${first.id}`);
         await page.waitForSelector('#view-item:not([hidden])');
-        const shown = await page.$$eval('#item .evidence-text', (els) => els.map((e) => e.textContent));
+        const shown = await page.$$eval('#item .paper-sheet > .doc-lines .doc-line.is-marked mark', (els) => els.map((e) => e.textContent)); // 인용은 '원문 근거'에 한 번만 (강조 구절)
         const panelTitle = await page.textContent('#item .doc-block .memo-title');
         check(`[${label}] 상세 화면: 추출·확인한 텍스트 기준 근거 (${first.label})`, panelTitle.includes('추출·확인한 텍스트') && shown.length > 0 && shown.every((t) => edited.includes(t)), `${shown.length}개`);
         await page.screenshot({ path: `${OUT}/${label}-detail.png`, fullPage: true });

@@ -115,7 +115,7 @@ try {
   check('분석 중 중복 요청 방지 (요청 1번)', requests.length === 1, `${requests.length}번`);
   await release();
   await waitView('record');
-  check('분석 → 기록 화면(S04), 저장 확인 표시', /#\/records\/rec_/.test(page.url()) && requests.length === 1 && (await page.textContent('#save-status')).includes('저장했어요'));
+  check('분석 → 기록 화면(S04), 저장 확인 표시', /#\/records\/rec_/.test(page.url()) && requests.length === 1 && /저장됐어요|추가됐어요/.test(await page.textContent('#save-status')));
 
   await page.click('#condition-list .btn-text >> nth=0');
   await waitView('item');

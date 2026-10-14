@@ -83,7 +83,7 @@ try {
   check('분석 주체', !REQUIRE_AI || data.mode === 'gemini', `mode=${data.mode}`);
 
   await page.waitForSelector('#view-record:not([hidden])', { timeout: 10_000 });
-  check('기록 저장 확인 후 표시', (await page.textContent('#save-status')).includes('저장했어요'));
+  check('기록 저장 확인 후 표시', /저장됐어요|추가됐어요/.test(await page.textContent('#save-status')));
   await page.screenshot({ path: `${OUT}/02-result.png`, fullPage: true });
   const recordUrl = page.url();
 
@@ -119,14 +119,16 @@ try {
     const shown = await page.$$eval('#item .criterion', (els) => els.map((e) => ({
       id: e.dataset.criterion,
       status: e.querySelector('.badge').textContent,
-      evidence: [...e.querySelectorAll('.evidence-text')].map((x) => x.textContent),
+      count: Number([...e.querySelectorAll('.card-detail p')].map((p) => p.textContent.match(/관련 원문 근거 (\d+)곳/)?.[1]).find(Boolean) ?? 0),
     })));
+    // 인용 전문은 카드 아래 '원문 근거'에 한 번만: 강조된 원문 줄
+    const marked = await page.$$eval('#item .paper-sheet > .doc-lines .doc-line.is-marked', (els) => els.map((e) => e.textContent));
     for (const c of t.criteria) {
       const s = shown.find((x) => x.id === c.id);
       if (!s || s.status !== c.statusLabel) detailProblems.push(`${c.id} 상태`);
-      else if (JSON.stringify(s.evidence) !== JSON.stringify(c.evidence.map((e) => e.text))) detailProblems.push(`${c.id} 근거`);
-      else if (s.evidence.some((x) => !docText.includes(x))) detailProblems.push(`${c.id} 원문에 없는 근거`);
-      else if (c.status === 'UNAVAILABLE' && s.evidence.length) detailProblems.push(`${c.id} 확인 불가에 근거 표시`);
+      else if (s.count !== (c.status === 'UNAVAILABLE' ? 0 : c.evidence.length) || c.evidence.some((e) => !marked.some((m) => m.includes(e.text)))) detailProblems.push(`${c.id} 근거`);
+      else if (c.evidence.some((e) => !docText.includes(e.text))) detailProblems.push(`${c.id} 원문에 없는 근거`);
+      else if (c.status === 'UNAVAILABLE' && s.count) detailProblems.push(`${c.id} 확인 불가에 근거 표시`);
     }
     const notes = await page.$$eval('#item .doc-block .note', (els) => els.map((e) => e.className));
     const expected = ['neutral', 'applicability', 'probationHold'].filter((k) => t.notes[k]).length;

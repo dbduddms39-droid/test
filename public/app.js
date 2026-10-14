@@ -1,6 +1,7 @@
 import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-rules.js';
 import { copyText, josa } from './questions.js';
-import { el, fill, statusBadge, CONTRACT_STATUS_LABEL, sourcePanelLines } from './components.js';
+import { el, fill, statusBadge, CONTRACT_STATUS_LABEL, sourcePanelLines, highlightText } from './components.js';
+import { compareStatus, evidenceFor, documentTitle, COMPARE_STATUS, STATUS_ORDER } from './compare-view.js';
 import { ROUTES, checkText, editRouteFor, inputRouteFor, resolveRoute, classifyAnalyzeFailure, formatDateTime } from './flow.js';
 import { createTracker, applyEdit, confirmSpan, pendingRanges, unlocatedPending, summary as ocrSummary } from './ocr-spans.js';
 import {
@@ -132,9 +133,11 @@ function initTabs(tabs, onSelect) {
 
 // ---------- S01 시작 ----------
 // 체험용 가상 문서 다운로드 (시작 화면 전용, public/samples/의 파일이 모두 있을 때만 표시)
-initSampleDownloads({ root: $('#sample-download'), list: $('#sample-dl-list'), zipButton: $('#sample-zip'), status: $('#sample-status'), el });
+// 파일이 있을 때만 히어로의 '체험용 가상문서 받기 ↓'를 보여 준다
+initSampleDownloads({ root: $('#sample-download'), list: $('#sample-dl-list'), zipButton: $('#sample-zip'), status: $('#sample-status'), el })
+  .then((ok) => { $('#landing-how').hidden = !ok; });
 $('#landing-how').addEventListener('click', () => {
-  const target = $('#landing-workflow');
+  const target = $('#sample-download');
   target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   target.focus({ preventScroll: true });
 });
@@ -887,7 +890,8 @@ async function startAnalysis(payload, { replace = false } = {}) {
     if (r.ok) {
       try {
         const record = await store.replaceAnalysis(saved.record.id, entry.id, { analysis: analysisOf(r.data), mode: r.data.mode ?? null });
-        state.flash = { kind: 'saved', text: payload.target.kind === 'add' ? '새 자료가 추가됐어요.' : '기록이 저장됐어요.' };
+        // 원본 PDF를 저장하지 못했으면 성공 안내에 함께 알린다 (저장된 것처럼 보이지 않게)
+        state.flash = { kind: 'saved', text: `${payload.target.kind === 'add' ? '새 자료가 추가됐어요.' : '기록이 저장됐어요.'}${entry.originalError || saved.original?.reused ? origText : ''}` };
         return go(ROUTES.record(record.id), true);
       } catch (err) {
         // 자료는 저장됐지만 분석 결과를 저장하지 못함 → 분석 결과를 '저장되지 않았어요' 화면에서 다시 저장
@@ -977,7 +981,7 @@ async function persist(pending, { replace = false } = {}) {
     state.unsaved = null;
     resetContext(payload.ctxKey);
     if (state.file === null) $('#review-resume').hidden = true;
-    state.flash = { kind: 'saved', text: payload.target.kind === 'add' ? '새 자료가 추가됐어요.' : '기록이 저장됐어요.' };
+    state.flash = { kind: 'saved', text: `${payload.target.kind === 'add' ? '새 자료가 추가됐어요.' : '기록이 저장됐어요.'}${entry.originalError || original?.reused ? originalNote(original, entry.originalError) : ''}` };
     go(ROUTES.record(record.id), replace);
   } catch (err) {
     // 기존 기록에 추가하다 실패하면, 이전 기록은 그대로이고 새 자료만 저장되지 않은 상태로 보여 준다
@@ -1324,6 +1328,125 @@ async function attachOriginalUrls(root) {
 }
 const formatBytes = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.max(1, Math.round(n / 1024))}KB`);
 
+// ---------- 두 문서 비교 (Stitch 26) ----------
+// 비교 대상 A/B, 상태별 요약(한 항목 = 한 상태), 회사 질문 모아보기, 항목별 A/B 대조 카드.
+// 값·관계·질문은 기존 비교 결과(relate.js·followups.js)를 그대로 쓰고, 화면에서 상태 5가지로만 나눈다.
+const two = (n) => String(n).padStart(2, '0');
+function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendingOf }) {
+  const [A, B] = comparedRecord.documents.filter((d) => d.analysis);
+  const docs = [A, B];
+  const side = (k) => `문서 ${'AB'[k]}`;
+  const docCard = (d, k) => el('div', { class: `cmp-doc is-${'ab'[k]}`, 'data-doc': d.id },
+    el('p', { class: 'cmp-doc-label' }, `${side(k)} · ${labels[d.id]}`),
+    el('p', { class: 'cmp-doc-name' }, documentTitle(d) || labels[d.id]),
+    el('p', { class: 'cmp-doc-meta' }, `등록 ${formatDateTime(d.registeredAt)} · 원문 ${d.analysis?.lines?.length ?? 0}줄`));
+  fill($('#cmp-docs'), docCard(A, 0), el('span', { class: 'cmp-vs', 'aria-hidden': 'true' }, '↔'), docCard(B, 1));
+
+  // 항목별 상태 (두 문서 모두에 없는 항목은 비교 대상이 아니므로 전체 목록에서)
+  const rows = [];
+  let skipped = 0;
+  for (const id of ITEM_IDS) {
+    if (!visibleIn(comparedRecord, id)) continue;
+    const relItem = fus.relation.items.find((i) => i.id === id);
+    const q = fuOf(id);
+    const ts = docs.map((d) => { const t = topicOf(d, id); return t?.visible ? t : null; });
+    const st = compareStatus(relItem, ts, { hasQuestion: Boolean(q?.question), pending: Boolean(pendingOf(id)) });
+    if (!st) { skipped += 1; continue; }
+    rows.push({ id, st, relItem, q, ts });
+  }
+  const count = (st) => rows.filter((r) => r.st === st).length;
+  $('#cmp-summary-total').textContent = `비교한 조건 ${rows.length}개${skipped ? ` · 두 문서 모두에 없는 조건 ${skipped}개는 '전체 근로조건 목록'에서 볼 수 있어요` : ''}`;
+  // 요약 칸: 상태 표시 + 해당 묶음으로 이동(버튼). 0건이면 누를 수 없다
+  fill($('#cmp-tiles'), ...STATUS_ORDER.map((st) => {
+    const n = count(st);
+    return el('button', { type: 'button', class: `cmp-tile is-${st}`, 'data-jump': st, disabled: n === 0, 'aria-label': `${COMPARE_STATUS[st].label} ${n}건${n ? ', 해당 항목으로 이동' : ''}` },
+      el('span', { class: 'cmp-tile-label' }, COMPARE_STATUS[st].label),
+      el('span', { class: 'cmp-tile-count' }, el('strong', {}, String(n)), '건'),
+      el('span', { class: 'cmp-tile-items' }, rows.filter((r) => r.st === st).map((r) => itemLabel(record, r.id)).join(', ') || '없음'));
+  }));
+
+  // 회사에 확인할 질문 모아보기
+  const qCount = rows.filter((r) => r.q?.question).length;
+  $('#cmp-questions').hidden = !qCount;
+  $('#cmp-q-count').textContent = `${qCount}건`;
+  $('#copy-all-top-status').textContent = '';
+
+  const panel = (row, d, k) => {
+    const t = row.ts[k];
+    const head = el('p', { class: 'cmp-panel-label' }, `${side(k)} · ${labels[d.id]}`);
+    if (!t || t.status === 'MAIN_MISSING') {
+      return el('div', { class: `cmp-panel is-${'ab'[k]} is-empty` }, head,
+        el('p', { class: 'cmp-value' }, '원문에 언급 없음'),
+        el('p', { class: 'cmp-sub' }, '이 문서에서는 이 조건을 찾지 못했어요. 없어지거나 바뀐 것으로 보지 않아요.'));
+    }
+    if (t.status === 'MAIN_UNAVAILABLE') {
+      const codes = t.criteria.filter((c) => c.required && c.status === 'UNAVAILABLE').flatMap((c) => [c.unavailableReason, ...(c.unavailableCodes ?? [])]);
+      return el('div', { class: `cmp-panel is-${'ab'[k]} is-unavailable` }, head,
+        el('p', { class: 'cmp-value' }, '분석 확인 불가'),
+        el('p', { class: 'cmp-sub' }, `${unavailableCause(codes)}. 적혀 있지 않다는 뜻은 아니에요.`));
+    }
+    const v = row.relItem ? cardValue(row.relItem, d.id) : null;
+    const calc = d.docType === 'contract' ? weeklyCalc(t) : null;
+    const def = d.docType !== 'contract' ? deferral(t) : null;
+    return el('div', { class: `cmp-panel is-${'ab'[k]}` }, head,
+      el('p', { class: `cmp-value${v?.vague ? ' is-vague' : ''}` }, v?.text ?? summaryEvidence(t)?.text ?? '원문에서 확인했어요'),
+      calc ? el('p', { class: 'cmp-sub cmp-calc' }, el('span', { class: 'calc-value' }, `${calc.text} (계산값)`), ' 원문에 적힌 근무일·출퇴근 시각·휴게시간으로 계산했어요.') : null,
+      def ? el('p', { class: 'cmp-sub' }, topicBadge(d, t)) : null,
+      !def && t.status !== 'MAIN_FOUND' && d.docType === 'contract' && !calc ? el('p', { class: 'cmp-sub' }, topicBadge(d, t)) : null);
+  };
+  const evidenceCol = (row, d, k) => {
+    const list = evidenceFor(row.relItem, d.id);
+    return el('div', { class: `cmp-evidence-doc is-${'ab'[k]}` },
+      el('p', { class: 'cmp-evidence-label' }, `${side(k)} · ${labels[d.id]}`),
+      list.length ? el('ul', { class: 'cmp-evidence-list' }, list.map((r) => el('li', {},
+        el('p', { class: 'cmp-evidence-for' }, `${r.facets.join('·')}의 근거`, r.line != null ? el('span', { class: 'line-ref' }, ` · ${r.line}번째 줄`) : null),
+        el('blockquote', { class: 'cmp-quote' }, highlightText(r.text, r.highlight)))))
+        : el('p', { class: 'cmp-sub' }, '이 문서에서는 관련 원문을 찾지 못했어요.'));
+  };
+  let no = 0;
+  const card = (row) => {
+    no += 1;
+    const { id, st, relItem, q } = row;
+    const memo = notesFor(record, id).length;
+    const line = relItem?.addedNote ?? cardInsight(comparedRecord, relItem, labels, fus) ?? pendingOf(id)?.line ?? null;
+    const c = docs.map((d, k) => ({ d, t: row.ts[k] })).reverse().find((x) => x.d.docType === 'contract' && x.t);
+    const detail = c && !weeklyCalc(c.t) ? detailOnlyText(c.t) : null;
+    const badgeText = st === 'same' && relItem?.addedNote ? '같은 조건 · 세부 조건 추가' : COMPARE_STATUS[st].badge;
+    const unavailDocs = st === 'unavailable' ? docs.filter((d, k) => row.ts[k]?.status === 'MAIN_UNAVAILABLE') : [];
+    return el('li', { class: `cmp-card is-${st}`, id: `cmp-item-${id}`, 'data-item': id, 'data-topic': id, 'data-status': st },
+      el('div', { class: 'cmp-card-head' },
+        el('span', { class: 'cmp-no' }, two(no)),
+        el('h3', {}, itemLabel(record, id)),
+        memo ? el('span', { class: 'memo-flag' }, '내 메모 있음') : null,
+        el('span', { class: `badge badge-relation status-${st}`, 'data-status': st }, badgeText)),
+      el('div', { class: 'cmp-panels' }, docs.map((d, k) => panel(row, d, k))),
+      line || detail ? el('div', { class: 'cmp-note' },
+        el('p', { class: 'cmp-note-title' }, '대조 요약'),
+        line ? el('p', {}, line) : null,
+        detail ? el('p', { class: 'small' }, `${labels[c.d.id]}: ${detail}`) : null) : null,
+      el('details', { class: 'cmp-evidence' },
+        el('summary', {}, '원문 근거 보기'),
+        el('div', { class: 'cmp-evidence-cols' }, docs.map((d, k) => evidenceCol(row, d, k))),
+        el('p', { class: 'cmp-sub' }, '강조 표시는 비교에 쓴 표현이에요. 문서 전체는 아래 \'등록된 안내 자료와 원문\'에서 볼 수 있어요.')),
+      q?.question ? el('div', { class: 'cmp-question' }, el('p', { class: 'cmp-question-title' }, `회사에 확인할 질문 · ${itemLabel(record, id)}`), questionBlock(q)) : null,
+      saved && unavailDocs.length ? el('div', { class: 'reanalyze' },
+        unavailDocs.map((d) => el('button', { type: 'button', class: 'icon-btn', 'data-reanalyze': d.id }, `${labels[d.id]} 같은 텍스트로 다시 분석하기`)),
+        el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null,
+      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-text cmp-detail-link' }, '조건 상세·내 메모 →') : null);
+  };
+  const groups = STATUS_ORDER.map((st) => {
+    const list = rows.filter((r) => r.st === st);
+    if (!list.length) return null;
+    const head = [COMPARE_STATUS[st].label, el('span', { class: 'sum-count' }, String(list.length))];
+    const cards = el('ol', { class: 'cmp-cards' }, list.map(card));
+    // 같은 조건은 덜 강조: 접어 둔다
+    if (st === 'same') return el('details', { class: `cgroup cmp-group is-${st}`, 'data-group': st, id: `cmp-group-${st}` }, el('summary', { class: 'cgroup-title' }, ...head), cards);
+    return el('section', { class: `cgroup cmp-group is-${st}`, 'data-group': st, id: `cmp-group-${st}` }, el('h3', { class: 'cgroup-title' }, ...head), cards);
+  });
+  fill($('#condition-list'), ...groups);
+  return rows;
+}
+
 function renderRecord(record, { unsaved = false } = {}) {
   const saved = !unsaved;
   const availableDocs = record.documents.filter((d) => d.analysis);
@@ -1367,10 +1490,9 @@ function renderRecord(record, { unsaved = false } = {}) {
   $('#record-title').textContent = record.alias;
   $('#record-meta').textContent = `등록 문서 ${record.documents.length}건${saved ? '' : ' · 저장 전'}`;
   fill($('#record-doc-chips'), ...record.documents.map((d) => el('span', { class: 'record-doc-chip' }, labels[d.id])));
-  $('#record-more').hidden = unsaved;
-  $('#record-more').open = false;
   $('#rename-form').hidden = true;
-  $('#rename-open').hidden = false;
+  $('#record-title-row').hidden = false;
+  $('#rename-open').hidden = unsaved;
 
   // 기록 상단: 원본 PDF 보기·다운로드 · 새 안내 추가
   releaseOriginalUrls();
@@ -1424,9 +1546,9 @@ function renderRecord(record, { unsaved = false } = {}) {
   const hasContract = mode.check;
   // none = 아직 분석된 자료가 없음(분석 전·분석 실패) → 안내만, 아래 '등록된 안내 자료'에서 다시 분석
   const layout = multi ? 'compare' : !analyzedDocs.length ? 'none' : analyzedDocs[0].docType === 'contract' ? 'contract' : 'brief';
-  $('#conditions-title').textContent = { compare: '비교 결과', contract: '근로계약서 확인 결과', brief: '주요 조건 미리보기', none: '분석 결과' }[layout];
+  $('#conditions-title').textContent = { compare: '두 문서의 근로조건을 비교했어요', contract: '근로계약서 확인 결과', brief: '주요 조건 미리보기', none: '분석 결과' }[layout];
   $('#conditions-help').textContent = {
-    compare: '자료에 적힌 문구를 항목별로 비교했어요. 회사가 조건을 바꿨는지, 어느 쪽이 최종인지는 판단하지 않아요. 원문 근거는 \'자세히 보기\'에서 확인할 수 있어요.',
+    compare: '두 문서에 적힌 근로조건을 항목별로 대조했어요. 어느 쪽이 최종 조건인지, 회사가 조건을 바꿨는지, 법적으로 문제가 있는지는 판단하지 않아요.',
     contract: '주요 근로조건이 적혀 있는지, 내용이 구체적인지 확인했어요. 원문 근거는 \'자세히 보기\'에서 확인할 수 있어요.',
     brief: '문서에 적힌 주요 조건이에요. 원문 근거와 전체 조건은 \'자세히 보기\'와 아래에서 볼 수 있어요.',
     none: '',
@@ -1534,7 +1656,7 @@ function renderRecord(record, { unsaved = false } = {}) {
     none: [],
   }[layout];
   const overview = $('#result-overview');
-  overview.hidden = !['compare', 'contract'].includes(layout);
+  overview.hidden = layout !== 'contract'; // 비교는 아래 상태별 요약으로
   if (!overview.hidden) {
     const needsCount = layout === 'contract'
       ? rows.filter((r) => r.group === 'needs').length + sum.unavailable.length
@@ -1580,7 +1702,12 @@ function renderRecord(record, { unsaved = false } = {}) {
       saved ? el('a', { class: 'btn-text', href: ROUTES.item(record.id, '10') }, '연차 원문 보기 →') : null,
     ] : []));
   }
-  const groupEls = GROUPS.map(([key, title]) => {
+  const compareRows = layout === 'compare' ? renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendingOf }) : null;
+  for (const id of ['#cmp-docs', '#cmp-order-note', '#cmp-summary']) $(id).hidden = layout !== 'compare';
+  $('#record-doc-chips').hidden = layout === 'compare'; // 비교 화면은 아래 문서 A·B 카드가 같은 정보를 보여 준다
+  if (layout !== 'compare') $('#cmp-questions').hidden = true;
+  if (layout === 'compare') $('#now-section').hidden = true; // 분석 확인 불가는 비교 카드 안에서 (요약 숫자 = 카드 수)
+  const groupEls = layout === 'compare' ? [] : GROUPS.map(([key, title]) => {
     const list = rows.filter((r) => r.group === key);
     if (!list.length) return null;
     const cards = el('ol', { class: `condition-cards${key === 'preview' ? ' is-preview' : ''}` }, list.map(card));
@@ -1590,8 +1717,8 @@ function renderRecord(record, { unsaved = false } = {}) {
     if (['same', 'written', 'calculated'].includes(key)) return el('details', { class: `cgroup is-${key}`, 'data-group': key }, el('summary', { class: 'cgroup-title' }, ...head), cards);
     return el('section', { class: `cgroup is-${key}`, 'data-group': key }, el('h3', { class: 'cgroup-title' }, ...head), cards);
   });
-  fill($('#condition-list'), ...groupEls);
-  const cardCount = rows.length;
+  if (layout !== 'compare') fill($('#condition-list'), ...groupEls);
+  const cardCount = compareRows ? compareRows.length : rows.length;
   // 적힌 근로조건이 하나도 없으면 (예: 근로조건 없이 합격만 알린 안내) 오류가 아니라 그 사실만 알린다
   const condEmpty = $('#conditions-empty');
   condEmpty.hidden = cardCount > 0;
@@ -1604,7 +1731,7 @@ function renderRecord(record, { unsaved = false } = {}) {
   $('#add-doc-top').hidden = layout === 'brief';
 
   // 상세 확인 (접힘): 카드에 붙지 않은 질문만 (예: 요약 카드가 없는 항목), 전체 근로조건, 등록 자료와 원문
-  const onCard = new Set(layout === 'brief' ? [] : rows.map((r) => r.id));
+  const onCard = new Set(layout === 'brief' ? [] : (compareRows ?? rows).map((r) => r.id));
   const extraFus = layout === 'brief' ? [] : allFus.filter((f) => f.question && !f.topicIds.some((t) => onCard.has(t)));
   $('#more-box').hidden = !extraFus.length;
   $('#more-count').textContent = `${extraFus.length}건`;
@@ -1725,14 +1852,17 @@ async function reanalyze(record, docId, btn) {
 }
 
 // 기록 이름 바꾸기 (선택). 비우면 '새 입사 기록'
+// 제목 옆 '이름 바꾸기' → 제목 자리에서 바로 고치고 Enter로 저장, Esc로 취소
 $('#rename-open').addEventListener('click', () => {
   $('#rename-form').hidden = false;
-  $('#rename-open').hidden = true;
+  $('#record-title-row').hidden = true;
   $('#rename-input').value = currentRecord?.alias ?? '';
   $('#rename-error').hidden = true;
   $('#rename-input').focus();
 });
-$('#rename-cancel').addEventListener('click', () => { $('#rename-form').hidden = true; $('#rename-open').hidden = false; });
+function closeRename() { $('#rename-form').hidden = true; $('#record-title-row').hidden = false; $('#rename-open').focus(); }
+$('#rename-cancel').addEventListener('click', closeRename);
+$('#rename-input').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeRename(); } });
 $('#rename-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!currentRecord) return;
@@ -1743,6 +1873,21 @@ $('#rename-form').addEventListener('submit', async (e) => {
   } catch {
     showMsg($('#rename-error'), '이름을 저장하지 못했어요. 이전 이름은 그대로예요.');
   }
+});
+// 질문 전체 복사 (비교 화면 위쪽 모아보기): 아래 '질문 모두 복사'와 같은 방식
+$('#copy-all-top').addEventListener('click', async () => {
+  const texts = [...new Set([...document.querySelectorAll('#view-record .q-block > .question .q-text')].map((t) => t.value.trim()).filter(Boolean))];
+  const ok = texts.length > 0 && await copyText(texts.join('\n\n'));
+  $('#copy-all-top-status').textContent = ok ? `질문 ${texts.length}개를 복사했어요. 고친 내용이 그대로 복사돼요.` : '복사하지 못했어요. 질문을 직접 선택해 복사해 주세요.';
+});
+// 요약 칸 → 해당 상태 묶음으로 이동 (같은 조건은 펼쳐서)
+$('#cmp-tiles').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-jump]');
+  if (!b) return;
+  const g = document.getElementById(`cmp-group-${b.dataset.jump}`);
+  if (!g) return;
+  if (g.tagName === 'DETAILS') g.open = true;
+  g.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 $('#copy-all-questions').addEventListener('click', async () => {
   // 항목마다 대표 질문만 (추가 질문은 각자 복사)
@@ -1841,11 +1986,11 @@ function renderItem(record, itemId) {
   const memos = notesFor(record, itemId);
   const memoSec = el('section', { class: 'memo', 'aria-labelledby': 'memo-title' },
     el('h2', { id: 'memo-title' }, '내가 기록한 답변 (선택)'),
-    el('p', { class: 'muted small' }, '회사에서 들은 답변 등을 직접 적어 둘 수 있어요. 쓰지 않아도 돼요. 일단확인이 확인한 내용이 아니며, 회사 확인이나 최종 조건으로 표시되지 않아요. 분석 결과와 원문은 바뀌지 않아요.'),
+    el('p', { class: 'muted small' }, '회사에서 들은 답변을 직접 적어 둘 수 있어요. 내가 쓴 메모일 뿐 최종 조건으로 표시되지 않고, 분석 결과와 원문은 바뀌지 않아요.'),
     el('ul', { class: 'memo-list' }, memos.map((n) => (memoEditing === n.id ? memoForm(n) : el('li', { class: 'memo-item', 'data-note': n.id },
       el('p', { class: 'memo-label' }, '내가 기록한 답변'),
       el('p', { class: 'memo-text' }, n.text),
-      el('p', { class: 'muted small' }, `메모 작성 ${formatDateTime(n.createdAt)}${n.updatedAt !== n.createdAt ? ` · 수정 ${formatDateTime(n.updatedAt)}` : ''} (메모를 쓴 날짜이며 회사 답변일이 아니에요)`),
+      el('p', { class: 'muted small' }, `메모 작성 ${formatDateTime(n.createdAt)}${n.updatedAt !== n.createdAt ? ` · 수정 ${formatDateTime(n.updatedAt)}` : ''}`),
       el('div', { class: 'memo-actions' },
         el('button', { type: 'button', class: 'btn-text', 'data-memo-edit': n.id }, '수정'),
         el('button', { type: 'button', class: 'btn-text danger', 'data-memo-delete': n.id }, '삭제')))))),

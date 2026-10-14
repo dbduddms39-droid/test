@@ -60,6 +60,8 @@ try {
       await page.click('#submit-btn');
       await view('record');
     };
+    // 비교 화면: 한쪽에만 기재 · 추가 대조 필요 묶음 (예전 '새롭게 기재되거나 확인이 필요한 조건')
+    const specText = async () => `${await groupText('onesided')}${await groupText('review')}`;
     const groupText = async (g) => ((await page.$(`[data-group="${g}"]`)) ? text(`[data-group="${g}"]`) : '');
     const firstScreen = async (sel) => page.$eval(sel, (e) => e.getBoundingClientRect().top < window.innerHeight);
     const noOverflow = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
@@ -84,7 +86,7 @@ try {
     await register('offer', QA_OFFER);
     const diff2 = await groupText('different');
     check(`[${tag}] 2) 서로 다른 조건: 임금·근무시간`, diff2.includes('임금') && diff2.includes('근무시간') && diff2.includes('3,400만원') && diff2.includes('3,600만원'), diff2.slice(0, 160));
-    check(`[${tag}] 2) 근무장소·고용형태 공통`, (await text('#condition-list [data-item="03"] .badge-relation')) === '같은 내용으로 안내됐어요' && (await text('#condition-list [data-item="05"] .badge-relation')) === '같은 내용으로 안내됐어요');
+    check(`[${tag}] 2) 근무장소·고용형태 공통`, (await text('#condition-list [data-item="03"] .badge-relation')) === '같은 조건' && (await text('#condition-list [data-item="05"] .badge-relation')) === '같은 조건');
     const hoursQ = await page.$eval('[data-group="different"] [data-topic="02"] .q-block > .question .q-text', (e) => e.value);
     check(`[${tag}] 2) 근무시간 대표 질문 1개`, hoursQ === '채용공고에는 근무시간이 09:00~18:00, 처우·근로조건 안내에는 10:00~19:00으로 기재되어 있습니다. 실제 적용되는 근무시간을 확인 부탁드립니다.', hoursQ);
     const qCount = await page.$$eval('[data-group="different"] [data-topic="02"] .q-block > .question', (e) => e.length);
@@ -93,17 +95,21 @@ try {
     // 3) 계약서 추가
     await page.click('#add-doc:visible, #add-second:visible');
     await register('contract', QA_CONTRACT);
+    // 문서 3건: 기본은 앞의 두 문서 비교 → 두 번째 칸을 근로계약서로 바꿔 채용공고 ↔ 근로계약서 비교
+    check(`[${tag}] 3) 문서 3건: 비교할 두 문서 선택 칸 표시`, await page.isVisible('#compare-pair') && (await page.$$('#compare-doc-b option')).length === 3);
+    await page.selectOption('#compare-doc-b', { index: 2 }); await page.waitForTimeout(200);
+    check(`[${tag}] 3) 선택한 두 문서(채용공고 ↔ 근로계약서)만 A·B로 비교`, (await text('#cmp-docs .cmp-doc.is-a')).includes('채용공고') && (await text('#cmp-docs .cmp-doc.is-b')).includes('근로계약서'), await text('#cmp-docs'));
     check(`[${tag}] 3) 자료 3건, 이전 자료 보존`, (await page.$$('#doc-list > li')).length === 3 && (await text('#doc-list')).includes('연봉: 3,400만원'));
-    check(`[${tag}] 3) 첫 화면에 '입사 전 확인할 내용'`, await firstScreen('#now-title'));
-    const spec = await groupText('specified');
+    check(`[${tag}] 3) 첫 화면에 '입사 전 확인할 내용'`, await firstScreen('#cmp-docs'));
+    const spec = await specText();
     check(`[${tag}] 3) 새롭게 구체화된 조건: 수습 중 급여 90%`, spec.includes('이전 자료에는 구체적인 수습 중 임금이 없었지만, 근로계약서에는 정규 급여의 90%, 월 2,700,000원(세전)으로 적혀 있어요.'), spec.slice(0, 160));
     check(`[${tag}] 3) 계약기간: 계약서에 처음 적힘(기간의 정함 없음), 고용형태와 분리`, spec.includes('계약기간') && (await text('#condition-list [data-item="06"]')).includes('기간의 정함 없음') && !(await text('#condition-list [data-item="06"]')).includes('정규직'));
-    check(`[${tag}] 3) 수습기간 3개월: 같은 내용 (날짜는 따로)`, (await text('#condition-list [data-item="07"] .badge-relation')) === '같은 내용으로 안내됐어요');
+    check(`[${tag}] 3) 수습기간 3개월: 같은 내용 (날짜는 따로)`, (await text('#condition-list [data-item="07"] .badge-relation')) === '같은 조건');
     check(`[${tag}] 3) 계약서 임금 확인됨 (올바른 응답), 금액 표시`, (await text('#condition-list [data-item="01"]')).includes('연봉 36,000,000원(세전)') && !(await groupText('unavailable')));
-    check(`[${tag}] 3) 근무시간: 서로 다른 안내 + 근로계약서 10:00~19:00`, (await text('#condition-list [data-item="02"] .badge-relation')) === '서로 다른 안내가 있어요' && (await text('#condition-list [data-item="02"]')).includes('10:00~19:00'));
+    check(`[${tag}] 3) 근무시간: 서로 다른 안내 + 근로계약서 10:00~19:00`, (await text('#condition-list [data-item="02"] .badge-relation')) === '서로 다른 조건' && (await text('#condition-list [data-item="02"]')).includes('10:00~19:00'));
     check(`[${tag}] 3) 상세 정보는 기본 접힘`, !(await page.$eval('#all-conditions', (d) => d.open)) && !(await page.$eval('#docs-box', (d) => d.open)) && !(await page.$eval('#more-box', (d) => d.open)));
     check(`[${tag}] 3) 요약·카드에 원문 인용 반복 없음 (원문은 상세에서)`, (await page.$$('#summary-groups q, #condition-list q')).length === 0);
-    const qTexts = await page.$$eval('#summary-groups .q-block > .question .q-text', (e) => e.map((x) => x.value));
+    const qTexts = await page.$$eval('#condition-list .q-block > .question .q-text', (e) => e.map((x) => x.value));
     check(`[${tag}] 3) 대표 질문 중복 없음`, new Set(qTexts).size === qTexts.length, `${qTexts.length}개`);
     const height = await page.evaluate(() => document.documentElement.scrollHeight);
     console.log(`      [${tag}] 기록 화면 길이 ${height}px (자료 3건)`);
@@ -112,7 +118,6 @@ try {
     await page.screenshot({ path: `${OUT}/${tag}-s04-first-screen.png`, fullPage: false });
 
     // 질문 편집·복사
-    await page.click('[data-group="different"] [data-topic="01"] .sum-q > summary');
     const ta = '[data-group="different"] [data-topic="01"] .q-block > .question .q-text';
     await page.fill(ta, '급여를 확인 부탁드립니다. (가상 편집)');
     await page.click('[data-group="different"] [data-topic="01"] .q-block > .question [data-copy]');
@@ -133,7 +138,7 @@ try {
     await page.waitForSelector('.memo-item');
     await page.goto(`${BASE}/#/records/${rec}`);
     await view('record');
-    check(`[${tag}] 메모 유지·카드에 표시`, (await text('#condition-list [data-item="02"]')).includes('내가 기록한 답변 있음'));
+    check(`[${tag}] 메모 유지·카드에 표시`, (await text('#condition-list [data-item="02"]')).includes('내 메모 있음'));
     await page.screenshot({ path: `${OUT}/${tag}-s05-hours.png`, fullPage: true });
 
     // 예전 형식 기록(이전 버전에서 저장, 이유 코드 없음) 열기
@@ -162,10 +167,10 @@ try {
     await register('contract', GQ_CONTRACT);
     await page.waitForTimeout(200);
     const gqDiff = await groupText('different');
-    check(`[${tag}] GQ 유지: 급여·근무시간 서로 다른 안내, 수습 급여 구체화, 계약기간 처음 적힘, 수습기간 같음`, gqDiff.includes('임금') && gqDiff.includes('근무시간') && (await groupText('specified')).includes('수습 중 임금')
-      && (await text('#condition-list [data-item="06"]')).includes('새롭게 적혔어요') && (await text('#condition-list [data-item="07"] .badge-relation')) === '같은 내용으로 안내됐어요');
+    check(`[${tag}] GQ 유지: 급여·근무시간 서로 다른 안내, 수습 급여 구체화, 계약기간 처음 적힘, 수습기간 같음`, gqDiff.includes('임금') && gqDiff.includes('근무시간') && (await specText()).includes('수습 중 임금')
+      && (await text('#condition-list [data-item="06"] .badge-relation')) === '한쪽에만 기재' && (await text('#condition-list [data-item="07"] .badge-relation')) === '같은 조건');
     const gq02 = await text('#condition-list [data-item="02"]');
-    check(`[${tag}] GQ 근무시간 카드: 두 자료의 시간 차이가 먼저, '내용이 모호함' 대신 세부 확인 안내`, gq02.includes('09:00~18:00') && gq02.includes('10:00~19:00') && gq02.includes('서로 다른 안내가 있어요')
+    check(`[${tag}] GQ 근무시간 카드: 두 자료의 시간 차이가 먼저, '내용이 모호함' 대신 세부 확인 안내`, gq02.includes('09:00~18:00') && gq02.includes('10:00~19:00') && gq02.includes('서로 다른 조건')
       && !gq02.includes('내용이 모호함') && gq02.includes('세부 확인 필요') && gq02.includes('출퇴근 시각·휴게시간은 적혀 있어요. 주 소정근로시간은 별도로 확인이 필요해요.')
       && gq02.indexOf('자료마다') < gq02.indexOf('주 소정근로시간은 별도로'), gq02.slice(0, 200));
     const allRow02 = await text('#all-condition-list [data-item="02"]');
@@ -190,7 +195,7 @@ try {
     check(`[${tag}] 임금 분석 확인 불가: 검증되지 않은 값(3,600만원)·회사 질문 없음`, !(await text('#view-record')).includes('3,600만원') && !(await groupText('needs')).includes('급여'));
     await page.click('button[data-reanalyze]');
     await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'));
-    check(`[${tag}] 같은 텍스트로 재분석 → 임금 확인됨`, !(await page.$('[data-group="unavailable"]')) && (await text('#condition-list [data-item="01"]')).includes('36,000,000원'));
+    check(`[${tag}] 같은 텍스트로 재분석 → 임금 확인됨`, !(await page.$('[data-group="unavailable"]')) && !(await page.isVisible('#now-section')) && (await text('#contract-checklist-items > li:first-child')).includes('기재됨'), await text('#contract-checklist-items > li:first-child'));
     // 시연 문서(주식회사 파란스텝): 협의 예정 → 범위 안에서 구체화 → 계약서에서 수습 급여 구체화
     if (tag === 'desk') {
       await page.goto(`${BASE}/#/new`);
@@ -203,10 +208,11 @@ try {
       await register('offer', DEMO_OFFER);
       await page.click('#add-doc:visible, #add-second:visible');
       await register('contract', DEMO_CONTRACT);
-      const spec = await groupText('specified');
-      check('[demo] 급여: 범위 안에서 구체화 (서로 다른 안내 아님)', spec.includes('채용공고에는 협의 가능한 연봉 범위(3,400만~3,800만원)가 적혀 있고, 처우·근로조건 안내와 근로계약서에는 연봉 3,600만 원으로 기재되어 있어요.') && !(await groupText('different')).includes('급여'));
-      check('[demo] 수습 중 급여: 근로계약서에서 처음 구체화, 질문 없음', spec.includes('근로계약서에는 월 270만 원(세전, 정규 급여의 90%)으로 적혀 있어요') && !(await page.$('[data-group="specified"] [data-topic="08"] .q-text')));
-      check('[demo] 서로 다른 안내는 근무시간 하나', (await page.$$('[data-group="different"] .ccard')).length === 1 && (await groupText('different')).includes('근무시간'));
+      await page.selectOption('#compare-doc-b', { index: 2 }); await page.waitForTimeout(200); // 채용공고 ↔ 근로계약서
+      const spec = await specText();
+      check('[demo] 급여: 범위 안에서 구체화 (서로 다른 안내 아님)', spec.includes('채용공고에는 협의 가능한 연봉 범위(3,400만~3,800만원)가 적혀 있고') && /3,600만 원(\(세전\))?으로 기재되어 있어요\./.test(spec) && (await text('#cmp-item-01 .badge-relation')) === '추가 대조 필요' && !(await groupText('different')).includes('급여'), spec.slice(0, 300));
+      check('[demo] 수습 중 급여: 근로계약서에서 처음 구체화, 질문 없음', spec.includes('근로계약서에는 월 270만 원(세전, 정규 급여의 90%)으로 적혀 있어요') && !(await page.$('#cmp-item-08 .q-text')));
+      check('[demo] 서로 다른 안내는 근무시간 하나', (await page.$$('[data-group="different"] .cmp-card')).length === 1 && (await groupText('different')).includes('근무시간'));
       check('[demo] 협의 완료·확정 단정 표현 없음', !/(협의 완료|확정된 합의|협의가 끝났)/.test(await text('#view-record')));
       await page.screenshot({ path: `${OUT}/demo-s04-three-docs.png`, fullPage: true });
     }

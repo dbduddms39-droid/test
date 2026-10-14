@@ -68,6 +68,8 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('dialog', (d) => d.accept());
     const waitView = (v) => page.waitForSelector(`#view-${v}:not([hidden])`, { timeout: 30_000 });
+    // 원본 목록은 기록 상단 '등록 문서·원본 보기' 펼침 안에 있다
+    const openOriginals = () => page.$eval('#original-dropdown', (d) => { d.open = true; });
     const text = (sel) => page.textContent(sel);
     const noOverflow = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
     const recordId = () => page.evaluate(() => location.hash.match(/#\/records\/(rec_\w+)/)?.[1]);
@@ -93,9 +95,9 @@ try {
     // ---- TC01 채용공고 PDF 단독 ----
     await uploadPdf('job_posting', '파란스텝_채용공고.pdf', POSTING_PDF);
     await waitView('record');
-    await page.waitForSelector('#original-list .original-view:not([aria-disabled])', { timeout: 10_000 });
+    await page.waitForSelector('#original-list .original-view:not([aria-disabled])', { state: 'attached', timeout: 10_000 }); await openOriginals();
     const rec1 = await recordId();
-    check(`[${tag}] TC01 공고 단독: 저장·원본 저장 안내`, (await text('#save-status')).includes('저장했어요') && (await text('#save-status')).includes('원본 PDF도 이 브라우저에 저장했어요'));
+    check(`[${tag}] TC01 공고 단독: 저장·원본 저장 안내`, /저장됐어요/.test(await text('#save-status')) && (await page.$$('#original-list .original-item')).length === 1);
     check(`[${tag}] TC01 주요 조건 미리보기 표시 (등록 완료)`, (await text('#conditions-title')) === '주요 조건 미리보기' && (await page.$$('#condition-list .ccard')).length > 0 && (await text('#brief-done')).includes('등록 완료'));
     const recText = await text('#view-record');
     check(`[${tag}] TC01 10개 기준 미기재·불명확 경고와 확인 질문 없음`, !(await page.$('[data-group="needs"]')) && (await page.$$('#view-record .q-text')).length === 0
@@ -114,7 +116,7 @@ try {
     // ---- TC07 저장 → 새로고침 → 보기·다운로드 바이트 동일 ----
     await page.reload();
     await waitView('record');
-    await page.waitForSelector('#original-list .original-view:not([aria-disabled])', { timeout: 10_000 });
+    await page.waitForSelector('#original-list .original-view:not([aria-disabled])', { state: 'attached', timeout: 10_000 }); await openOriginals();
     const files1 = await idb(page, 'files');
     const orig = Array.from(POSTING_PDF);
     check(`[${tag}] TC07 IndexedDB에 원본 Blob·파일명·형식·크기·기록/자료 ID 저장`, files1.length === 1 && same(files1[0].bytes, orig) && files1[0].name === '파란스텝_채용공고.pdf'
@@ -138,7 +140,7 @@ try {
     await waitView('record');
     const rec2 = await recordId();
     await page.unroute('**/api/analyze');
-    await page.waitForSelector('#original-list .original-view:not([aria-disabled])', { timeout: 10_000 });
+    await page.waitForSelector('#original-list .original-view:not([aria-disabled])', { state: 'attached', timeout: 10_000 }); await openOriginals();
     check(`[${tag}] TC08 원본 저장 완료 / 분석 실패 표시`, (await text('#save-status')).includes('원본 PDF도 이 브라우저에 저장했어요') && (await text('#save-status')).includes('분석은 완료하지 못했어요')
       && (await text('#doc-list')).includes('원본 저장 완료') && (await text('#doc-list')).includes('분석 실패'));
     check(`[${tag}] TC08 분석 실패여도 원본 보기 가능 (바이트 동일)`, same(await viewBytes(), Array.from(CONTRACT_PDF)));
@@ -148,7 +150,7 @@ try {
     await page.click('#doc-list button[data-reanalyze]');
     await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'), null, { timeout: 30_000 });
     const rec2Row = (await idb(page, 'records')).find((r) => r.id === rec2);
-    check(`[${tag}] TC08 같은 텍스트로 다시 분석 → 분석됨, 원본 다시 저장 안 함`, rec2Row.documents[0].status === 'analyzed' && (await idb(page, 'files')).length === filesBefore && (await page.$$('#condition-list .ccard')).length > 0);
+    check(`[${tag}] TC08 같은 텍스트로 다시 분석 → 분석됨, 원본 다시 저장 안 함`, rec2Row.documents[0].status === 'analyzed' && (await idb(page, 'files')).length === filesBefore && (await page.$$('#condition-list .ccard, #contract-glance-list > li')).length > 0);
     check(`[${tag}] TC06 계약서 단독: 기재 내용 확인 화면 유지 ('근로계약서 확인 결과')`, (await text('#conditions-title')) === '근로계약서 확인 결과');
     // 같은 PDF를 같은 기록에 다시 등록 → 원본은 한 번만
     await uploadPdf('contract', '파란스텝_근로계약서(사본).pdf', CONTRACT_PDF, { add: rec2 });
@@ -161,7 +163,7 @@ try {
     check(`[${tag}] 새 안내 추가: 처우·근로조건 안내는 선택 자료로 표시`, (await text('#doc-type-field')).includes('처우·근로조건 안내') && (await text('#doc-type-field')).includes('선택'));
     await uploadPdf('contract', '파란스텝_근로계약서.pdf', CONTRACT_PDF, { add: rec1 });
     await waitView('record');
-    await page.waitForSelector('#original-list .original-item:nth-child(2) .original-view:not([aria-disabled])', { timeout: 10_000 });
+    await page.waitForSelector('#original-list .original-item:nth-child(2) .original-view:not([aria-disabled])', { state: 'attached', timeout: 10_000 }); await openOriginals();
     const diff = (await page.$('[data-group="different"]')) ? await text('[data-group="different"]') : '';
     check(`[${tag}] TC02 공고 09:00~18:00 ↔ 계약서 10:00~19:00: 서로 다른 안내 + 질문`, diff.includes('근무시간') && (await page.$$('[data-group="different"] .q-text')).length >= 1, diff.slice(0, 100));
     check(`[${tag}] TC04 공고 → 계약서 바로: 계약서가 있으면 '입사 전 확인할 내용'이 먼저, 원본 2개`, await page.$eval('#now-section', (n) => !!(n.compareDocumentPosition(document.querySelector('#conditions-section')) & Node.DOCUMENT_POSITION_FOLLOWING))
@@ -185,13 +187,13 @@ try {
     await page.evaluate(() => sessionStorage.setItem('e2e-fail-put', '1'));
     await uploadPdf('job_posting', '파란스텝_채용공고_새.pdf', await (async () => Buffer.concat([POSTING_PDF, Buffer.from('\n% v2\n')]))());
     await waitView('record');
-    check(`[${tag}] TC09 저장소 실패: '저장되지 않았어요', 저장했다고 하지 않음`, (await text('#save-status')).includes('저장되지 않았어요') && !(await text('#save-status')).includes('저장했어요') && (await page.$$('#original-list .original-item')).length === 0);
+    check(`[${tag}] TC09 저장소 실패: '저장되지 않았어요', 저장했다고 하지 않음`, (await text('#save-status')).includes('저장되지 않았어요') && !/저장했어요|저장됐어요/.test(await text('#save-status')) && (await page.$$('#original-list .original-item')).length === 0);
     await page.evaluate(() => sessionStorage.removeItem('e2e-fail-put'));
     check(`[${tag}] TC09 저장 실패 시 원본 파일도 남지 않음`, (await idb(page, 'files')).length === filesBeforeFail);
     await page.click('#save-retry');
     await page.waitForFunction(() => /#\/records\/rec_/.test(location.hash));
     await waitView('record');
-    check(`[${tag}] TC09 다시 저장하면 원본도 함께 저장`, (await text('#save-status')).includes('원본 PDF도 이 브라우저에 저장했어요') && (await idb(page, 'files')).length === filesBeforeFail + 1);
+    check(`[${tag}] TC09 다시 저장하면 원본도 함께 저장`, /저장됐어요/.test(await text('#save-status')) && (await idb(page, 'files')).length === filesBeforeFail + 1);
 
     // ---- TC11 기록 삭제: 그 기록의 원본만 ----
     const filesAll = await idb(page, 'files');
