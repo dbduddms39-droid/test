@@ -128,7 +128,7 @@ try {
   await register('job_posting', POSTING_3400);
   const rec1 = await recordId();
   check('T01 채용공고 하나로 결과·기록 도달', Boolean(rec1));
-  check('T01 저장을 확인한 뒤에만 \'저장했어요\' 표시', /저장됐어요|추가됐어요/.test(await text('#save-status')));
+  check('T01 저장을 확인한 뒤에만 \'저장했어요\' 표시', /저장됐어요|추가됐어요/.test(await text('#save-indicator')));
   check('T01 회사명을 자동으로 기록 이름에 쓰지 않음: 안내 문구 표시', (await text('#record-title')) === '기록 이름을 입력해 주세요' && !(await text('#record-title')).includes(MARK));
   const order = await page.evaluate(() => ['now-title', 'conditions-title', 'details-title', 'actions-title'].map((id) => document.getElementById(id).getBoundingClientRect().top));
   check('결과 화면 순서: 입사 전 확인할 내용 → 핵심 조건 요약 → 상세 확인(접힘) → 필요할 때 하기', order.every((v, i) => i === 0 || v > order[i - 1]), order.map(Math.round).join(' < '));
@@ -206,7 +206,7 @@ try {
   await register('contract', CONTRACT);
   const rec4 = await recordId();
   const condText = await text('#all-condition-list');
-  check('T03 계약서 하나로 결과·저장', Boolean(rec4) && /저장됐어요|추가됐어요/.test(await text('#save-status')));
+  check('T03 계약서 하나로 결과·저장', Boolean(rec4) && /저장됐어요|추가됐어요/.test(await text('#save-indicator')));
   check('T03 계약서는 기재 상태 라벨(기재됨 등)로', condText.includes('기재됨'));
   check('T15 수습 없음이면 수습 중 급여 항목·질문 없음', !(await page.$('#condition-list [data-item="08"]')) && !(await text('#view-record')).includes('수습 중 급여에 관한'));
   check('계약서 결과에 법 위반·효력 판정 표현 없음', !/(위반입니다|불법|합법|무효|위험도)/.test(await text('#view-record')));
@@ -250,13 +250,14 @@ try {
   await page.click('#submit-btn');
   await waitView('record');
   check('T12 저장 실패: \'저장되지 않았어요\'와 다시 저장 버튼', (await text('#save-status')).includes('저장되지 않았어요') && await page.isVisible('#save-retry'));
-  check('T12 저장 실패를 성공으로 표시하지 않음', !/저장했어요|저장됐어요|추가됐어요/.test(await text('#save-status')) && (await page.evaluate(() => location.hash)) === '#/unsaved');
+  check('T12 저장 실패를 성공으로 표시하지 않음 (작은 저장 표시도 \'저장되지 않음\')', !/저장했어요|저장됐어요|추가됐어요/.test(await text('#save-status')) && (await page.evaluate(() => location.hash)) === '#/unsaved'
+    && (await page.getAttribute('#save-indicator', 'data-state')) === 'unsaved' && (await text('#save-indicator')).includes('저장되지 않음') && !(await text('#save-indicator')).includes('저장됨'));
   check('T12 저장 안 된 기록은 목록·저장소에 없음', (await idbRecords()).length === 5);
   await page.evaluate(() => sessionStorage.removeItem('e2e-fail-put'));
   await page.click('#save-retry');
   await page.waitForFunction(() => /#\/records\/rec_/.test(location.hash));
   await waitView('record');
-  check('T12 같은 세션에서 다시 저장하면 정상 저장', /저장됐어요|추가됐어요/.test(await text('#save-status')) && (await idbRecords()).length === 6);
+  check('T12 같은 세션에서 다시 저장하면 정상 저장', /저장됐어요|추가됐어요/.test(await text('#save-indicator')) && (await idbRecords()).length === 6);
   // 기존 기록에 추가하다 저장 실패 → 이전 기록 훼손 없음
   await page.evaluate(() => sessionStorage.setItem('e2e-fail-put', '1'));
   await page.goto(`${BASE}/#/records/${rec4}/add`);

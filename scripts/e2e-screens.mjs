@@ -71,7 +71,7 @@ try {
     await page.waitForTimeout(300); await shot('S04'); await noOverflow('S04'); await codesHidden('S04');
     const rows = await page.$$eval('#condition-list .cmp-card', (e) => e.length);
     check(`[${tag}] S04: 핵심 조건 요약 카드`, rows >= 4, `${rows}개`);
-    check(`[${tag}] S04: 데모 결과 안내·저장 표시`, (await page.textContent('#analysis-source')).includes('데모') && /저장됐어요|추가됐어요/.test(await page.textContent('#save-status')));
+    check(`[${tag}] S04: 데모 결과 안내·저장 표시`, (await page.textContent('#analysis-source')).includes('데모') && /저장됐어요|추가됐어요/.test(await page.textContent('#save-indicator')));
     await page.click('#condition-list .cmp-card a[href*="/item/"]'); await view('item'); await page.waitForTimeout(300);
     await shot('S05'); await noOverflow('S05'); await codesHidden('S05');
     // 상세: 카드에는 근거 건수만, 인용 전문은 아래 '원문 근거'에서 한 번만 (강조는 글자에만)

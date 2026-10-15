@@ -101,7 +101,7 @@ test('문서 1개: 근로계약서는 10개 기준 모두 카드 (추가 확인 
   assert.equal(singleStatus('contract', topic('MAIN_MISSING')), 'needs');
   assert.equal(singleStatus('contract', topic('MAIN_FOUND'), { hasQuestion: true }), 'needs');
   assert.equal(singleStatus('contract', topic('MAIN_UNAVAILABLE')), 'unavailable');
-  assert.deepEqual(SINGLE_STATUS.contract.order, ['needs', 'written', 'calculated', 'unavailable']);
+  assert.deepEqual(SINGLE_STATUS.contract.order, ['needs', 'calculated', 'written', 'unavailable']);
   assert.deepEqual(SINGLE_STATUS.brief.order, ['stated', 'deferred', 'unavailable']);
 });
 

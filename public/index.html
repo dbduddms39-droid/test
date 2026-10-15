@@ -361,7 +361,11 @@
             <button type="button" class="btn-small" id="rename-cancel">취소</button>
             <p class="error small" id="rename-error" role="alert" hidden></p>
           </form>
-          <p class="record-meta muted small" id="record-meta"></p>
+          <div class="record-meta-row">
+            <p class="record-meta muted small" id="record-meta"></p>
+            <!-- 저장 상태: 실제로 저장을 확인한 기록에만 '이 브라우저에 저장됨' (저장 실패는 위 오류 영역에서 다시 저장) -->
+            <p class="save-indicator" id="save-indicator" role="status" aria-live="polite" hidden></p>
+          </div>
           <div class="record-doc-chips" id="record-doc-chips" aria-label="등록한 문서 종류"></div>
           <div class="record-tools" id="record-tools">
             <a class="btn-secondary btn-auto" id="add-doc-top">+ 새 문서 추가하기</a>

@@ -1445,3 +1445,30 @@ details.cmp-group > summary::-webkit-details-marker { display: none; }
 .cmp-row-actions .cmp-detail-link:hover { color: var(--green-dark); text-decoration: underline; }
 @media print { .toast, .layout-wait { display: none !important; } }
 @media (min-width: 640px) { #review-edit, #review-restore { min-width: 172px; } }
+
+/* 원문 근거 보기·조건 상세·답변 메모: 펼쳐도 두 링크는 같은 줄·같은 자리 (근거는 그 아래에 펼쳐짐) */
+.cmp-row-actions { position: relative; display: block; }
+.cmp-row-actions .cmp-evidence { display: block; }
+.cmp-row-actions .cmp-evidence[open] { order: 0; padding: 0; }
+.cmp-row-actions .cmp-evidence > summary { display: inline-flex; min-height: 32px; padding-right: 8px; }
+.cmp-row-actions .cmp-evidence > :not(summary) { margin-top: 6px; }
+.cmp-row-actions .cmp-detail-link { position: absolute; top: 0; right: 0; }
+.cmp-row-actions > .cmp-detail-link:only-child { position: static; }
+.cmp-row-actions .cmp-evidence > summary:focus-visible, .cmp-row-actions .cmp-detail-link:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 2px; }
+/* 모바일: 글자·모양은 그대로, 실제 누를 수 있는 높이만 44px */
+@media (max-width: 767px) {
+  .cmp-row-actions .cmp-evidence > summary, .cmp-row-actions .cmp-detail-link { min-height: 44px; }
+  .cmp-row-actions .cmp-detail-link { padding-left: 12px; }
+}
+
+/* 분석 후 저장 상태: 제목 아래 작은 표시 (넓은 안내 영역 대신) */
+.record-meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.record-meta-row .record-meta { margin: 0; }
+.save-indicator { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600; color: var(--green); }
+.save-indicator .save-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.save-indicator[data-state="unsaved"] { color: var(--danger); }
+.save-indicator.is-fresh { animation: save-fresh 1.6s ease-out 1; border-radius: 4px; }
+@keyframes save-fresh { 0% { background: var(--brand-soft); box-shadow: 0 0 0 4px var(--brand-soft); } 100% { background: transparent; box-shadow: 0 0 0 4px transparent; } }
+@media (prefers-reduced-motion: reduce) { .save-indicator.is-fresh { animation: none; } }
+.save-status.is-info { padding: 8px 12px; font-size: 13px; background: var(--wash); border-left: 3px solid var(--rule); }
+.cmp-card:not(.cmp-row) > .cmp-row-actions .cmp-detail-link { top: 8px; } /* 카드 아래 구분선 여백만큼 내려 "원문 근거 보기"와 같은 줄에 */

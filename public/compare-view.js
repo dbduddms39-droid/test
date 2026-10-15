@@ -91,7 +91,7 @@ export function documentTitle(doc, max = 40) {
 // tone: 비교 화면과 같은 배지·요약 칸 색 (status-*)
 export const SINGLE_STATUS = {
   contract: {
-    order: ['needs', 'written', 'calculated', 'unavailable'],
+    order: ['needs', 'calculated', 'written', 'unavailable'], // 계산값은 원문 기재값과 구분해 기재된 조건보다 먼저
     needs: { label: '추가 확인이 필요한 조건', tone: 'review' },
     written: { label: '문서에 기재된 조건', tone: 'same' },
     calculated: { label: '계산으로 확인한 조건', tone: 'onesided' },

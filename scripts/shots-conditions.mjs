@@ -40,7 +40,21 @@ try {
         kind: e.classList.contains('is-compact') ? '목록형' : '넓은 카드', badge: e.querySelector('.badge')?.textContent ?? '(없음)',
         no: e.querySelector('.cmp-no')?.textContent ?? '', value: e.querySelector('.cmp-value')?.textContent.slice(0, 40) })));
       if (tag === 'desk') { console.log(`\n[${name}]`); for (const r of rows) console.log(`  ${r.group.padEnd(11)} ${r.no.padEnd(3)}${r.label.padEnd(10)} ${r.kind.padEnd(6)} 배지:${r.badge.padEnd(12)} ${r.value}`); }
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({ path: `${OUT}/${tag}-${name}-top.png` }); // 저장 안내·요약이 보이는 첫 화면
       await (await page.$('#condition-list')).screenshot({ path: `${OUT}/${tag}-${name}.png` });
+      // 근거 하나만 펼쳤을 때 두 링크가 움직이는지
+      const one = await page.$('#condition-list .cmp-row details.cmp-evidence');
+      if (one) {
+        const row = await one.evaluateHandle((d) => d.closest('.cmp-card'));
+        const pos = () => row.evaluate((r) => [...r.querySelectorAll('.cmp-evidence > summary, .cmp-detail-link')].map((x) => Math.round(x.getBoundingClientRect().top - r.getBoundingClientRect().top)));
+        const before = await pos();
+        await one.evaluate((d) => { d.open = true; });
+        const after = await pos();
+        if (tag === 'desk' || name === 'contract') console.log(`  [${tag}] 근거 펼치기 전후 링크 위치(카드 기준 y): ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
+        await (await row.asElement()).screenshot({ path: `${OUT}/${tag}-${name}-one-open.png` });
+        await one.evaluate((d) => { d.open = false; });
+      }
       // 첫 묶음의 원문 근거를 모두 펼친 화면 (목록형 2열이 깨지지 않는지)
       await page.$$eval('[data-group="stated"] details.cmp-evidence, [data-group="written"] details.cmp-evidence', (ds) => ds.forEach((d) => { d.open = true; }));
       await page.waitForTimeout(100);

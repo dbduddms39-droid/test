@@ -97,7 +97,7 @@ try {
     await waitView('record');
     await page.waitForSelector('#original-list .original-view:not([aria-disabled])', { state: 'attached', timeout: 10_000 }); await openOriginals();
     const rec1 = await recordId();
-    check(`[${tag}] TC01 공고 단독: 저장·원본 저장 안내`, /저장됐어요/.test(await text('#save-status')) && (await page.$$('#original-list .original-item')).length === 1);
+    check(`[${tag}] TC01 공고 단독: 저장·원본 저장 안내`, /저장됐어요/.test(await text('#save-indicator')) && (await page.$$('#original-list .original-item')).length === 1);
     check(`[${tag}] TC01 주요 조건 미리보기 표시 (등록 완료)`, (await text('#conditions-title')) === '주요 조건 미리보기' && (await page.$$('#condition-list .cmp-card')).length > 0 && (await text('#cmp-docs')).includes('등록 완료'));
     const recText = await text('#view-record');
     check(`[${tag}] TC01 10개 기준 미기재·불명확 경고와 확인 질문 없음`, !(await page.$('[data-group="needs"]')) && (await page.$$('#view-record .q-text')).length === 0
@@ -193,7 +193,7 @@ try {
     await page.click('#save-retry');
     await page.waitForFunction(() => /#\/records\/rec_/.test(location.hash));
     await waitView('record');
-    check(`[${tag}] TC09 다시 저장하면 원본도 함께 저장`, /저장됐어요/.test(await text('#save-status')) && (await idb(page, 'files')).length === filesBeforeFail + 1);
+    check(`[${tag}] TC09 다시 저장하면 원본도 함께 저장`, /저장됐어요/.test(await text('#save-indicator')) && (await idb(page, 'files')).length === filesBeforeFail + 1);
 
     // ---- TC11 기록 삭제: 그 기록의 원본만 ----
     const filesAll = await idb(page, 'files');

@@ -89,6 +89,12 @@ try {
     const ev1 = await page.$eval('#cmp-item-01 details.cmp-evidence', (d) => ({ open: d.open, quotes: [...d.querySelectorAll('.cmp-quote')].map((q) => q.textContent), labels: [...d.querySelectorAll('.cmp-evidence-for')].map((x) => x.textContent) }));
     check(`[${tag}] 채용공고 단독: 원문 근거 펼치기 (원문 그대로·대상 조건·줄 번호, 중복 없음)`, ev1.open && ev1.quotes.length > 0 && ev1.quotes.every((q) => DEMO_POSTING.includes(q)) && new Set(ev1.quotes).size === ev1.quotes.length && ev1.labels.every((l) => l.includes('의 근거') && l.includes('번째 줄')), ev1.quotes[0]);
     check(`[${tag}] 채용공고 단독: 미리보기 값 (임금 범위·협의 예정 표시)`, (await card('01')).includes('3,400만~3,800만') && (await card('01')).includes('협의 예정'));
+    // 협의·추후 안내: 값은 문서에 적힌 그대로, 설명은 뜻만 (같은 원문·범위를 되풀이하지 않음)
+    const defNote = await page.$$eval('[data-group="deferred"] .cmp-card', (els) => els.map((e) => ({ id: e.dataset.item, value: e.querySelector('.cmp-value').textContent, note: e.querySelector('.cmp-note p:not(.cmp-note-title)')?.textContent ?? '' })));
+    check(`[${tag}] 협의·추후 안내 카드: 값은 원문 그대로, 설명은 뜻만 ('구체적인 금액은 협의 후 정해져요.' 등), 원문 반복 없음`, defNote.length >= 2 && defNote.every((x) => /^구체적인 (금액|내용)은 (협의 후 정해져요|추후 안내 예정이에요)\.$/.test(x.note) && !x.note.includes(x.value) && !x.note.includes("'")) && defNote.find((x) => x.id === '01').note === '구체적인 금액은 협의 후 정해져요.' && defNote.find((x) => x.id === '01').value.includes('3,400만~3,800만'), JSON.stringify(defNote));
+    // 분석 후 저장: 넓은 안내 대신 제목 아래 작은 '이 브라우저에 저장됨' (실제 저장 후에만)
+    const ind = await page.$eval('#save-indicator', (e) => ({ text: e.textContent, state: e.dataset.state, visible: e.offsetParent !== null, h: Math.round(e.getBoundingClientRect().height), title: e.title }));
+    check(`[${tag}] 분석 후 저장 상태: 작은 '이 브라우저에 저장됨' 표시(브라우저 저장 설명 포함), 넓은 저장 안내 영역 없음`, ind.visible && ind.state === 'saved' && ind.text.includes('이 브라우저에 저장됨') && ind.text.includes('다른 기기나 브라우저에서는 보이지 않아요') && ind.h <= 28 && !(await page.isVisible('#save-status')), JSON.stringify(ind));
     check(`[${tag}] 채용공고 단독: null 없음·가로 넘침 없음`, await noNull() && await noOverflow());
     await page.screenshot({ path: `${OUT}/${tag}-1-posting.png`, fullPage: true });
     // 두 번째 문서 추가 CTA → 같은 기록에 추가
@@ -112,6 +118,24 @@ try {
       const cols = new Set(boxes.filter((b, i) => rows[i].classList.contains('is-compact')).map((b) => Math.round(b.left))).size;
       return { overlap, spill, cols, hours: rows.find((r) => r.dataset.item === '02').querySelector('details').open };
     });
+    // 두 링크 위치 고정 (펼치기 전후 같은 자리), 모바일 터치 높이 44px 이상·서로 떨어져 있음, 키보드 포커스 표시
+    await page.$$eval('[data-group="stated"] details.cmp-evidence', (ds) => ds.forEach((d) => { d.open = false; }));
+    const linkPos = () => page.$eval('#cmp-item-02', (r) => { const top = r.getBoundingClientRect().top; return ['.cmp-evidence > summary', '.cmp-detail-link'].map((q) => { const b = r.querySelector(q).getBoundingClientRect(); return { y: Math.round(b.top - top), x: Math.round(b.left), r: Math.round(b.right), h: Math.round(b.height) }; }); });
+    const lp0 = await linkPos();
+    await page.click('#cmp-item-02 details.cmp-evidence > summary');
+    const lp1 = await linkPos();
+    const opened = await page.$eval('#cmp-item-02', (r) => { const s = r.querySelector('.cmp-evidence > summary').getBoundingClientRect(); const q = r.querySelector('.cmp-quote').getBoundingClientRect(); return q.top >= s.bottom; });
+    check(`[${tag}] 원문 근거를 펼쳐도 '원문 근거 보기'·'조건 상세·답변 메모'는 같은 자리, 근거는 두 링크 아래`, JSON.stringify(lp0) === JSON.stringify(lp1) && lp0[0].y === lp0[1].y && opened, JSON.stringify([lp0, lp1]));
+    check(`[${tag}] 두 링크 터치 영역 ${tag === 'mob' ? '44px 이상' : '32px 이상'}, 서로 16px 이상 떨어짐`, lp0.every((b) => b.h >= (tag === 'mob' ? 44 : 32)) && lp0[1].x - lp0[0].r >= 16, JSON.stringify(lp0));
+    await page.focus('#cmp-item-03 .cmp-evidence > summary'); await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+    const ring = await page.evaluate(() => { const a = document.activeElement; const st = getComputedStyle(a); return { tag: a.tagName, outline: st.outlineStyle, w: st.outlineWidth }; });
+    await page.keyboard.press('Tab');
+    const ring2 = await page.evaluate(() => { const a = document.activeElement; const st = getComputedStyle(a); return { cls: a.className, outline: st.outlineStyle }; });
+    check(`[${tag}] 키보드: '원문 근거 보기' → '조건 상세·답변 메모' 순서로 이동, 포커스 표시 있음`, ring.tag === 'SUMMARY' && ring.outline !== 'none' && ring2.cls.includes('cmp-detail-link') && ring2.outline !== 'none', JSON.stringify([ring, ring2]));
+    await page.$$eval('[data-group="stated"] details.cmp-evidence', (ds) => ds.forEach((d) => { d.open = true; }));
+    await page.waitForTimeout(100);
+    const fit2 = await page.$$eval('[data-group="stated"] .cmp-row', (rows) => rows.every((r) => { const rb = r.getBoundingClientRect(); return [...r.querySelectorAll('.cmp-row-actions > *')].every((x) => { const b = x.getBoundingClientRect(); return b.left >= rb.left - 1 && b.right <= rb.right + 1; }); }));
+    check(`[${tag}] 모두 펼쳐도 링크·근거가 각 칸 안에 있음`, fit2);
     check(`[${tag}] 원문 근거를 펼쳐도 ${tag === 'desk' ? '2열' : '1열'} 유지, 칸끼리 겹치거나 옆 칸을 침범하지 않음, 가로 넘침 없음`, !fit.overlap && !fit.spill && fit.cols === (tag === 'desk' ? 2 : 1) && fit.hours && await noOverflow(), JSON.stringify(fit));
 
     // ---- 문서 1개: 처우 안내 → 간결한 미리보기 ----
@@ -127,7 +151,7 @@ try {
     const g3 = await groups();
     const s3 = await single();
     const order3 = g3.map((g) => g.key);
-    check(`[${tag}] 근로계약서 단독: 10개 기준 카드, 추가 확인 필요 → 기재된 조건 → 계산으로 확인 순서`, s3.cards.length === 10 && order3[0] === 'needs' && order3.every((k, i) => i === 0 || ['needs', 'written', 'calculated', 'unavailable'].indexOf(k) > ['needs', 'written', 'calculated', 'unavailable'].indexOf(order3[i - 1])), order3.join());
+    check(`[${tag}] 근로계약서 단독: 10개 기준 카드, 추가 확인 필요 → 계산으로 확인 → 기재된 조건 순서 (요약 칸도 같은 순서)`, s3.cards.length === 10 && order3[0] === 'needs' && order3.every((k, i) => i === 0 || ['needs', 'calculated', 'written', 'unavailable'].indexOf(k) > ['needs', 'calculated', 'written', 'unavailable'].indexOf(order3[i - 1])) && JSON.stringify(Object.keys(s3.tl)) === JSON.stringify(order3.filter((k) => k !== 'unavailable' || s3.tl.unavailable)), order3.join());
     check(`[${tag}] 근로계약서 단독: 요약 숫자 = 묶음 숫자 = 카드 수, 법률 판단 안 함 안내`, sumMatches(s3, g3) && (await text('#cmp-summary-total')).includes('법률 위반 여부는 판단하지 않아요'), JSON.stringify(s3.tl));
     check(`[${tag}] 근로계약서 단독: '여전히' 없이 '추가 확인이 필요한 조건', 미리보기 CTA 없음, 점검표·요약 중복 영역 없음`, (await text('#condition-list')).includes('추가 확인이 필요한 조건') && !(await text('#view-record')).includes('여전히') && !(await page.isVisible('#next-step')) && !(await page.$('#contract-checklist, #contract-glance, #result-overview')) && !(await page.isVisible('#all-conditions')));
     const c02 = await card('02');

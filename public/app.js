@@ -1055,6 +1055,22 @@ const ORIGINAL_ERROR_TEXT = {
   not_pdf: 'PDF 파일이 아니라서',
   too_large: '파일이 10MB를 넘어',
 };
+// 분석 후 저장 완료 문구 (저장 상태 표시로 옮기는 부분)
+const SAVED_LEAD = /^(기록이 저장됐어요\.|새 자료가 추가됐어요\.)/;
+// 제목 아래 작은 저장 상태: 저장된 기록이면 늘 '이 브라우저에 저장됨', 저장 전이면 '저장되지 않음'.
+// 방금 저장했으면 스크린 리더가 '기록이 저장됐어요.'를 함께 읽는다 (화면에는 같은 크기로).
+function renderSaveIndicator(saved, justSaved) {
+  const box = $('#save-indicator');
+  box.dataset.state = saved ? 'saved' : 'unsaved';
+  box.classList.toggle('is-fresh', Boolean(justSaved));
+  box.replaceChildren(
+    el('span', { class: 'save-dot', 'aria-hidden': 'true' }),
+    justSaved ? el('span', { class: 'sr-only' }, `${justSaved} `) : '',
+    saved ? '이 브라우저에 저장됨' : '저장되지 않음',
+    saved ? el('span', { class: 'sr-only' }, ' (다른 기기나 브라우저에서는 보이지 않아요)') : '');
+  box.title = saved ? '이 기록은 지금 쓰는 브라우저에만 저장돼요. 다른 기기나 브라우저에서는 보이지 않아요.' : '아직 저장되지 않았어요. 위의 \'다시 저장하기\'로 저장할 수 있어요.';
+  box.hidden = false;
+}
 function originalNote(meta, error) {
   if (meta?.reused) return ' 같은 PDF 원본이 이미 이 기록에 있어 다시 저장하지 않고 연결했어요.';
   if (meta) return ' 원본 PDF도 이 브라우저에 저장했어요.';
@@ -1298,6 +1314,11 @@ function detailOnlyText(t) {
   if (!d) return null;
   const lacking = t.id === '02' ? '주 소정근로시간' : d.lacking.join('·');
   return `${d.written.length ? `${josa(d.written.join('·'), '은/는')} 적혀 있어요. ` : ''}${josa(lacking, '은/는')} 별도로 확인이 필요해요.`;
+}
+// 협의·추후 안내 예정 항목의 뜻 (문서 1개 결과 카드용, 원문·분석 결과는 그대로)
+function deferralMeaning(def, id) {
+  const what = ['01', '08'].includes(id) ? '금액' : '내용';
+  return def.kind === 'negotiate' ? `구체적인 ${what}은 협의 후 정해져요.` : `구체적인 ${what}은 추후 안내 예정이에요.`;
 }
 function topicExplain(t, docType = 'contract') {
   if (!t?.visible) return null;
@@ -1714,7 +1735,9 @@ function renderSingle({ record, comparedRecord, fus, labels, saved, fuOf, layout
     const missing = t.status === 'MAIN_MISSING';
     const value = unavailable ? '분석 확인 불가' : missing ? '문서에서 확인되지 않음' : v?.text ?? summaryEvidence(t)?.text ?? '원문에서 확인했어요';
     const badgeText = unavailable ? '분석 확인 불가' : topicBadge(d, t).textContent;
-    const explain = unavailable ? null : topicExplain(t, d.docType);
+    // 협의·추후 안내 예정: 값에 원문이 이미 있으므로 설명은 뜻만 (원문 인용을 되풀이하지 않음)
+    const def = kind === 'brief' && !unavailable ? deferral(t) : null;
+    const explain = unavailable ? null : def ? deferralMeaning(def, id) : topicExplain(t, d.docType);
     const codes = unavailable ? t.criteria.filter((c) => c.required && c.status === 'UNAVAILABLE').flatMap((c) => [c.unavailableReason, ...(c.unavailableCodes ?? [])]) : [];
     const evidence = unavailable ? [] : topicEvidence(t, d.analysis.criteria ?? {});
     // 화면에 기본으로 보이는 값·설명과 중요한 상태만으로 표시 방식을 정한다 (접힌 원문 근거의 길이·개수는 보지 않음)
@@ -1800,6 +1823,7 @@ function renderRecord(record, { unsaved = false } = {}) {
   const detailLink = (topicId) => (saved ? el('a', { href: ROUTES.item(record.id, topicId), class: 'btn-secondary sum-more' }, '자세히 →') : null);
 
   // 저장 상태: 실제 저장을 확인했을 때만 '저장했어요'
+  let justSaved = null;
   const status = $('#save-status');
   status.replaceChildren();
   status.className = 'save-status';
@@ -1815,13 +1839,20 @@ function renderRecord(record, { unsaved = false } = {}) {
         el('button', { type: 'button', class: 'btn-small', id: 'copy-confirmed' }, '확인한 텍스트 복사')));
     status.hidden = false;
   } else if (state.flash) {
-    status.classList.add(`is-${state.flash.kind}`);
-    status.textContent = state.flash.text;
-    status.hidden = false;
+    // 분석 후 저장 완료는 넓은 안내 대신 제목 아래 작은 저장 상태로. 원본 PDF 관련 참고 문구가 있을 때만 안내 영역에 남긴다
+    const done = state.flash.kind === 'saved' ? state.flash.text.match(SAVED_LEAD) : null;
+    const rest = done ? state.flash.text.slice(done[0].length).trim() : state.flash.text;
+    if (done) justSaved = done[0];
+    if (rest) {
+      status.classList.add(`is-${done ? 'info' : state.flash.kind}`);
+      status.textContent = rest;
+      status.hidden = false;
+    } else status.hidden = true;
     state.flash = null;
   } else {
     status.hidden = true;
   }
+  renderSaveIndicator(saved, justSaved);
 
   $('#record-back').hidden = unsaved;
   const named = userAlias(record);

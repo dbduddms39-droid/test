@@ -83,7 +83,7 @@ try {
   check('분석 주체', !REQUIRE_AI || data.mode === 'gemini', `mode=${data.mode}`);
 
   await page.waitForSelector('#view-record:not([hidden])', { timeout: 10_000 });
-  check('기록 저장 확인 후 표시', /저장됐어요|추가됐어요/.test(await page.textContent('#save-status')));
+  check('기록 저장 확인 후 표시', /저장됐어요|추가됐어요/.test(await page.textContent('#save-indicator')));
   await page.screenshot({ path: `${OUT}/02-result.png`, fullPage: true });
   const recordUrl = page.url();
 
