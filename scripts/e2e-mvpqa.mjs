@@ -15,6 +15,7 @@ import { createRateLimiter } from '../src/rateLimit.js';
 import { buildExtraction } from '../test/v22-fixtures.js';
 import { GQ_POSTING, GQ_POSTING_SPECS, GQ_POSTING_LONG_EVIDENCE, GQ_POSTING_LONG_EVIDENCE_SPECS, QA2_OFFER, QA2_OFFER_SPECS, QA2_CONTRACT, QA2_CONTRACT_SPECS } from '../test/gemini-qa-docs.js';
 import { DEMO_POSTING, DEMO_POSTING_SPECS } from '../test/demo-docs.js';
+import { DUP_POSTING, DUP_POSTING_SPECS, DUP_OFFER, DUP_OFFER_SPECS, DUP_CONTRACT, DUP_CONTRACT_SPECS } from '../test/gemini-qa-docs.js';
 import { SAMPLE_FILES, SAMPLE_ZIP_NAME } from '../public/samples.js';
 
 const OUT = 'e2e-artifacts/mvpqa';
@@ -22,7 +23,7 @@ mkdirSync(OUT, { recursive: true });
 const checks = [];
 const check = (name, ok, detail = '') => { checks.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`); };
 
-const DOCS = [[GQ_POSTING, GQ_POSTING_SPECS], [GQ_POSTING_LONG_EVIDENCE, GQ_POSTING_LONG_EVIDENCE_SPECS], [QA2_OFFER, QA2_OFFER_SPECS], [QA2_CONTRACT, QA2_CONTRACT_SPECS], [DEMO_POSTING, DEMO_POSTING_SPECS]];
+const DOCS = [[DUP_POSTING, DUP_POSTING_SPECS], [DUP_OFFER, DUP_OFFER_SPECS], [DUP_CONTRACT, DUP_CONTRACT_SPECS], [GQ_POSTING, GQ_POSTING_SPECS], [GQ_POSTING_LONG_EVIDENCE, GQ_POSTING_LONG_EVIDENCE_SPECS], [QA2_OFFER, QA2_OFFER_SPECS], [QA2_CONTRACT, QA2_CONTRACT_SPECS], [DEMO_POSTING, DEMO_POSTING_SPECS]];
 const ai = {
   name: 'demo',
   async analyze({ segments, criterionIds }) {
@@ -137,6 +138,33 @@ try {
     const fit2 = await page.$$eval('[data-group="stated"] .cmp-row', (rows) => rows.every((r) => { const rb = r.getBoundingClientRect(); return [...r.querySelectorAll('.cmp-row-actions > *')].every((x) => { const b = x.getBoundingClientRect(); return b.left >= rb.left - 1 && b.right <= rb.right + 1; }); }));
     check(`[${tag}] 모두 펼쳐도 링크·근거가 각 칸 안에 있음`, fit2);
     check(`[${tag}] 원문 근거를 펼쳐도 ${tag === 'desk' ? '2열' : '1열'} 유지, 칸끼리 겹치거나 옆 칸을 침범하지 않음, 가로 넘침 없음`, !fit.overlap && !fit.spill && fit.cols === (tag === 'desk' ? 2 : 1) && fit.hours && await noOverflow(), JSON.stringify(fit));
+
+    // ---- 문서 1개: 값 앞 항목명 중복·맨 앞 불렛 (번호·콜론 없는 줄) → 결과 목록 값에서만 정리, 원문 근거·상세 화면은 원문 그대로 ----
+    for (const [type, body, expect, quotes] of [
+      ['job_posting', DUP_POSTING, { '03': '서울 성동구 성수이로 00, 4층', '04': '브랜드 공식 SNS 채널 운영 · 월간 콘텐츠 캘린더 수립', '05': '정규직', '07': '3개월' }, { '03': '근무장소 서울 성동구 성수이로 00, 4층', '04': '• 브랜드 공식 SNS 채널 운영' }],
+      ['offer', DUP_OFFER, { '03': '서울 성동구 성수동 본사', '05': '정규직', '07': '입사 후 3개월' }, { '03': '근무장소 서울 성동구 성수동 본사', '07': '수습기간 입사 후 3개월' }],
+      ['contract', DUP_CONTRACT, { '03': '서울 성동구 성수동 본사', '04': '브랜드 공식 SNS 채널 운영 · SNS 콘텐츠 기획·제작 일정 관리', '05': '정규직', '07': '입사 후 3개월' }, { '05': '고용형태 정규직', '04': '• SNS 콘텐츠 기획·제작 일정 관리' }],
+    ]) {
+      await page.goto(`${BASE}/#/new`);
+      await register(type, body);
+      const vals = await page.$$eval('#condition-list .cmp-card', (els) => Object.fromEntries(els.map((e) => [e.dataset.item, e.querySelector('.cmp-value').textContent])));
+      const okVals = Object.entries(expect).every(([id, v]) => vals[id] === v);
+      // 원문 근거: 원문 줄 그대로 (항목명·불렛 포함), 원문 문서에 실제로 있는 글자
+      await page.$$eval('#condition-list details.cmp-evidence', (ds) => ds.forEach((d) => { d.open = true; }));
+      const ev = await page.$$eval('#condition-list .cmp-card', (els) => Object.fromEntries(els.map((e) => [e.dataset.item, [...e.querySelectorAll('.cmp-quote')].map((q) => q.textContent)])));
+      const okEv = Object.entries(quotes).every(([id, q]) => ev[id]?.includes(q)) && Object.values(ev).flat().every((q) => body.includes(q));
+      check(`[${tag}] ${type} 단독: 값 앞 항목명·맨 앞 불렛 없이 표시 (번호·콜론 없는 줄 포함), 여러 업무 구분 유지`, okVals, JSON.stringify(Object.fromEntries(Object.keys(expect).map((id) => [id, vals[id]]))));
+      check(`[${tag}] ${type} 단독: 원문 근거는 원본 줄 그대로 (항목명·불렛 포함)`, okEv, JSON.stringify(Object.fromEntries(Object.keys(quotes).map((id) => [id, ev[id]]))));
+      if (type === 'contract') {
+        const recId = page.url().split('/').pop();
+        await page.goto(`${BASE}/#/records/${recId}/item/05`); await page.waitForTimeout(400);
+        await page.waitForSelector('#view-item:not([hidden])', { timeout: 5000 });
+        const detail = (await text('#view-item')).replace(/\s+/g, ' ').trim();
+        const at = detail.indexOf('고용형태 정규직');
+        check(`[${tag}] 조건 상세 화면은 이번 변경과 무관 (원문 근거 '고용형태 정규직' 그대로)`, await page.isVisible('#view-item') && at >= 0, detail.slice(Math.max(0, at - 30), at + 30));
+      }
+      await page.screenshot({ path: `${OUT}/${tag}-dup-${type}.png`, fullPage: true });
+    }
 
     // ---- 문서 1개: 처우 안내 → 간결한 미리보기 ----
     await page.goto(`${BASE}/#/new`);

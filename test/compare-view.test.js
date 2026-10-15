@@ -138,3 +138,38 @@ test('목록형 묶음 안에서도 값·설명이 길거나 중요한 상태면
 test('그 밖의 묶음(추가 확인 필요·협의 예정·계산값·확인 불가)은 넓은 카드', () => {
   for (const group of ['needs', 'calculated', 'unavailable', 'deferred']) assert.equal(listRowKind({ group, value: '짧음' }), 'card', group);
 });
+
+// ---- 문서 1개 결과 목록: 조건값 앞 항목명·불렛 표시 정리 ----
+import { displayConditionValue } from '../public/compare-view.js';
+
+test('조건값 앞에 되풀이된 항목명 제거: 번호·콜론 유무와 관계없이', () => {
+  assert.equal(displayConditionValue('근무장소 서울 성동구 성수동 본사', '03', '근무장소'), '서울 성동구 성수동 본사');
+  assert.equal(displayConditionValue('고용형태 정규직', '05', '고용형태'), '정규직');
+  assert.equal(displayConditionValue('수습기간 입사 후 3개월', '07', '수습기간'), '입사 후 3개월');
+  assert.equal(displayConditionValue('2. 근무장소: 서울 성동구 성수동 본사', '03', '근무장소'), '서울 성동구 성수동 본사');
+  assert.equal(displayConditionValue('근무지 : 서울', '03', '근무장소'), '서울');
+  assert.equal(displayConditionValue('근무 장소 서울', '03', '근무장소'), '서울');
+  assert.equal(displayConditionValue('수습기간 중 임금: 정규 임금의 90%', '08', '수습 중 임금'), '정규 임금의 90%');
+});
+
+test('문장의 일부·값 중간의 단어·값의 일부인 말은 지우지 않음, 비면 원래 값', () => {
+  assert.equal(displayConditionValue('근무장소는 서울 본사입니다', '03', '근무장소'), '근무장소는 서울 본사입니다');
+  assert.equal(displayConditionValue('근무장소 변경은 협의 후 결정', '03', '근무장소'), '근무장소 변경은 협의 후 결정');
+  assert.equal(displayConditionValue('서울 본사 (근무장소 변경 가능)', '03', '근무장소'), '서울 본사 (근무장소 변경 가능)');
+  assert.equal(displayConditionValue('연봉 3,400만 원', '01', '임금'), '연봉 3,400만 원');
+  assert.equal(displayConditionValue('근무장소', '03', '근무장소'), '근무장소');
+  assert.equal(displayConditionValue('근무장소:', '03', '근무장소'), '근무장소:');
+  assert.equal(displayConditionValue('', '03', '근무장소'), '');
+  assert.equal(displayConditionValue(null, '03', '근무장소'), null);
+});
+
+test('맨 앞 불렛만 제거, 여러 업무는 구분 유지, 중간 기호·숫자 앞 기호는 그대로', () => {
+  assert.equal(displayConditionValue('• 브랜드 공식 SNS 채널 운영', '04', '담당업무'), '브랜드 공식 SNS 채널 운영');
+  assert.equal(displayConditionValue('• 브랜드 공식 SNS 채널 운영 · • 월간 콘텐츠 캘린더 수립', '04', '담당업무'), '브랜드 공식 SNS 채널 운영 · 월간 콘텐츠 캘린더 수립');
+  assert.equal(displayConditionValue('- 콘텐츠 기획·제작', '04', '담당업무'), '콘텐츠 기획·제작');
+  assert.equal(displayConditionValue('담당업무: • SNS 운영', '04', '담당업무'), 'SNS 운영');
+  assert.equal(displayConditionValue('SNS 운영 • 캠페인 분석', '04', '담당업무'), 'SNS 운영 • 캠페인 분석');
+  assert.equal(displayConditionValue('-5% 감액', '08', '수습 중 임금'), '-5% 감액');
+  assert.equal(displayConditionValue('※ 추후 안내', '08', '수습 중 임금'), '※ 추후 안내');
+  assert.equal(displayConditionValue('09:00~18:00 · 휴게 12:00~13:00', '02', '근무시간'), '09:00~18:00 · 휴게 12:00~13:00');
+});

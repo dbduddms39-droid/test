@@ -1,7 +1,7 @@
 import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-rules.js';
 import { copyText, josa } from './questions.js';
 import { el, fill, statusBadge, CONTRACT_STATUS_LABEL, sourcePanelLines, highlightText } from './components.js';
-import { compareStatus, evidenceFor, topicEvidence, documentTitle, singleStatus, COMPARE_STATUS, STATUS_ORDER, SINGLE_STATUS, COMPACT_GROUPS, listRowKind } from './compare-view.js';
+import { compareStatus, evidenceFor, topicEvidence, documentTitle, singleStatus, COMPARE_STATUS, STATUS_ORDER, SINGLE_STATUS, COMPACT_GROUPS, listRowKind, displayConditionValue } from './compare-view.js';
 import { ROUTES, checkText, editRouteFor, inputRouteFor, resolveRoute, classifyAnalyzeFailure, formatDateTime } from './flow.js';
 import { createTracker, applyEdit, confirmSpan, pendingRanges, unlocatedPending, summary as ocrSummary, remapTracker } from './ocr-spans.js';
 import {
@@ -1733,7 +1733,9 @@ function renderSingle({ record, comparedRecord, fus, labels, saved, fuOf, layout
     const extLeave = kind === 'contract' && externallyReferencedLeave(t);
     const v = !unavailable && row.relItem ? cardValue(row.relItem, d.id) : null;
     const missing = t.status === 'MAIN_MISSING';
-    const value = unavailable ? '분석 확인 불가' : missing ? '문서에서 확인되지 않음' : v?.text ?? summaryEvidence(t)?.text ?? '원문에서 확인했어요';
+    // 조건명이 따로 보이므로 값 맨 앞의 되풀이된 항목명·불렛만 화면에서 뗀다 (원문 근거·저장 데이터는 그대로)
+    const value = unavailable ? '분석 확인 불가' : missing ? '문서에서 확인되지 않음'
+      : displayConditionValue(v?.text ?? summaryEvidence(t)?.text ?? '원문에서 확인했어요', id, itemLabel(record, id));
     const badgeText = unavailable ? '분석 확인 불가' : topicBadge(d, t).textContent;
     // 협의·추후 안내 예정: 값에 원문이 이미 있으므로 설명은 뜻만 (원문 인용을 되풀이하지 않음)
     const def = kind === 'brief' && !unavailable ? deferral(t) : null;

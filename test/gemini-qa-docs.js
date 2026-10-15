@@ -126,3 +126,45 @@ const LONG_HOURS = '근무시간: 09:00~18:00 (휴게 12:00~13:00), 주 5일(월
 const LONG_DUTY = '브랜드 공식 SNS 채널 운영, 월간 콘텐츠 캘린더 수립, 인플루언서 협업 캠페인 기획·실행 및 캠페인별 성과 지표 분석 보고';
 export const GQ_POSTING_LONG_EVIDENCE = GQ_POSTING.replace('근무시간: 09:00~18:00 (휴게 12:00~13:00)', LONG_HOURS).replace('담당업무: 브랜드 공식 SNS 채널 운영', `담당업무: ${LONG_DUTY}`);
 export const GQ_POSTING_LONG_EVIDENCE_SPECS = { ...GQ_POSTING_SPECS, '02-a': { f: 'specific', q: [LONG_HOURS], kind: 'quoted' }, '04-a': { f: 'specific', q: [`담당업무: ${LONG_DUTY}`], sv: LONG_DUTY } };
+
+// 결과 화면 조건값 표시 확인용: 번호·콜론 없이 항목명으로 시작하는 줄('근무장소 서울 …')과 맨 앞 불렛이 붙은 업무 줄 (가상 문서)
+export const DUP_POSTING = [
+  '[가상] 주식회사 파란스텝 브랜드 마케터 채용',
+  '담당업무',
+  '• 브랜드 공식 SNS 채널 운영',
+  '• 월간 콘텐츠 캘린더 수립',
+  '고용형태 정규직',
+  '근무장소 서울 성동구 성수이로 00, 4층',
+  '근무시간: 09:00~18:00 (휴게 12:00~13:00)',
+  '급여: 연봉 3,400만 원',
+  '수습기간 3개월',
+  '수습 급여: 최종 합격 시 별도 안내',
+].join('\n');
+export const DUP_POSTING_SPECS = {
+  ...GQ_POSTING_SPECS,
+  '03-a': { f: 'specific', q: ['근무장소 서울 성동구 성수이로 00, 4층'], sv: '서울 성동구 성수이로 00, 4층' },
+  '04-a': { f: 'specific', q: ['• 브랜드 공식 SNS 채널 운영', '• 월간 콘텐츠 캘린더 수립'], sv: '브랜드 공식 SNS 채널 운영' },
+  '05-a': { f: 'specific', q: ['고용형태 정규직'], sv: '정규직' },
+  '07-a': { f: 'specific', q: ['수습기간 3개월'], sv: '수습기간' },
+  '07-b': { f: 'specific', q: ['수습기간 3개월'], sv: '3개월' },
+};
+export const DUP_OFFER = QA2_OFFER.replace('근무장소: 서울 성동구 성수동 본사', '근무장소 서울 성동구 성수동 본사\n고용형태 정규직').replace('수습기간: 3개월', '수습기간 입사 후 3개월');
+export const DUP_OFFER_SPECS = {
+  ...QA2_OFFER_SPECS,
+  '03-a': { f: 'specific', q: ['근무장소 서울 성동구 성수동 본사'], sv: '서울 성동구 성수동 본사' },
+  '05-a': { f: 'specific', q: ['고용형태 정규직'], sv: '정규직' },
+  '07-a': { f: 'specific', q: ['수습기간 입사 후 3개월'], sv: '수습기간' },
+  '07-b': { f: 'specific', q: ['수습기간 입사 후 3개월'], sv: '입사 후 3개월' },
+};
+export const DUP_CONTRACT = QA2_CONTRACT
+  .replace('2. 근무장소 서울 성동구 성수동 본사', '근무장소 서울 성동구 성수동 본사')
+  .replace('3. 업무의 내용 브랜드 공식 SNS 채널 운영 및 SNS 콘텐츠 기획·제작 일정 관리', '3. 업무의 내용\n• 브랜드 공식 SNS 채널 운영\n• SNS 콘텐츠 기획·제작 일정 관리')
+  .replace('6. 고용형태: 정규직', '고용형태 정규직')
+  .replace('수습기간: 입사 후 3개월', '수습기간 입사 후 3개월');
+export const DUP_CONTRACT_SPECS = {
+  ...QA2_CONTRACT_SPECS,
+  '03-a': { f: 'specific', q: ['근무장소 서울 성동구 성수동 본사'], sv: '서울 성동구 성수동 본사' },
+  '04-a': { f: 'specific', q: ['• 브랜드 공식 SNS 채널 운영', '• SNS 콘텐츠 기획·제작 일정 관리'], sv: '브랜드 공식 SNS 채널 운영' },
+  '05-a': { f: 'specific', q: ['고용형태 정규직'], sv: '정규직' },
+  '07-b': { f: 'specific', q: ['수습기간 입사 후 3개월'], sv: '입사 후 3개월' },
+};

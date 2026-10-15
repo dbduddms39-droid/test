@@ -126,3 +126,48 @@ export function listRowKind({ group, value = '', note = '', hasQuestion = false,
   if (value.length > LIST_ROW_LIMITS.value || note.length > LIST_ROW_LIMITS.note) return 'wide';
   return 'compact';
 }
+
+// ---- 문서 1개 결과 목록의 조건값 표시 (화면 표시만. 원문·원문 근거·분석 결과·저장 데이터는 그대로) ----
+// 조건명이 따로 보이는 목록에서, 값 맨 앞에 되풀이된 항목명('근무장소 서울 …')과 맨 앞 불렛('• 브랜드 …')만 뗀다.
+// 항목명마다 원문에 흔히 쓰이는 이름. '연봉'·'월급'처럼 값의 일부인 말은 넣지 않는다.
+const VALUE_LABELS = {
+  '01': ['임금', '급여', '보수'],
+  '02': ['근무시간', '근로시간', '소정근로시간'],
+  '03': ['근무장소', '근무지', '근로장소', '취업장소'],
+  '04': ['담당업무', '업무내용', '업무의 내용', '종사업무', '주요업무'],
+  '05': ['고용형태', '근로형태', '계약형태'],
+  '06': ['근로계약기간', '계약기간'],
+  '07': ['수습기간'],
+  '08': ['수습기간 중 임금', '수습 중 임금', '수습기간 급여', '수습 급여', '수습 임금', '수습 중 급여'],
+  '09': ['휴일'],
+  '10': ['연차 유급휴가', '연차휴가'],
+};
+const ITEM_MARK = /^\s*(?:제\s*\d+\s*조|\d+\s*[.)]|[(（]\d+[)）]|[①-⑳])\s*/;
+// 줄 맨 앞 불렛 (뒤에 숫자가 바로 오면 '-5%' 같은 값일 수 있어 떼지 않음. ※ 같은 참고 표시는 그대로)
+const LEAD_BULLET = /^\s*[•∙●○◦▪▫■□◆◇▶►‣⁃·*\-–—]\s*(?=[^\s\d])/;
+// 항목명 바로 뒤가 이런 말이면 항목명이 아니라 문장의 일부 ('근무장소 변경은 …')
+const SENTENCE_NEXT = /^(?:변경|이동|조정|관련|및|등|외|안내|협의|여부|확인)/;
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function labelPattern(itemId, itemLabel) {
+  const names = [...new Set([...(VALUE_LABELS[itemId] ?? []), itemLabel].filter(Boolean))].sort((a, b) => b.length - a.length);
+  // 띄어쓰기 차이('근무 장소')도 같은 이름으로
+  return new RegExp(`^(?:${names.map((n) => n.replace(/\s+/g, '').split('').map(esc).join('\\s*')).join('|')})(?:\\s*[:：]\\s*|\\s+)`);
+}
+function cleanPart(part, re) {
+  let v = part.replace(LEAD_BULLET, '');
+  const noMark = v.replace(ITEM_MARK, '');
+  const m = noMark.match(re);
+  if (m) {
+    const rest = noMark.slice(m[0].length).trim();
+    const colon = /[:：]/.test(m[0]);
+    // 남는 값이 있고, 문장의 일부가 아닐 때만 뗀다 (비면 원래 값 유지)
+    if (rest && (colon || !SENTENCE_NEXT.test(rest))) v = rest.replace(LEAD_BULLET, '');
+  }
+  return v.trim() || part.trim();
+}
+// value: 화면 값 ('A · B'로 이어진 여러 구절일 수 있음). 각 구절과 ' · ' 구분은 그대로 둔다
+export function displayConditionValue(value, itemId, itemLabel) {
+  if (typeof value !== 'string' || !value.trim()) return value;
+  const re = labelPattern(itemId, itemLabel);
+  return value.split(' · ').map((p) => cleanPart(p, re)).join(' · ');
+}

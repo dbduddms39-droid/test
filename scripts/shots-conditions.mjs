@@ -9,10 +9,12 @@ import { createRateLimiter } from '../src/rateLimit.js';
 import { buildExtraction } from '../test/v22-fixtures.js';
 import { GQ_POSTING, GQ_POSTING_SPECS, GQ_POSTING_LONG_EVIDENCE, GQ_POSTING_LONG_EVIDENCE_SPECS, QA2_OFFER, QA2_OFFER_SPECS, QA2_CONTRACT, QA2_CONTRACT_SPECS } from '../test/gemini-qa-docs.js';
 import { DEMO_POSTING, DEMO_POSTING_SPECS } from '../test/demo-docs.js';
+import { DUP_POSTING, DUP_POSTING_SPECS, DUP_OFFER, DUP_OFFER_SPECS, DUP_CONTRACT, DUP_CONTRACT_SPECS } from '../test/gemini-qa-docs.js';
 
 const OUT = `e2e-artifacts/conditions/${process.argv[2] ?? 'now'}`;
 mkdirSync(OUT, { recursive: true });
-const DOCS = [['posting-a', 'job_posting', GQ_POSTING, GQ_POSTING_SPECS], ['posting-b', 'job_posting', DEMO_POSTING, DEMO_POSTING_SPECS], ['posting-long-evidence', 'job_posting', GQ_POSTING_LONG_EVIDENCE, GQ_POSTING_LONG_EVIDENCE_SPECS], ['offer', 'offer', QA2_OFFER, QA2_OFFER_SPECS], ['contract', 'contract', QA2_CONTRACT, QA2_CONTRACT_SPECS]];
+const DOCS = [['posting-a', 'job_posting', GQ_POSTING, GQ_POSTING_SPECS], ['posting-b', 'job_posting', DEMO_POSTING, DEMO_POSTING_SPECS], ['posting-long-evidence', 'job_posting', GQ_POSTING_LONG_EVIDENCE, GQ_POSTING_LONG_EVIDENCE_SPECS], ['offer', 'offer', QA2_OFFER, QA2_OFFER_SPECS], ['contract', 'contract', QA2_CONTRACT, QA2_CONTRACT_SPECS],
+  ['dup-posting', 'job_posting', DUP_POSTING, DUP_POSTING_SPECS], ['dup-offer', 'offer', DUP_OFFER, DUP_OFFER_SPECS], ['dup-contract', 'contract', DUP_CONTRACT, DUP_CONTRACT_SPECS]];
 const ai = {
   name: 'demo',
   async analyze({ segments, criterionIds }) {
@@ -38,7 +40,7 @@ try {
       const rows = await page.$$eval('#condition-list .cmp-card', (els) => els.map((e) => ({
         group: e.closest('[data-group]').dataset.group, id: e.dataset.item, label: e.querySelector('h3')?.textContent,
         kind: e.classList.contains('is-compact') ? '목록형' : '넓은 카드', badge: e.querySelector('.badge')?.textContent ?? '(없음)',
-        no: e.querySelector('.cmp-no')?.textContent ?? '', value: e.querySelector('.cmp-value')?.textContent.slice(0, 40) })));
+        no: e.querySelector('.cmp-no')?.textContent ?? '', value: e.querySelector('.cmp-value')?.textContent.slice(0, 60) })));
       if (tag === 'desk') { console.log(`\n[${name}]`); for (const r of rows) console.log(`  ${r.group.padEnd(11)} ${r.no.padEnd(3)}${r.label.padEnd(10)} ${r.kind.padEnd(6)} 배지:${r.badge.padEnd(12)} ${r.value}`); }
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({ path: `${OUT}/${tag}-${name}-top.png` }); // 저장 안내·요약이 보이는 첫 화면
