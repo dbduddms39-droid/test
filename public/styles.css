@@ -1483,8 +1483,7 @@ details.cmp-group > summary::-webkit-details-marker { display: none; }
 .cmp-card:not(.is-single) .cmp-evidence-doc.is-a .cmp-quote { border-left-color: var(--doc-a); }
 .cmp-card:not(.is-single) .cmp-evidence-doc.is-b .cmp-quote { border-left-color: var(--doc-b); }
 .cmp-card:not(.is-single) .cmp-quote mark { background: transparent; border-bottom: 2px solid #64748B; border-radius: 0; padding: 0; }
-/* 상태는 카드 왼쪽 가장자리와 배지로: 다른 조건만 노랑, 같은 조건은 연한 초록 */
-.cmp-card.is-different:not(.is-single) { box-shadow: inset 4px 0 0 var(--brand); }
+/* 차이 상태는 섹션 제목의 표시선과 배지로 강조. 같은 조건 카드의 연한 초록 선은 유지. */
 .cmp-card.is-same:not(.is-single) { box-shadow: inset 4px 0 0 #86EFAC; }
 /* 1) 두 문서에 적힌 내용 */
 .cmp-sec-label { margin: 0 0 6px; font-size: 12px; font-weight: 700; color: var(--ink-3); }
