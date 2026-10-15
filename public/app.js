@@ -86,7 +86,7 @@ const EXAMPLE_TEXTS = Object.keys(EXAMPLES).map(exampleText);
 
 // 입력 맥락: 새 기록('new')과 기존 기록마다(기록 ID) 입력란 내용·문서 유형·파일 추출 상태·이미지 목록을 따로 둔다.
 // 다른 기록으로 옮겨 가도 입력하던 내용이 다른 기록에 섞이지 않게 한다.
-const blankContext = () => ({ docType: null, text: '', tab: 'paste', file: null, images: [], imagesVersion: 0 });
+const blankContext = () => ({ docType: null, text: '', tab: 'upload', file: null, images: [], imagesVersion: 0 });
 const contexts = { new: blankContext() };
 const pairByRecord = new Map();
 
@@ -94,7 +94,7 @@ const state = {
   target: { kind: 'new' }, // 지금 입력 중인 대상: 새 기록 / 기존 기록에 추가 { kind: 'add', recordId }
   ctxKey: 'new',
   docType: null,    // 고른 문서 유형
-  tab: 'paste',     // 입력 방식
+  tab: 'upload',    // 입력 방식 (기본: 사진·PDF 업로드)
   file: null,       // 파일 추출 결과 { source: 'ocr'|'pdf', original, previews: [{ url, name }], imagesVersion, ownUrls, words, tracker, lastText, issues }
   last: null,       // 마지막 분석 요청 (오류 화면의 재시도·수정에 사용)
   inflight: null,   // 진행 중인 분석 { controller }
@@ -237,6 +237,7 @@ function resetContext(key) {
     reviewText.value = '';
     renderImages();
     uploadStatus.hidden = true;
+    selectMethod($('#tab-upload'));
   }
   contexts[key] = blankContext();
 }
@@ -277,7 +278,7 @@ $('#clear-text').addEventListener('click', () => {
   textarea.focus();
 });
 
-const selectMethod = initTabs([$('#tab-paste'), $('#tab-upload')], (tab) => {
+const selectMethod = initTabs([$('#tab-upload'), $('#tab-paste')], (tab) => {
   state.tab = tab.id === 'tab-upload' ? 'upload' : 'paste';
   $('#panel-paste').hidden = state.tab !== 'paste';
   $('#panel-upload').hidden = state.tab !== 'upload';
