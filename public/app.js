@@ -1248,6 +1248,19 @@ function linkList(links) {
 }
 
 
+// 질문 모아보기의 조건명 → 그 조건 카드의 '회사에 확인할 질문' 영역으로 이동·강조 (해시는 바꾸지 않음)
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-q-target]');
+  if (!b) return;
+  const target = document.getElementById(`cmp-q-${b.dataset.qTarget}`);
+  if (!target) return;
+  const fold = target.closest('details:not([open])');
+  if (fold) fold.open = true; // 접힌 묶음 안이면 펼친다
+  target.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+  target.focus({ preventScroll: true });
+  flashTarget(target);
+});
+
 // ---------- 공통: 질문 카드 복사 ----------
 // 질문은 템플릿으로 만든 초안이다. 사용자가 고쳐 쓴 내용을 그대로 복사한다. 일단확인은 질문을 보내지 않는다.
 document.addEventListener('click', async (e) => {
@@ -1573,6 +1586,12 @@ function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendi
   $('#cmp-questions').hidden = !qCount;
   $('#cmp-q-count').textContent = `${qCount}건`;
   $('#copy-all-top-status').textContent = '';
+  // 질문이 생성된 조건명 (카드와 같은 순서). 누르면 그 카드의 질문 영역으로 이동
+  const qRows = STATUS_ORDER.flatMap((st) => rows.filter((r) => r.st === st && r.q?.question));
+  fill($('#cmp-q-links'), ...qRows.map((r) => el('li', {},
+    el('button', { type: 'button', class: 'cmp-q-link', 'data-q-target': r.id, 'aria-label': `${itemLabel(record, r.id)} 질문으로 이동` },
+      itemLabel(record, r.id), el('span', { 'aria-hidden': 'true' }, '↓')))));
+  $('#cmp-q-links').hidden = !qRows.length;
 
   const panel = (row, d, k) => {
     const info = sideInfo(row, d, k);
@@ -1613,6 +1632,7 @@ function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendi
         el('h3', {}, itemLabel(record, id)),
         memo ? el('span', { class: 'memo-flag' }, '내 메모 있음') : null,
         el('span', { class: `badge badge-relation status-${st}`, 'data-status': st }, badgeText)),
+      el('p', { class: 'cmp-sec-label' }, '두 문서에 적힌 내용'),
       el('div', { class: 'cmp-panels' }, docs.map((d, k) => panel(row, d, k))),
       line || detail ? el('div', { class: 'cmp-note' },
         el('p', { class: 'cmp-note-title' }, '대조 요약'),
@@ -1621,8 +1641,11 @@ function renderCompare({ record, comparedRecord, fus, labels, saved, fuOf, pendi
       el('details', { class: 'cmp-evidence' },
         el('summary', {}, '원문 근거 보기'),
         el('div', { class: 'cmp-evidence-cols' }, docs.map((d, k) => evidenceCol(row, d, k))),
-        el('p', { class: 'cmp-sub' }, '노란 강조는 비교에 쓴 원문 표현이에요. \'원문 전체에서 위치 보기\'를 누르면 아래 원문에서 그 줄을 펼쳐 보여 드려요.')),
-      q?.question ? el('div', { class: 'cmp-question' }, el('p', { class: 'cmp-question-title' }, `회사에 확인할 질문 · ${itemLabel(record, id)}`), questionBlock(q)) : null,
+        el('p', { class: 'cmp-sub' }, '밑줄 강조는 비교에 쓴 원문 표현이에요(같거나 다르다는 뜻은 아니에요). \'원문 전체에서 위치 보기\'를 누르면 아래 원문에서 그 줄을 펼쳐 보여 드려요.')),
+      // 사용자가 할 일(회사에 확인할 질문)은 비교 정보와 구분된 영역으로. 위 질문 목록에서 이 영역으로 바로 온다
+      q?.question ? el('section', { class: 'cmp-question is-action', id: `cmp-q-${id}`, tabindex: '-1', 'aria-labelledby': `cmp-q-title-${id}` },
+        el('p', { class: 'cmp-question-title', id: `cmp-q-title-${id}` }, el('span', { class: 'cmp-question-kicker' }, '회사에 확인할 질문'), el('span', { class: 'cmp-question-item' }, ` · ${itemLabel(record, id)}`)),
+        questionBlock(q)) : null,
       saved && unavailDocs.length ? el('div', { class: 'reanalyze' },
         unavailDocs.map((d) => el('button', { type: 'button', class: 'btn-secondary', 'data-reanalyze': d.id }, `${labels[d.id]} 같은 텍스트로 다시 분석하기`)),
         el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null,
@@ -1723,6 +1746,7 @@ function renderSingle({ record, comparedRecord, fus, labels, saved, fuOf, layout
   $('#cmp-questions').hidden = !qCount;
   $('#cmp-q-count').textContent = `${qCount}건`;
   $('#copy-all-top-status').textContent = '';
+  fill($('#cmp-q-links')); $('#cmp-q-links').hidden = true; // 조건명 이동 목록은 두 문서 비교 화면에만
   $('#cmp-questions-desc').textContent = `추가 확인이 필요한 조건의 질문이에요. ${QUESTION_HINT}`;
 
   // 항목 하나의 화면 정보 (판정·상태 계산은 그대로, 표시만)

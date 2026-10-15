@@ -196,6 +196,7 @@ try {
     const keepWide = await page.$$eval('[data-group="needs"] .cmp-card, [data-group="calculated"] .cmp-card', (els) => els.length >= 2 && els.every((e) => !e.classList.contains('cmp-row') && e.querySelector('.badge') && !e.querySelector('.cmp-no')));
     check(`[${tag}] 근로계약서 단독: 기재된 조건은 목록형 ${tag === 'desk' ? '2열' : '1열'}, 반복 배지·번호·중복 건수 없음, 근거·상세 유지, 추가 확인·계산값은 넓은 카드(상태 배지 유지)`, compact.n === compact.all && compact.n >= 3 && compact.cols === (tag === 'desk' ? 2 : 1) && compact.ev && compact.link && compact.plainBadges === 0 && compact.nos === 0 && !compact.titleCount && keepWide && (await page.$$('[data-group="needs"] .sum-count')).length === 1, JSON.stringify(compact));
     const needQ = await page.$$eval('[data-group="needs"] .cmp-card', (els) => els.map((e) => e.querySelectorAll('.q-text').length));
+    check(`[${tag}] 근로계약서 단독: 질문 모아보기 조건명 이동 목록은 비교 화면에만 (단독 화면 변경 없음)`, !(await page.isVisible('#cmp-q-links')) && (await page.$$('#cmp-q-links li')).length === 0 && (await page.$$('#condition-list .cmp-question.is-action, #condition-list .cmp-sec-label')).length === 0);
     check(`[${tag}] 근로계약서 단독: 질문은 추가 확인 카드 안 + 위쪽 '질문 전체 복사' 하나 (아래 중복 없음)`, (await page.$$('[data-group="written"] .q-text, [data-group="calculated"] .q-text')).length === 0 && needQ.length > 0 && (await page.isVisible('#copy-all-top')) && !(await page.isVisible('#copy-all-questions')), JSON.stringify(needQ));
     check(`[${tag}] 근로계약서 단독: null 없음·가로 넘침 없음`, await noNull() && await noOverflow());
     await page.screenshot({ path: `${OUT}/${tag}-3-contract.png`, fullPage: true });
@@ -276,6 +277,54 @@ try {
     check(`[${tag}] 확인 질문 복사`, clip === qText && /임금이/.test(qText), qText.slice(0, 80));
     // 비교 화면: '질문 전체 복사'는 위쪽 질문 모아보기 한 곳에만 (아래 '질문 모두 복사' 중복 없음)
     check(`[${tag}] 질문 전체 복사 버튼은 한 곳에만`, await page.isVisible('#copy-all-top') && !(await page.isVisible('#copy-all-questions')));
+
+    // ---- 부스 피드백 1: 질문 모아보기 조건명 → 그 조건 카드의 질문 영역 (해시 유지·포커스·강조·조건명 확인) ----
+    const qCards = await page.$$eval('#condition-list .cmp-card', (els) => els.filter((e) => e.querySelector('.cmp-question .q-text')).map((e) => ({ id: e.dataset.item, label: e.querySelector('h3').textContent })));
+    const chips = await page.$$eval('#cmp-q-links .cmp-q-link', (els) => els.map((b) => ({ id: b.dataset.qTarget, text: b.textContent, aria: b.getAttribute('aria-label') })));
+    check(`[${tag}] 질문 모아보기: 질문이 있는 조건명만 카드 순서대로 '조건명↓' (질문 수 = 조건명 수, 질문 문장은 복제하지 않음)`, chips.length === qCards.length && chips.length === Number((await text('#cmp-q-count')).replace(/\D/g, ''))
+      && chips.every((c, i) => c.id === qCards[i].id && c.text === `${qCards[i].label}↓` && c.aria === `${qCards[i].label} 질문으로 이동`) && (await page.$$('#cmp-questions .q-text')).length === 0, JSON.stringify(chips.map((c) => c.text)));
+    const hash0 = await page.evaluate(() => location.hash);
+    const jumps = [];
+    for (const c of chips) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.click(`#cmp-q-links [data-q-target="${c.id}"]`);
+      await page.waitForTimeout(700);
+      jumps.push(await page.evaluate((id) => {
+        const a = document.activeElement; const r = a.getBoundingClientRect();
+        return { ok: a.id === `cmp-q-${id}` && a.closest('.cmp-card')?.dataset.item === id, inView: r.top >= 0 && r.top < innerHeight, title: a.querySelector('.cmp-question-title')?.textContent ?? '', arrived: a.classList.contains('is-arrived'), named: a.getAttribute('aria-labelledby') === `cmp-q-title-${id}` };
+      }, c.id));
+    }
+    check(`[${tag}] 조건명 누르면 그 조건의 질문 영역으로 이동·포커스·강조, 도착한 곳에 조건명 표시, 해시 라우팅 그대로`, jumps.every((j, i) => j.ok && j.inView && j.arrived && j.named && j.title === `회사에 확인할 질문 · ${qCards[i].label}`) && (await page.evaluate(() => location.hash)) === hash0, JSON.stringify(jumps.map((j) => [j.ok, j.inView, j.arrived])));
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.focus(`#cmp-q-links [data-q-target="${chips.at(-1).id}"]`); await page.keyboard.press('Enter'); await page.waitForTimeout(700);
+    check(`[${tag}] 키보드(Enter)로도 질문 영역으로 이동, 다음 Tab은 그 질문 입력칸`, (await page.evaluate(() => document.activeElement.id)) === `cmp-q-${chips.at(-1).id}` && await page.keyboard.press('Tab').then(() => page.evaluate(() => document.activeElement.classList.contains('q-text'))));
+    await page.screenshot({ path: `${OUT}/${tag}-q-arrived.png` });
+    // 이동 후 질문 고치기·복사 그대로
+    const qa = `#cmp-q-${chips[0].id} .q-text`;
+    await page.fill(qa, '가상 질문: 실제 지급되는 연봉을 확인 부탁드립니다.');
+    await page.click(`#cmp-q-${chips[0].id} .q-block button`); await page.waitForTimeout(200);
+    check(`[${tag}] 이동한 질문을 고쳐 복사하면 고친 문장이 복사됨`, (await page.evaluate(() => navigator.clipboard.readText().catch(() => ''))) === '가상 질문: 실제 지급되는 연봉을 확인 부탁드립니다.');
+
+    // ---- 부스 피드백 2·3: 사실·대조·할 일 구분, 노랑은 '서로 다른 조건'에만 ----
+    const YELLOWS = ['rgb(254, 223, 127)', 'rgba(254, 223, 127, 0.62)', 'rgb(255, 248, 225)', 'rgb(243, 207, 94)'];
+    const colorScan = (sel) => page.$eval(sel, (card, Y) => {
+      card.querySelectorAll('details').forEach((d) => { d.open = true; });
+      const hits = [];
+      for (const n of [card, ...card.querySelectorAll('*')]) {
+        const st = getComputedStyle(n);
+        for (const v of [st.backgroundColor, st.borderLeftColor, st.borderBottomColor, st.boxShadow]) if (Y.some((y) => v.includes(y.slice(4, -1)))) hits.push(`${n.className || n.tagName}:${v}`);
+      }
+      return hits;
+    }, YELLOWS);
+    const sameHits = await colorScan('#condition-list .cmp-card[data-status="same"]');
+    const diffHits = await colorScan('#condition-list .cmp-card[data-status="different"]');
+    check(`[${tag}] 같은 조건 카드에는 노란색 요소 없음 (문서 A 표시·원문 강조 포함), 다른 조건 카드는 노란 가장자리·배지`, sameHits.length === 0 && diffHits.some((h) => h.includes('cmp-card')) && diffHits.some((h) => h.includes('badge')), JSON.stringify({ sameHits, diff: diffHits.slice(0, 3) }));
+    const sect = await page.$eval('#condition-list .cmp-card[data-status="different"]', (c) => {
+      const q = c.querySelector('.cmp-question'); const note = c.querySelector('.cmp-note');
+      return { label: c.querySelector('.cmp-sec-label')?.textContent, note: note.querySelector('.cmp-note-title').textContent, noteBg: getComputedStyle(note).backgroundColor, qBg: getComputedStyle(q).backgroundColor, qBorder: getComputedStyle(q).borderLeftWidth, qTitle: q.querySelector('.cmp-question-title').textContent };
+    });
+    check(`[${tag}] 카드 안 구분: '두 문서에 적힌 내용' → '대조 요약'(구분선) → '회사에 확인할 질문'(연한 배경·왼쪽 선·제목)`, sect.label === '두 문서에 적힌 내용' && sect.note === '대조 요약' && sect.noteBg === 'rgba(0, 0, 0, 0)' && sect.qBg !== 'rgba(0, 0, 0, 0)' && sect.qBorder === '3px' && sect.qTitle.startsWith('회사에 확인할 질문 · '), JSON.stringify(sect));
+
     check(`[${tag}] 같은 화면에 '새 문서 추가' 버튼은 하나`, (await page.$$('#view-record a[href$="/add"]:visible')).length === 1);
 
     // ---- 기록 관리: 이름 바꾸기(새로고침 후 유지) · 개별 삭제 확인창 ----
