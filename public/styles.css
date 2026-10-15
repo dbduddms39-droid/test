@@ -1423,22 +1423,25 @@ details.cmp-group > summary::-webkit-details-marker { display: none; }
 .toast.is-shown { opacity: 1; transform: translate(-50%, 0); }
 .toast:empty { display: none; }
 
-/* 문서에 적힌 짧은 조건: 목록형 (데스크톱 2열, 모바일 1열). 긴 항목은 아래 넓은 카드 */
-.cmp-rows { list-style: none; padding: 0; margin: 0 0 14px; display: grid; gap: 0 24px; background: var(--paper); border: 1px solid var(--rule); border-radius: var(--card-radius); padding: 4px 18px; }
+/* 문서에 적힌 조건: 목록형 (데스크톱 2열, 모바일 1열). 전체 너비가 필요한 항목도 같은 목록 안에서 같은 모양으로 */
+.cmp-rows { list-style: none; margin: 0; padding: 0 18px; display: grid; gap: 0 28px; background: var(--paper); border: 1px solid var(--rule); border-radius: var(--card-radius); overflow: hidden; }
 @media (min-width: 768px) { .cmp-rows { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.cmp-rows:last-child { margin-bottom: 0; }
-.cmp-card.cmp-row { padding: 14px 0; background: transparent; border: 0; border-bottom: 1px solid var(--rule-soft); border-radius: 0; }
-.cmp-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 4px; }
-.cmp-row-head h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--ink-2); }
+.cmp-card.cmp-row { min-width: 0; margin-bottom: -1px; padding: 14px 0; background: transparent; border: 0; border-bottom: 1px solid var(--rule-soft); border-radius: 0; }
+.cmp-row.is-wide { grid-column: 1 / -1; }
+.cmp-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 2px; }
+.cmp-row-head h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-3); }
 .cmp-row-head .badge { margin-left: auto; }
-.cmp-row .cmp-value { font-size: 16px; }
-.cmp-row-note { margin: 4px 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
-.cmp-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 6px; }
-.cmp-row-actions .cmp-evidence { margin: 0; padding: 0; border: 0; }
-.cmp-row-actions .cmp-evidence[open] { flex-basis: 100%; order: 2; }
-.cmp-row-actions .cmp-detail-link { margin: 0; min-height: 32px; padding: 4px 0; border: 0; background: none; color: var(--green); font-weight: 600; }
-.cmp-row-actions .cmp-detail-link:hover:not(:disabled) { border: 0; background: none; color: var(--green-dark); text-decoration: underline; }
+.cmp-row .cmp-value { font-size: 16px; font-weight: 700; color: var(--ink); }
+.cmp-row-note { margin: 4px 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); overflow-wrap: anywhere; }
+/* '원문 근거 보기'·'조건 상세·답변 메모': 목록형·카드 모두 같은 줄, 같은 글자 링크 모양 */
+.cmp-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 16px; margin-top: 6px; min-width: 0; }
+.cmp-card:not(.cmp-row) > .cmp-row-actions { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--rule-soft); }
+.cmp-row-actions .cmp-evidence { margin: 0; padding: 0; border: 0; min-width: 0; }
+.cmp-row-actions .cmp-evidence > summary { min-height: 32px; font-size: 13px; }
+.cmp-row-actions .cmp-evidence[open] { flex-basis: 100%; order: 2; padding: 4px 0 6px; }
+.cmp-row-actions .cmp-evidence-list, .cmp-row-actions .cmp-quote { min-width: 0; max-width: 100%; }
+.cmp-row-actions .cmp-goto { white-space: normal; text-align: left; }
+.cmp-row-actions .cmp-detail-link { display: inline-flex; align-items: center; margin: 0; min-height: 32px; padding: 0; font-size: 13px; font-weight: 600; color: var(--green); text-decoration: none; }
+.cmp-row-actions .cmp-detail-link:hover { color: var(--green-dark); text-decoration: underline; }
 @media print { .toast, .layout-wait { display: none !important; } }
-.cmp-rows > .cmp-row:last-child { border-bottom: 0; }
-@media (min-width: 768px) { .cmp-rows > .cmp-row:nth-last-child(2):nth-child(odd) { border-bottom: 0; } }
 @media (min-width: 640px) { #review-edit, #review-restore { min-width: 172px; } }

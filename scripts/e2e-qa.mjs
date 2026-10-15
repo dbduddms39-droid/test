@@ -196,7 +196,7 @@ try {
     check(`[${tag}] 임금 분석 확인 불가: 검증되지 않은 값(3,600만원)·회사 질문 없음`, !(await text('#view-record')).includes('3,600만원') && !(await groupText('needs')).includes('급여'));
     await page.click('button[data-reanalyze]');
     await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('다시 분석한 결과'));
-    check(`[${tag}] 같은 텍스트로 재분석 → 임금 확인됨`, !(await page.$('[data-group="unavailable"]')) && !(await page.isVisible('#now-section')) && (await text('#cmp-item-01 .badge-relation')) === '기재됨', await text('#cmp-item-01 .badge-relation'));
+    check(`[${tag}] 같은 텍스트로 재분석 → 임금 확인됨`, !(await page.$('[data-group="unavailable"]')) && !(await page.isVisible('#now-section')) && (await page.getAttribute('#cmp-item-01', 'data-status')) === 'written' && !(await page.$('#cmp-item-01 .badge-relation')), await page.getAttribute('#cmp-item-01', 'data-status'));
     // 시연 문서(주식회사 파란스텝): 협의 예정 → 범위 안에서 구체화 → 계약서에서 수습 급여 구체화
     if (tag === 'desk') {
       await page.goto(`${BASE}/#/new`);

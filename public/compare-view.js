@@ -114,3 +114,15 @@ export function singleStatus(docType, t, { hasQuestion = false } = {}) {
   if (t.status === 'MAIN_MISSING') return null;
   return deferral(t) ? 'deferred' : 'stated';
 }
+
+// 문서 1개 결과의 '문서에 적힌 조건'(공고·처우 안내)·'문서에 기재된 조건'(계약서) 묶음: 목록형으로 보여 줄지 정한다.
+// 화면에 기본으로 보이는 값·설명과 중요한 상태만 본다. 접혀 있는 원문 근거의 길이·개수는 보지 않는다 (펼치면 그 칸 안에서 읽음).
+export const COMPACT_GROUPS = ['stated', 'written'];
+export const LIST_ROW_LIMITS = { value: 60, note: 70 };
+// 반환: 'compact'(2열 중 한 칸) · 'wide'(같은 묶음 안 전체 너비) · 'card'(그 밖의 묶음: 넓은 카드)
+export function listRowKind({ group, value = '', note = '', hasQuestion = false, calculated = false, externalRef = false, deferred = false, unavailable = false, missing = false }) {
+  if (!COMPACT_GROUPS.includes(group)) return 'card';
+  if (hasQuestion || calculated || externalRef || deferred || unavailable || missing) return 'wide';
+  if (value.length > LIST_ROW_LIMITS.value || note.length > LIST_ROW_LIMITS.note) return 'wide';
+  return 'compact';
+}

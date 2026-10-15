@@ -119,3 +119,10 @@ export const QA2_OFFER_SPECS = {
   '07-b': { f: 'specific', q: ['수습기간: 3개월'], sv: '3개월' },
   '08-a': { f: 'undecided', q: ['수습기간 급여: 근로계약서에 기재 예정'] },
 };
+
+// 근무시간 값은 짧지만 원문 근거 문장이 긴 가상 채용공고 (목록형 표시 기준 확인용: 접힌 근거 길이로 넓은 카드가 되지 않아야 함)
+const LONG_HOURS = '근무시간: 09:00~18:00 (휴게 12:00~13:00), 주 5일(월~금) 근무를 원칙으로 하며 브랜드 캠페인 일정이 몰리는 시기에는 팀 일정에 따라 출퇴근 시각을 조정할 수 있고 조정 내용은 최소 1주 전에 사내 메신저와 이메일로 함께 공지하며, 조정된 날에도 하루 소정근로시간 8시간과 휴게시간 1시간은 그대로 지킵니다.';
+// 담당업무는 값 자체가 길어 같은 목록 안에서 전체 너비로 보여야 하는 경우
+const LONG_DUTY = '브랜드 공식 SNS 채널 운영, 월간 콘텐츠 캘린더 수립, 인플루언서 협업 캠페인 기획·실행 및 캠페인별 성과 지표 분석 보고';
+export const GQ_POSTING_LONG_EVIDENCE = GQ_POSTING.replace('근무시간: 09:00~18:00 (휴게 12:00~13:00)', LONG_HOURS).replace('담당업무: 브랜드 공식 SNS 채널 운영', `담당업무: ${LONG_DUTY}`);
+export const GQ_POSTING_LONG_EVIDENCE_SPECS = { ...GQ_POSTING_SPECS, '02-a': { f: 'specific', q: [LONG_HOURS], kind: 'quoted' }, '04-a': { f: 'specific', q: [`담당업무: ${LONG_DUTY}`], sv: LONG_DUTY } };

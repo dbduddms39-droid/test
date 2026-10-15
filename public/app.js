@@ -1,7 +1,7 @@
 import { moveItem, planSelection, UPLOAD_MESSAGES, MAX_IMAGES } from './upload-rules.js';
 import { copyText, josa } from './questions.js';
 import { el, fill, statusBadge, CONTRACT_STATUS_LABEL, sourcePanelLines, highlightText } from './components.js';
-import { compareStatus, evidenceFor, topicEvidence, documentTitle, singleStatus, COMPARE_STATUS, STATUS_ORDER, SINGLE_STATUS } from './compare-view.js';
+import { compareStatus, evidenceFor, topicEvidence, documentTitle, singleStatus, COMPARE_STATUS, STATUS_ORDER, SINGLE_STATUS, COMPACT_GROUPS, listRowKind } from './compare-view.js';
 import { ROUTES, checkText, editRouteFor, inputRouteFor, resolveRoute, classifyAnalyzeFailure, formatDateTime } from './flow.js';
 import { createTracker, applyEdit, confirmSpan, pendingRanges, unlocatedPending, summary as ocrSummary, remapTracker } from './ocr-spans.js';
 import {
@@ -1704,11 +1704,9 @@ function renderSingle({ record, comparedRecord, fus, labels, saved, fuOf, layout
   $('#copy-all-top-status').textContent = '';
   $('#cmp-questions-desc').textContent = `추가 확인이 필요한 조건의 질문이에요. ${QUESTION_HINT}`;
 
-  let no = 0;
-  const card = (row) => {
-    no += 1;
+  // 항목 하나의 화면 정보 (판정·상태 계산은 그대로, 표시만)
+  const info = (row) => {
     const { id, st, t, q } = row;
-    const tone = S[st].tone;
     const unavailable = st === 'unavailable';
     const calc = kind === 'contract' && !unavailable ? weeklyCalc(t) : null;
     const extLeave = kind === 'contract' && externallyReferencedLeave(t);
@@ -1719,74 +1717,71 @@ function renderSingle({ record, comparedRecord, fus, labels, saved, fuOf, layout
     const explain = unavailable ? null : topicExplain(t, d.docType);
     const codes = unavailable ? t.criteria.filter((c) => c.required && c.status === 'UNAVAILABLE').flatMap((c) => [c.unavailableReason, ...(c.unavailableCodes ?? [])]) : [];
     const evidence = unavailable ? [] : topicEvidence(t, d.analysis.criteria ?? {});
-    const memo = notesFor(record, id).length;
-    const evidenceBox = evidence.length ? el('details', { class: 'cmp-evidence' },
-      el('summary', {}, '원문 근거 보기'),
-      el('div', { class: 'cmp-evidence-doc is-a' }, evidenceItems(evidence, d, labels[d.id], id)),
-      el('p', { class: 'cmp-sub' }, '노란 강조는 원문에 적힌 값이에요. \'원문 전체에서 위치 보기\'를 누르면 아래 원문에서 그 줄을 펼쳐 보여 드려요.')) : null;
-    const detailLink = saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary cmp-detail-link' }, '조건 상세·답변 메모 →') : null;
-    // 문서에 적힌 짧은 조건: 테두리를 줄인 목록형 (항목명·값 먼저, 근거·상세는 그대로)
-    if (row.compact) {
-      return el('li', { class: `cmp-card cmp-row is-compact is-${tone} is-single`, id: `cmp-item-${id}`, 'data-item': id, 'data-topic': id, 'data-status': st },
-        el('div', { class: 'cmp-row-head' },
-          el('h3', {}, itemLabel(record, id)),
-          memo ? el('span', { class: 'memo-flag' }, '내 메모 있음') : null,
-          el('span', { class: `badge badge-relation status-${tone}`, 'data-status': st }, badgeText)),
-        el('p', { class: `cmp-value${v?.vague ? ' is-vague' : ''}` }, value),
-        explain ? el('p', { class: 'cmp-row-note' }, explain) : null,
-        evidenceBox || detailLink ? el('div', { class: 'cmp-row-actions' }, evidenceBox, detailLink) : null);
-    }
-    return el('li', { class: `cmp-card is-${tone} is-single`, id: `cmp-item-${id}`, 'data-item': id, 'data-topic': id, 'data-status': st },
-      el('div', { class: 'cmp-card-head' },
-        el('span', { class: 'cmp-no' }, two(no)),
-        el('h3', {}, itemLabel(record, id)),
-        memo ? el('span', { class: 'memo-flag' }, '내 메모 있음') : null,
-        el('span', { class: `badge badge-relation status-${tone}`, 'data-status': st }, badgeText)),
-      el('div', { class: 'cmp-panels is-single' },
-        el('div', { class: `cmp-panel is-a${missing || unavailable ? ' is-empty' : ''}` },
-          el('p', { class: 'cmp-panel-label' }, calc ? `${labels[d.id]} · 원문 기재값` : labels[d.id]),
-          el('p', { class: `cmp-value${v?.vague ? ' is-vague' : ''}` }, value),
-          calc ? el('p', { class: 'cmp-sub cmp-calc' }, el('span', { class: 'calc-value' }, `${calc.text} (계산값)`), ' 원문에 적힌 근무일·출퇴근 시각·휴게시간으로 계산했어요. 주 소정근로시간이 직접 기재된 것은 아니에요.') : null,
-          unavailable ? el('p', { class: 'cmp-sub' }, `${unavailableCause(codes)}. 적혀 있지 않다는 뜻은 아니에요.`) : null)),
-      explain || extLeave ? el('div', { class: 'cmp-note' },
-        el('p', { class: 'cmp-note-title' }, kind === 'contract' ? '기재 상태·구체성' : '확인 내용'),
-        explain ? el('p', {}, explain) : null,
-        extLeave ? el('p', {}, '법령·취업규칙을 참조하는 기준이 기재돼 있어요. 구체적인 부여 일수와 운영 방식은 해당 기준에서 별도 확인할 수 있어요. 미기재나 위반으로 보지 않아요.') : null) : null,
-      evidenceBox,
-      q ? el('div', { class: 'cmp-question' }, el('p', { class: 'cmp-question-title' }, `회사에 확인할 질문 · ${itemLabel(record, id)}`), questionBlock(q)) : null,
-      detailLink);
+    // 화면에 기본으로 보이는 값·설명과 중요한 상태만으로 표시 방식을 정한다 (접힌 원문 근거의 길이·개수는 보지 않음)
+    const layoutKind = listRowKind({ group: st, value, note: explain ?? '', hasQuestion: Boolean(q), calculated: Boolean(calc), externalRef: Boolean(extLeave),
+      deferred: kind === 'brief' && Boolean(deferral(t)), unavailable, missing });
+    return { id, st, q, tone: S[st].tone, unavailable, calc, extLeave, v, missing, value, badgeText, explain, codes, evidence, layoutKind,
+      // 정상적으로 적힌 조건의 반복 배지('적혀 있어요'·'기재됨')는 묶음 제목과 겹쳐 목록에서는 뺀다 (협의 예정·세부 확인 필요 등은 유지)
+      plainBadge: badgeText === statusLabelFor(d.docType, 'MAIN_FOUND') };
   };
-  // '문서에 적힌 조건'(공고·처우 안내)·'문서에 기재된 조건'(계약서): 짧은 항목은 목록형 2열, 긴 항목은 넓은 카드
-  const COMPACT_GROUPS = ['stated', 'written'];
-  for (const row of rows) row.compact = COMPACT_GROUPS.includes(row.st) && isShortRow(row, d, kind);
+  const evidenceBox = (x) => (x.evidence.length ? el('details', { class: 'cmp-evidence' },
+    el('summary', {}, '원문 근거 보기'),
+    el('div', { class: 'cmp-evidence-doc is-a' }, evidenceItems(x.evidence, d, labels[d.id], x.id)),
+    el('p', { class: 'cmp-sub' }, '노란 강조는 원문에 적힌 값이에요. \'원문 전체에서 위치 보기\'를 누르면 아래 원문에서 그 줄을 펼쳐 보여 드려요.')) : null);
+  // '원문 근거 보기'·'조건 상세·답변 메모'는 목록형·넓은 카드 모두 같은 줄, 같은 모양
+  const actions = (x) => {
+    const link = saved ? el('a', { href: ROUTES.item(record.id, x.id), class: 'cmp-detail-link' }, '조건 상세·답변 메모 →') : null;
+    const ev = evidenceBox(x);
+    return ev || link ? el('div', { class: 'cmp-row-actions' }, ev, link) : null;
+  };
+  const extLeaveText = '법령·취업규칙을 참조하는 기준이 기재돼 있어요. 구체적인 부여 일수와 운영 방식은 해당 기준에서 별도 확인할 수 있어요. 미기재나 위반으로 보지 않아요.';
+  const head = (x, cls) => el('div', { class: cls },
+    el('h3', {}, itemLabel(record, x.id)),
+    notesFor(record, x.id).length ? el('span', { class: 'memo-flag' }, '내 메모 있음') : null,
+    x.plainBadge ? null : el('span', { class: `badge badge-relation status-${x.tone}`, 'data-status': x.st }, x.badgeText));
+  // '문서에 적힌/기재된 조건' 묶음의 항목: 목록형(2열 중 한 칸) 또는 같은 모양의 전체 너비 항목
+  const listRow = (x) => el('li', { class: `cmp-card cmp-row is-${x.layoutKind} is-${x.tone} is-single`, id: `cmp-item-${x.id}`, 'data-item': x.id, 'data-topic': x.id, 'data-status': x.st },
+    head(x, 'cmp-row-head'),
+    el('p', { class: `cmp-value${x.v?.vague ? ' is-vague' : ''}` }, x.value),
+    x.calc ? el('p', { class: 'cmp-row-note cmp-calc' }, el('span', { class: 'calc-value' }, `${x.calc.text} (계산값)`), ' 원문에 적힌 근무일·출퇴근 시각·휴게시간으로 계산했어요. 주 소정근로시간이 직접 기재된 것은 아니에요.') : null,
+    x.explain && !x.calc ? el('p', { class: 'cmp-row-note' }, x.explain) : null,
+    x.extLeave ? el('p', { class: 'cmp-row-note' }, extLeaveText) : null,
+    actions(x));
+  // 그 밖의 묶음(추가 확인 필요·협의 예정·계산값·확인 불가): 설명·질문이 중요한 넓은 카드 (번호 없이)
+  const card = (x) => el('li', { class: `cmp-card is-${x.tone} is-single`, id: `cmp-item-${x.id}`, 'data-item': x.id, 'data-topic': x.id, 'data-status': x.st },
+    head(x, 'cmp-card-head'),
+    el('div', { class: 'cmp-panels is-single' },
+      el('div', { class: `cmp-panel is-a${x.missing || x.unavailable ? ' is-empty' : ''}` },
+        el('p', { class: 'cmp-panel-label' }, x.calc ? `${labels[d.id]} · 원문 기재값` : labels[d.id]),
+        el('p', { class: `cmp-value${x.v?.vague ? ' is-vague' : ''}` }, x.value),
+        x.calc ? el('p', { class: 'cmp-sub cmp-calc' }, el('span', { class: 'calc-value' }, `${x.calc.text} (계산값)`), ' 원문에 적힌 근무일·출퇴근 시각·휴게시간으로 계산했어요. 주 소정근로시간이 직접 기재된 것은 아니에요.') : null,
+        x.unavailable ? el('p', { class: 'cmp-sub' }, `${unavailableCause(x.codes)}. 적혀 있지 않다는 뜻은 아니에요.`) : null)),
+    // 같은 내용을 두 번 말하지 않는다: 계산값 설명은 값 아래에 이미 있고, '찾지 못했어요'는 값('문서에서 확인되지 않음')과 같음
+    (x.explain && !x.calc && !x.missing) || x.extLeave ? el('div', { class: 'cmp-note' },
+      el('p', { class: 'cmp-note-title' }, kind === 'contract' ? '기재 상태·구체성' : '확인 내용'),
+      x.explain && !x.calc && !x.missing ? el('p', {}, x.explain) : null,
+      x.extLeave ? el('p', {}, extLeaveText) : null) : null,
+    x.q ? el('div', { class: 'cmp-question' }, el('p', { class: 'cmp-question-title' }, `회사에 확인할 질문 · ${itemLabel(record, x.id)}`), questionBlock(x.q)) : null,
+    actions(x));
+  const shown = rows.map(info);
+  for (const [i, x] of shown.entries()) rows[i].layoutKind = x.layoutKind;
   fill($('#condition-list'), ...S.order.map((st) => {
-    const list = rows.filter((r) => r.st === st);
+    const list = shown.filter((x) => x.st === st);
     if (!list.length) return null;
-    const short = list.filter((r) => r.compact);
-    const wide = list.filter((r) => !r.compact);
+    const isList = COMPACT_GROUPS.includes(st);
     return el('section', { class: `cgroup cmp-group is-${S[st].tone}`, 'data-group': st, id: `cmp-group-${st}` },
       // 건수는 위 요약에 있어 목록형 묶음 제목에는 다시 적지 않는다
-      el('h3', { class: 'cgroup-title' }, S[st].label, COMPACT_GROUPS.includes(st) ? null : el('span', { class: 'sum-count' }, String(list.length))),
+      el('h3', { class: 'cgroup-title' }, S[st].label, isList ? null : el('span', { class: 'sum-count' }, String(list.length))),
       // 분석 확인 불가: 같은 텍스트로 다시 분석 (문서가 하나라 버튼도 묶음에 하나)
       st === 'unavailable' ? el('div', { class: 'reanalyze cmp-group-note' },
         el('p', { class: 'small' }, '근거를 원문에서 확인하지 못해 확정하지 않은 항목이에요. 적혀 있지 않다는 뜻이 아니어서 회사 질문을 만들지 않았어요.'),
         saved ? el('button', { type: 'button', class: 'btn-secondary', 'data-reanalyze': d.id }, `${labels[d.id]} 같은 텍스트로 다시 분석하기`) : null,
         el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null,
-      short.length ? el('ul', { class: 'cmp-rows' }, short.map(card)) : null,
-      wide.length ? el('ol', { class: 'cmp-cards' }, wide.map(card)) : null);
+      // 목록형 항목을 먼저 2열로, 전체 너비가 필요한 항목은 그 아래에 (빈 칸 없이)
+      isList ? el('ul', { class: 'cmp-rows' }, [...list.filter((x) => x.layoutKind === 'compact'), ...list.filter((x) => x.layoutKind !== 'compact')].map(listRow))
+        : el('ol', { class: 'cmp-cards' }, list.map(card)));
   }));
   return rows;
-}
-// 목록형으로 보여도 되는 짧은 항목: 값·설명·근거가 짧고, 계산값·외부 기준 참조·회사 질문이 없음
-function isShortRow(row, d, kind) {
-  const { t, q } = row;
-  if (q || t.status === 'MAIN_UNAVAILABLE' || t.status === 'MAIN_MISSING') return false;
-  if (kind === 'contract' && (weeklyCalc(t) || externallyReferencedLeave(t))) return false;
-  const value = (row.relItem ? cardValue(row.relItem, d.id)?.text : null) ?? summaryEvidence(t)?.text ?? '';
-  const explain = topicExplain(t, d.docType) ?? '';
-  const ev = topicEvidence(t, d.analysis.criteria ?? {});
-  const evLen = ev.reduce((n, r) => n + r.text.length, 0);
-  return value.length <= 40 && explain.length <= 70 && ev.length <= 2 && evLen <= 160;
 }
 
 function renderRecord(record, { unsaved = false } = {}) {

@@ -117,3 +117,24 @@ test('문서 1개 원문 근거: 기준별 인용을 한 번만, 확인 불가 �
   assert.deepEqual(rows[0].highlight, ['연봉 3,600만 원', '연봉']);
   assert.equal(rows[0].text, '임금: 연봉 3,600만 원(세전)');
 });
+
+// ---- 문서 1개 결과: 목록형 표시 기준 (화면에 보이는 값·설명·중요 상태만, 접힌 원문 근거는 보지 않음) ----
+import { listRowKind, COMPACT_GROUPS } from '../public/compare-view.js';
+
+test('목록형: 값이 짧은 근무시간은 원문 근거가 길어도 목록형 (근거 길이·개수는 입력에 없음)', () => {
+  assert.deepEqual(COMPACT_GROUPS, ['stated', 'written']);
+  assert.equal(listRowKind({ group: 'stated', value: '09:00~18:00 · 휴게 12:00~13:00' }), 'compact');
+  assert.equal(listRowKind({ group: 'written', value: '정규직', note: '' }), 'compact');
+});
+
+test('목록형 묶음 안에서도 값·설명이 길거나 중요한 상태면 전체 너비', () => {
+  assert.equal(listRowKind({ group: 'stated', value: '가'.repeat(61) }), 'wide');
+  assert.equal(listRowKind({ group: 'written', value: '정규직', note: '나'.repeat(71) }), 'wide');
+  for (const flag of ['hasQuestion', 'calculated', 'externalRef', 'deferred', 'unavailable', 'missing']) {
+    assert.equal(listRowKind({ group: 'written', value: '짧음', [flag]: true }), 'wide', flag);
+  }
+});
+
+test('그 밖의 묶음(추가 확인 필요·협의 예정·계산값·확인 불가)은 넓은 카드', () => {
+  for (const group of ['needs', 'calculated', 'unavailable', 'deferred']) assert.equal(listRowKind({ group, value: '짧음' }), 'card', group);
+});

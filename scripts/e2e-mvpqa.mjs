@@ -13,7 +13,7 @@ import { segmentText } from '../src/segment.js';
 import { CRITERION_IDS } from '../src/criteria.js';
 import { createRateLimiter } from '../src/rateLimit.js';
 import { buildExtraction } from '../test/v22-fixtures.js';
-import { GQ_POSTING, GQ_POSTING_SPECS, QA2_OFFER, QA2_OFFER_SPECS, QA2_CONTRACT, QA2_CONTRACT_SPECS } from '../test/gemini-qa-docs.js';
+import { GQ_POSTING, GQ_POSTING_SPECS, GQ_POSTING_LONG_EVIDENCE, GQ_POSTING_LONG_EVIDENCE_SPECS, QA2_OFFER, QA2_OFFER_SPECS, QA2_CONTRACT, QA2_CONTRACT_SPECS } from '../test/gemini-qa-docs.js';
 import { DEMO_POSTING, DEMO_POSTING_SPECS } from '../test/demo-docs.js';
 import { SAMPLE_FILES, SAMPLE_ZIP_NAME } from '../public/samples.js';
 
@@ -22,7 +22,7 @@ mkdirSync(OUT, { recursive: true });
 const checks = [];
 const check = (name, ok, detail = '') => { checks.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`); };
 
-const DOCS = [[GQ_POSTING, GQ_POSTING_SPECS], [QA2_OFFER, QA2_OFFER_SPECS], [QA2_CONTRACT, QA2_CONTRACT_SPECS], [DEMO_POSTING, DEMO_POSTING_SPECS]];
+const DOCS = [[GQ_POSTING, GQ_POSTING_SPECS], [GQ_POSTING_LONG_EVIDENCE, GQ_POSTING_LONG_EVIDENCE_SPECS], [QA2_OFFER, QA2_OFFER_SPECS], [QA2_CONTRACT, QA2_CONTRACT_SPECS], [DEMO_POSTING, DEMO_POSTING_SPECS]];
 const ai = {
   name: 'demo',
   async analyze({ segments, criterionIds }) {
@@ -75,7 +75,7 @@ try {
     await page.goto(`${BASE}/#/new`);
     await register('job_posting', DEMO_POSTING);
     const g1 = await groups();
-    const single = async () => ({ doc: await text('#cmp-docs'), tl: await tiles(), cards: await page.$$eval('#condition-list .cmp-card', (els) => els.map((e) => ({ id: e.dataset.item, st: e.dataset.status, panels: e.querySelectorAll('.cmp-panel').length, compact: e.classList.contains('is-compact') }))) });
+    const single = async () => ({ doc: await text('#cmp-docs'), tl: await tiles(), cards: await page.$$eval('#condition-list .cmp-card', (els) => els.map((e) => ({ id: e.dataset.item, st: e.dataset.status, panels: e.querySelectorAll('.cmp-panel').length, compact: e.classList.contains('cmp-row') }))) });
     const s1 = await single();
     // 목록형 묶음('문서에 적힌/기재된 조건')은 제목 옆 건수를 다시 적지 않는다 (요약 칸에만)
     const sumMatches = (s, g) => g.every((x) => (x.count === x.cards || (x.count === null && ['stated', 'written'].includes(x.key))) && s.tl[x.key] === x.cards) && Object.values(s.tl).reduce((a, b) => a + b, 0) === s.cards.length;
@@ -96,6 +96,24 @@ try {
     await addDoc(); await view('input');
     check(`[${tag}] '비교할 두 번째 문서 추가하기' → 이 기록에 추가 화면`, page.url() === `${rec1}/add` && await page.isVisible('#target-banner'));
 
+    // ---- 문서 1개: 원문 근거가 긴 채용공고 → 값이 짧은 근무시간은 목록형, 값이 긴 담당업무만 전체 너비 ----
+    await page.goto(`${BASE}/#/new`);
+    await register('job_posting', GQ_POSTING_LONG_EVIDENCE);
+    const kindOf = (id) => page.$eval(`#cmp-item-${id}`, (e) => (e.classList.contains('is-compact') ? 'compact' : e.classList.contains('is-wide') ? 'wide' : 'card'));
+    check(`[${tag}] 원문 근거가 길어도 값이 짧은 근무시간은 목록형, 값이 긴 담당업무는 같은 목록에서 전체 너비, 협의·추후 안내는 넓은 카드`, (await kindOf('02')) === 'compact' && (await kindOf('04')) === 'wide' && (await kindOf('08')) === 'card'
+      && (await page.$$('[data-group="stated"] .cmp-row .badge')).length === 0 && (await page.$$('#condition-list .cmp-no')).length === 0 && (await page.$$('[data-group="deferred"] .badge')).length === 1);
+    // 원문 근거를 모두 펼쳐도 2열이 깨지지 않음: 같은 줄의 두 칸이 겹치지 않고, 근거 글이 칸 밖으로 나가지 않음
+    await page.$$eval('[data-group="stated"] details.cmp-evidence', (ds) => ds.forEach((d) => { d.open = true; }));
+    await page.waitForTimeout(100);
+    const fit = await page.$$eval('[data-group="stated"] .cmp-row', (rows) => {
+      const boxes = rows.map((r) => r.getBoundingClientRect());
+      const overlap = boxes.some((a, i) => boxes.some((b, j) => i < j && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1));
+      const spill = rows.some((r) => { const rb = r.getBoundingClientRect(); return [...r.querySelectorAll('.cmp-quote, .cmp-goto, .cmp-evidence-for')].some((q) => { const b = q.getBoundingClientRect(); return b.right > rb.right + 1 || b.left < rb.left - 1; }); });
+      const cols = new Set(boxes.filter((b, i) => rows[i].classList.contains('is-compact')).map((b) => Math.round(b.left))).size;
+      return { overlap, spill, cols, hours: rows.find((r) => r.dataset.item === '02').querySelector('details').open };
+    });
+    check(`[${tag}] 원문 근거를 펼쳐도 ${tag === 'desk' ? '2열' : '1열'} 유지, 칸끼리 겹치거나 옆 칸을 침범하지 않음, 가로 넘침 없음`, !fit.overlap && !fit.spill && fit.cols === (tag === 'desk' ? 2 : 1) && fit.hours && await noOverflow(), JSON.stringify(fit));
+
     // ---- 문서 1개: 처우 안내 → 간결한 미리보기 ----
     await page.goto(`${BASE}/#/new`);
     await register('offer', QA2_OFFER);
@@ -115,15 +133,16 @@ try {
     const c02 = await card('02');
     check(`[${tag}] 계산값: 근무시간은 '계산으로 확인한 조건' 묶음, 원문 기재값과 '(계산값)' 구분, '내용이 모호함' 아님`, (await page.getAttribute('#cmp-item-02', 'data-status')) === 'calculated' && c02.includes('10:00~19:00') && c02.includes('주 40시간 (계산값)') && c02.includes('원문 기재값') && !c02.includes('내용이 모호함'), c02.slice(0, 160));
     check(`[${tag}] 요약 값에 원문 목차·항목명 없음 (근무장소·담당업무·수습기간)`, (await text('#cmp-item-03 .cmp-value')).includes('서울 성동구 성수동 본사') && !(await text('#cmp-item-03 .cmp-value')).includes('2. 근무장소') && !(await text('#cmp-item-04 .cmp-value')).includes('업무의 내용') && (await text('#cmp-item-07 .cmp-value')).includes('입사 후 3개월'));
-    // 목록형: 문서에 기재된 짧은 조건은 2열(데스크톱)/1열(모바일), 근거·상세 링크 유지, 긴 항목·추가 확인 항목은 넓은 카드
-    const compact = await page.$$eval('[data-group="written"]', (gs) => gs.map((g) => {
+    // 목록형: 문서에 기재된 조건은 한 목록(데스크톱 2열/모바일 1열), 반복 '기재됨' 배지·번호·묶음 제목 옆 건수 없음, 근거·상세 링크 유지. 추가 확인·계산값은 넓은 카드
+    const compact = await page.$eval('[data-group="written"]', (g) => {
       const rows = g.querySelector('.cmp-rows');
       const items = [...g.querySelectorAll('.cmp-rows > .cmp-row')];
-      const cols = rows ? getComputedStyle(rows).gridTemplateColumns.split(' ').length : 0;
-      return { n: items.length, cols, ev: items.every((r) => r.querySelector('details.cmp-evidence > summary')?.textContent === '원문 근거 보기'), link: items.every((r) => r.querySelector('a.cmp-detail-link')?.textContent.includes('조건 상세·답변 메모')), titleCount: Boolean(g.querySelector(':scope > .cgroup-title .sum-count')), wide: g.querySelectorAll('.cmp-cards > .cmp-card').length };
-    })[0]);
-    const needsWide = await page.$$eval('[data-group="needs"] .cmp-card', (els) => els.every((e) => !e.classList.contains('is-compact')));
-    check(`[${tag}] 근로계약서 단독: 기재된 짧은 조건은 목록형 ${tag === 'desk' ? '2열' : '1열'}, 근거·상세 유지, 묶음 제목 옆 중복 건수 없음, 추가 확인은 넓은 카드`, compact && compact.n >= 3 && compact.cols === (tag === 'desk' ? 2 : 1) && compact.ev && compact.link && !compact.titleCount && needsWide && (await page.$$('[data-group="needs"] .sum-count')).length === 1, JSON.stringify(compact));
+      return { n: items.length, all: g.querySelectorAll('.cmp-card').length, cols: getComputedStyle(rows).gridTemplateColumns.split(' ').length,
+        ev: items.every((r) => r.querySelector('details.cmp-evidence > summary')?.textContent === '원문 근거 보기'), link: items.every((r) => r.querySelector('a.cmp-detail-link')?.textContent.includes('조건 상세·답변 메모')),
+        plainBadges: g.querySelectorAll('.cmp-row .badge').length, nos: g.querySelectorAll('.cmp-no').length, titleCount: Boolean(g.querySelector(':scope > .cgroup-title .sum-count')) };
+    });
+    const keepWide = await page.$$eval('[data-group="needs"] .cmp-card, [data-group="calculated"] .cmp-card', (els) => els.length >= 2 && els.every((e) => !e.classList.contains('cmp-row') && e.querySelector('.badge') && !e.querySelector('.cmp-no')));
+    check(`[${tag}] 근로계약서 단독: 기재된 조건은 목록형 ${tag === 'desk' ? '2열' : '1열'}, 반복 배지·번호·중복 건수 없음, 근거·상세 유지, 추가 확인·계산값은 넓은 카드(상태 배지 유지)`, compact.n === compact.all && compact.n >= 3 && compact.cols === (tag === 'desk' ? 2 : 1) && compact.ev && compact.link && compact.plainBadges === 0 && compact.nos === 0 && !compact.titleCount && keepWide && (await page.$$('[data-group="needs"] .sum-count')).length === 1, JSON.stringify(compact));
     const needQ = await page.$$eval('[data-group="needs"] .cmp-card', (els) => els.map((e) => e.querySelectorAll('.q-text').length));
     check(`[${tag}] 근로계약서 단독: 질문은 추가 확인 카드 안 + 위쪽 '질문 전체 복사' 하나 (아래 중복 없음)`, (await page.$$('[data-group="written"] .q-text, [data-group="calculated"] .q-text')).length === 0 && needQ.length > 0 && (await page.isVisible('#copy-all-top')) && !(await page.isVisible('#copy-all-questions')), JSON.stringify(needQ));
     check(`[${tag}] 근로계약서 단독: null 없음·가로 넘침 없음`, await noNull() && await noOverflow());
