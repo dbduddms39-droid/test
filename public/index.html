@@ -152,14 +152,14 @@
         <div class="method-head">
           <p class="field-label" id="method-label"><span class="mono-meta" id="method-index">§ 02</span> <span id="method-title">내용 전달 방식</span></p>
           <div class="tabs" role="tablist" aria-labelledby="method-label">
-            <button type="button" role="tab" id="tab-paste" aria-controls="panel-paste" aria-selected="true">텍스트 직접 붙여넣기</button>
-            <button type="button" role="tab" id="tab-upload" aria-controls="panel-upload" aria-selected="false" tabindex="-1">사진·PDF 업로드</button>
+            <button type="button" role="tab" id="tab-upload" aria-controls="panel-upload" aria-selected="true">사진·PDF 업로드</button>
+            <button type="button" role="tab" id="tab-paste" aria-controls="panel-paste" aria-selected="false" tabindex="-1">텍스트 직접 붙여넣기</button>
           </div>
         </div>
 
         <!-- 직접 입력: S-02 → S-04 -->
         <form id="input-form" novalidate>
-          <div id="panel-paste" role="tabpanel" aria-labelledby="tab-paste">
+          <div id="panel-paste" role="tabpanel" aria-labelledby="tab-paste" hidden>
             <div class="editor" id="paste-editor">
               <div class="editor-bar">
                 <label for="doc-text" class="editor-label">문서 본문 입력</label>
@@ -174,7 +174,7 @@
           </div>
 
           <!-- 파일 업로드: S-02 → S-03 → S-04 -->
-          <div id="panel-upload" role="tabpanel" aria-labelledby="tab-upload" hidden>
+          <div id="panel-upload" role="tabpanel" aria-labelledby="tab-upload">
             <div class="upload">
               <div class="ai-layout-opt">
                 <label><input type="checkbox" id="ai-layout" checked> 추출한 텍스트를 <strong>Google Gemini로 보내</strong> 제목·항목별로 줄바꿈 정리하기</label>
