@@ -108,6 +108,15 @@ const store = createStore();
 const $ = (sel) => document.querySelector(sel);
 const go = (hash, replace = false) => { if (replace) location.replace(hash); else location.hash = hash; };
 const showMsg = (node, text) => { node.textContent = text; node.hidden = !text; };
+// 짧은 완료 안내: 화면 아래에 잠깐 보였다가 사라진다 (스크린 리더는 aria-live로 읽음)
+let toastTimer = 0;
+function showToast(text, ms = 2500) {
+  const t = $('#toast');
+  clearTimeout(toastTimer);
+  t.textContent = text;
+  t.classList.add('is-shown');
+  toastTimer = setTimeout(() => { t.classList.remove('is-shown'); setTimeout(() => { if (!t.classList.contains('is-shown')) t.textContent = ''; }, 300); }, ms);
+}
 const inputRoute = () => inputRouteFor(state.target);
 
 // 탭: 클릭과 방향키(←→, Home, End)로 이동하고, 선택된 탭만 Tab 키 순서에 둔다.
@@ -134,8 +143,8 @@ function initTabs(tabs, onSelect) {
 }
 
 // ---------- S01 시작 ----------
-// 체험용 가상 문서 다운로드 (시작 화면 전용, public/samples/의 파일이 모두 있을 때만 표시)
-// 파일이 있을 때만 히어로의 '체험용 가상문서 받기 ↓'를 보여 준다
+// 체험용 샘플 문서 다운로드 (시작 화면 전용, public/samples/의 파일이 모두 있을 때만 표시)
+// 파일이 있을 때만 히어로의 '샘플 문서로 체험해 보세요'를 보여 준다
 initSampleDownloads({ root: $('#sample-download'), list: $('#sample-dl-list'), zipButton: $('#sample-zip'), status: $('#sample-status'), el })
   .then((ok) => { $('#landing-how').hidden = !ok; });
 $('#landing-how').addEventListener('click', () => {
@@ -552,8 +561,9 @@ function updateReviewState() {
   const unlocated = state.file ? unlocatedPending(state.file.tracker, v) : [];
   // 빈 쪽으로 확인한 쪽은 빼고, 직접 입력한 쪽은 넣은 텍스트로 빈 입력·길이를 검사한다 (문서 전체가 비면 기존처럼 막음)
   const finalText = state.file ? assembleText(v, state.file.issues ?? []).text : v;
-  reviewSubmit.disabled = !state.file || !checkText(finalText).ok || Boolean(state.inflight) || blocking.length > 0 || unlocated.length > 0;
-  $('#review-restore').disabled = !state.file || (v === state.file.original && !(state.file.issues ?? []).some((x) => x.supplement));
+  const layoutPending = state.file?.layoutStatus === 'pending';
+  reviewSubmit.disabled = !state.file || layoutPending || !checkText(finalText).ok || Boolean(state.inflight) || blocking.length > 0 || unlocated.length > 0;
+  $('#review-restore').disabled = !state.file || layoutPending || (v === state.file.original && !(state.file.issues ?? []).some((x) => x.supplement));
   const blockedMsg = [];
   if (blocking.length) blockedMsg.push(`분석 전에 확인할 추출 문제 ${blocking.length}건을 먼저 처리해 주세요. 위의 '분석 전에 확인할 추출 문제'에서 처리할 수 있어요.`);
   if (unlocated.length) blockedMsg.push(`위치를 찾을 수 없는 불확실한 글자 ${unlocated.length}곳이 있어요. 어느 조건에 영향을 주는지 알 수 없어, '확인이 필요한 글자'에서 원본과 대조해 확인하기 전에는 분석할 수 없어요.`);
@@ -569,15 +579,24 @@ function updateReviewState() {
 let reviewEditing = false;
 const LAYOUT_STATUS = {
   off: 'AI 줄바꿈 정리 없이 추출한 텍스트를 그대로 보여 드려요. 원본과 비교해 확인해 주세요.',
-  pending: 'Gemini로 제목·항목별 줄바꿈을 정리하는 중이에요… 잠시 추출한 텍스트를 그대로 보여 드려요.',
+  pending: '', // 정리 중에는 오른쪽 창에 진행 표시(#layout-wait)만 보여 준다
   done: 'Gemini가 제목·항목별로 줄만 나눴어요. 글자·숫자·금액은 원문과 같은지 확인했어요. 원본과 비교해 확인해 주세요.',
-  failed: '줄바꿈 정리를 적용하지 못해 추출한 텍스트를 그대로 보여 드려요. 필요한 곳은 직접 고쳐 주세요.',
+  failed: "줄바꿈 정리를 적용하지 못해 추출한 텍스트를 그대로 보여 드려요. 원본과 비교해 필요한 곳은 '텍스트 수정하기'로 직접 고쳐 주세요.",
   skipped: '텍스트를 먼저 고쳐서 줄바꿈 정리 결과는 적용하지 않았어요.',
   restored: '정리 전 추출 텍스트로 되돌렸어요.',
 };
+// 서버의 AI 응답 제한(60초)보다 먼저 끊어 무한히 기다리지 않게 한다
+const LAYOUT_TIMEOUT_MS = 45_000;
 function showLayoutStatus() {
   const f = state.file;
+  const pending = f?.layoutStatus === 'pending';
   $('#layout-status').textContent = f ? `${LAYOUT_STATUS[f.layoutStatus ?? 'off']}${f.layoutStatus === 'failed' && f.layoutError ? ` (${f.layoutError})` : ''}` : '';
+  // 정리 중: 왼쪽 원본은 그대로, 오른쪽은 진행 표시만. 수정·되돌리기·분석은 정리가 끝난 뒤에
+  $('#layout-wait').hidden = !pending;
+  $('#review-editor').classList.toggle('is-layout-pending', pending);
+  $('#review-editor').setAttribute('aria-busy', String(pending));
+  $('#review-edit').disabled = pending;
+  if (pending) $('#review-restore').disabled = true;
 }
 function renderReadView() {
   const lay = state.file?.layout;
@@ -612,12 +631,15 @@ async function runAutoLayout(file) {
   file.layoutStatus = 'pending';
   if (state.file === file) showLayoutStatus();
   let blocks = null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), globalThis.__ILDAN_LAYOUT_TIMEOUT_MS ?? LAYOUT_TIMEOUT_MS);
   try {
-    const res = await fetch('/api/layout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: source }) });
+    const res = await fetch('/api/layout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: source }), signal: ctrl.signal });
     const data = await res.json().catch(() => ({}));
     if (res.ok) blocks = alignLayout(source, data.blocks); // 서버 검증과 별도로 다시 대조
     else file.layoutError = data.error ?? null;
-  } catch { file.layoutError = '서버에 연결하지 못했어요'; }
+  } catch { file.layoutError = ctrl.signal.aborted ? '정리가 오래 걸려 중단했어요' : '서버에 연결하지 못했어요'; }
+  finally { clearTimeout(timer); }
   if (state.file !== file) return; // 그사이 다른 파일을 추출함
   const text = blocks ? layoutText(blocks) : null;
   const map = text ? positionMap(source, text) : null;
@@ -1698,6 +1720,22 @@ function renderSingle({ record, comparedRecord, fus, labels, saved, fuOf, layout
     const codes = unavailable ? t.criteria.filter((c) => c.required && c.status === 'UNAVAILABLE').flatMap((c) => [c.unavailableReason, ...(c.unavailableCodes ?? [])]) : [];
     const evidence = unavailable ? [] : topicEvidence(t, d.analysis.criteria ?? {});
     const memo = notesFor(record, id).length;
+    const evidenceBox = evidence.length ? el('details', { class: 'cmp-evidence' },
+      el('summary', {}, '원문 근거 보기'),
+      el('div', { class: 'cmp-evidence-doc is-a' }, evidenceItems(evidence, d, labels[d.id], id)),
+      el('p', { class: 'cmp-sub' }, '노란 강조는 원문에 적힌 값이에요. \'원문 전체에서 위치 보기\'를 누르면 아래 원문에서 그 줄을 펼쳐 보여 드려요.')) : null;
+    const detailLink = saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary cmp-detail-link' }, '조건 상세·답변 메모 →') : null;
+    // 문서에 적힌 짧은 조건: 테두리를 줄인 목록형 (항목명·값 먼저, 근거·상세는 그대로)
+    if (row.compact) {
+      return el('li', { class: `cmp-card cmp-row is-compact is-${tone} is-single`, id: `cmp-item-${id}`, 'data-item': id, 'data-topic': id, 'data-status': st },
+        el('div', { class: 'cmp-row-head' },
+          el('h3', {}, itemLabel(record, id)),
+          memo ? el('span', { class: 'memo-flag' }, '내 메모 있음') : null,
+          el('span', { class: `badge badge-relation status-${tone}`, 'data-status': st }, badgeText)),
+        el('p', { class: `cmp-value${v?.vague ? ' is-vague' : ''}` }, value),
+        explain ? el('p', { class: 'cmp-row-note' }, explain) : null,
+        evidenceBox || detailLink ? el('div', { class: 'cmp-row-actions' }, evidenceBox, detailLink) : null);
+    }
     return el('li', { class: `cmp-card is-${tone} is-single`, id: `cmp-item-${id}`, 'data-item': id, 'data-topic': id, 'data-status': st },
       el('div', { class: 'cmp-card-head' },
         el('span', { class: 'cmp-no' }, two(no)),
@@ -1714,26 +1752,41 @@ function renderSingle({ record, comparedRecord, fus, labels, saved, fuOf, layout
         el('p', { class: 'cmp-note-title' }, kind === 'contract' ? '기재 상태·구체성' : '확인 내용'),
         explain ? el('p', {}, explain) : null,
         extLeave ? el('p', {}, '법령·취업규칙을 참조하는 기준이 기재돼 있어요. 구체적인 부여 일수와 운영 방식은 해당 기준에서 별도 확인할 수 있어요. 미기재나 위반으로 보지 않아요.') : null) : null,
-      evidence.length ? el('details', { class: 'cmp-evidence' },
-        el('summary', {}, '원문 근거 보기'),
-        el('div', { class: 'cmp-evidence-doc is-a' }, evidenceItems(evidence, d, labels[d.id], id)),
-        el('p', { class: 'cmp-sub' }, '노란 강조는 원문에 적힌 값이에요. \'원문 전체에서 위치 보기\'를 누르면 아래 원문에서 그 줄을 펼쳐 보여 드려요.')) : null,
+      evidenceBox,
       q ? el('div', { class: 'cmp-question' }, el('p', { class: 'cmp-question-title' }, `회사에 확인할 질문 · ${itemLabel(record, id)}`), questionBlock(q)) : null,
-      saved ? el('a', { href: ROUTES.item(record.id, id), class: 'btn-secondary cmp-detail-link' }, '조건 상세·답변 메모 →') : null);
+      detailLink);
   };
+  // '문서에 적힌 조건'(공고·처우 안내)·'문서에 기재된 조건'(계약서): 짧은 항목은 목록형 2열, 긴 항목은 넓은 카드
+  const COMPACT_GROUPS = ['stated', 'written'];
+  for (const row of rows) row.compact = COMPACT_GROUPS.includes(row.st) && isShortRow(row, d, kind);
   fill($('#condition-list'), ...S.order.map((st) => {
     const list = rows.filter((r) => r.st === st);
     if (!list.length) return null;
+    const short = list.filter((r) => r.compact);
+    const wide = list.filter((r) => !r.compact);
     return el('section', { class: `cgroup cmp-group is-${S[st].tone}`, 'data-group': st, id: `cmp-group-${st}` },
-      el('h3', { class: 'cgroup-title' }, S[st].label, el('span', { class: 'sum-count' }, String(list.length))),
+      // 건수는 위 요약에 있어 목록형 묶음 제목에는 다시 적지 않는다
+      el('h3', { class: 'cgroup-title' }, S[st].label, COMPACT_GROUPS.includes(st) ? null : el('span', { class: 'sum-count' }, String(list.length))),
       // 분석 확인 불가: 같은 텍스트로 다시 분석 (문서가 하나라 버튼도 묶음에 하나)
       st === 'unavailable' ? el('div', { class: 'reanalyze cmp-group-note' },
         el('p', { class: 'small' }, '근거를 원문에서 확인하지 못해 확정하지 않은 항목이에요. 적혀 있지 않다는 뜻이 아니어서 회사 질문을 만들지 않았어요.'),
         saved ? el('button', { type: 'button', class: 'btn-secondary', 'data-reanalyze': d.id }, `${labels[d.id]} 같은 텍스트로 다시 분석하기`) : null,
         el('p', { class: 'muted small reanalyze-status', role: 'status', 'aria-live': 'polite' })) : null,
-      el('ol', { class: 'cmp-cards' }, list.map(card)));
+      short.length ? el('ul', { class: 'cmp-rows' }, short.map(card)) : null,
+      wide.length ? el('ol', { class: 'cmp-cards' }, wide.map(card)) : null);
   }));
   return rows;
+}
+// 목록형으로 보여도 되는 짧은 항목: 값·설명·근거가 짧고, 계산값·외부 기준 참조·회사 질문이 없음
+function isShortRow(row, d, kind) {
+  const { t, q } = row;
+  if (q || t.status === 'MAIN_UNAVAILABLE' || t.status === 'MAIN_MISSING') return false;
+  if (kind === 'contract' && (weeklyCalc(t) || externallyReferencedLeave(t))) return false;
+  const value = (row.relItem ? cardValue(row.relItem, d.id)?.text : null) ?? summaryEvidence(t)?.text ?? '';
+  const explain = topicExplain(t, d.docType) ?? '';
+  const ev = topicEvidence(t, d.analysis.criteria ?? {});
+  const evLen = ev.reduce((n, r) => n + r.text.length, 0);
+  return value.length <= 40 && explain.length <= 70 && ev.length <= 2 && evLen <= 160;
 }
 
 function renderRecord(record, { unsaved = false } = {}) {
@@ -2048,11 +2101,13 @@ $('#rename-form').addEventListener('submit', async (e) => {
   if (!currentRecord) return;
   try {
     currentRecord = await store.rename(currentRecord.id, $('#rename-input').value);
-    state.flash = { kind: 'saved', text: '기록 이름을 저장했어요.' };
-    route();
   } catch {
-    showMsg($('#rename-error'), '이름을 저장하지 못했어요. 이전 이름은 그대로예요.');
+    // 실패는 입력칸 아래에 남겨 두고(사라지지 않음), 고쳐서 다시 저장하거나 취소할 수 있다
+    showMsg($('#rename-error'), '이름을 저장하지 못했어요. 이전 이름은 그대로예요. 다시 저장하거나 취소해 주세요.');
+    return;
   }
+  await route();
+  showToast('기록 이름을 저장했어요.');
 });
 // 질문 전체 복사 (비교 화면 위쪽 모아보기): 아래 '질문 모두 복사'와 같은 방식
 $('#copy-all-top').addEventListener('click', async () => {

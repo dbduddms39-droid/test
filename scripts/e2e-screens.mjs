@@ -37,7 +37,7 @@ try {
     const landing = await page.textContent('#view-landing');
     check(`[${tag}] S01: 헤드라인·서브 카피(문서 하나로 시작, 나중에 추가해 비교)·보조 문구`, landing.includes('입사 전, 놓치지 말고') && landing.includes('받은 문서 하나부터 등록하세요') && landing.includes('나중에 받은 문서를 더하면') && landing.includes('문서 하나만 있어도 시작할 수 있어요'));
     check(`[${tag}] S01: 주요 CTA '첫 문서 등록하기'가 첫 화면에 보임`, (await page.textContent('#landing-start')).includes('첫 문서 등록하기') && await page.$eval('#landing-start', (e) => e.getBoundingClientRect().bottom <= window.innerHeight));
-    check(`[${tag}] S01: CTA는 히어로 하나뿐 (내 기록 보기·하단 CTA·기능 카드 버튼 없음), 내 기록은 헤더에만`, (await page.$$('#view-landing a[href="#/new"]')).length === 1 && (await page.$$('#view-landing a[href="#/records"]')).length === 0 && !(await page.$('#landing-records, #landing-start-bottom, .landing-cta')) && (await page.$$('#landing-workflow a, #landing-workflow button')).length === 0 && await page.isVisible('#nav-records'));
+    check(`[${tag}] S01: 등록 CTA는 히어로와 샘플 문서 영역 아래 하나씩 (내 기록 보기·기능 카드 버튼 없음), 내 기록은 헤더에만`, (await page.$$('#view-landing a[href="#/new"]')).length === 2 && (await page.$$('#sample-download a[href="#/new"]')).length === 1 && (await page.$$('#view-landing a[href="#/records"]')).length === 0 && !(await page.$('#landing-records, #landing-start-bottom, .landing-cta')) && (await page.$$('#landing-workflow a, #landing-workflow button')).length === 0 && await page.isVisible('#nav-records'));
     const hero = await page.textContent('.hero-visual');
     check(`[${tag}] S01: 대표 비주얼 = 문서 카드 3장 + 조건 차이 확인 (가상 예시 표시, 헤드라인 반복 없음)`, ['채용공고', '처우 안내', '근로계약서', '조건 차이 확인', '가상 예시'].every((x) => hero.includes(x)) && !hero.includes('놓치지 말고'));
     check(`[${tag}] S01: 비주얼 안에는 누를 수 있는 요소 없음 (실제 CTA만)`, (await page.$$('.hero-visual a, .hero-visual button')).length === 0);
@@ -54,7 +54,7 @@ try {
     await page.waitForSelector('#landing-how:not([hidden])', { timeout: 5000 }).catch(() => {});
     await page.click('#landing-how');
     await page.waitForTimeout(600);
-    check(`[${tag}] S01: '체험용 가상문서 받기 ↓' → 가상 문서 영역으로 이동`, await page.$eval('#sample-download', (e) => e.getBoundingClientRect().top < window.innerHeight));
+    check(`[${tag}] S01: '샘플 문서로 체험해 보세요' → 샘플 문서 영역으로 이동`, await page.$eval('#sample-download', (e) => e.getBoundingClientRect().top < window.innerHeight));
     await page.click('#landing-start'); await view('input');
     await page.check('input[name="doc-type"][value="job_posting"]');
     // S02 안내 문구가 실제 문서 유형 선택지와 일치 (오퍼 등 예전 명칭 없음)

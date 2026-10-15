@@ -37,7 +37,7 @@
           <p class="lead">받은 문서 하나부터 등록하세요. 나중에 받은 문서를 더하면 <strong>근로조건 차이와 원문 근거</strong>를 나란히 비교해요.</p>
           <div class="hero-actions">
             <a href="#/new" class="btn-primary btn-auto" id="landing-start">첫 문서 등록하기 →</a>
-            <button type="button" class="btn-secondary btn-auto" id="landing-how" hidden>문서가 없다면 · 가상문서 받기 ↓</button>
+            <button type="button" class="btn-secondary btn-auto" id="landing-how" hidden>문서가 없다면? 샘플 문서로 체험해 보세요</button>
           </div>
           <p class="hero-sub">문서 하나만 있어도 시작할 수 있어요. 근로계약서 한 장이면 10개 조건을 단독으로 확인해요.</p>
         </div>
@@ -100,17 +100,21 @@
         </ul>
       </section>
 
-      <!-- 4. 체험용 가상 문서 (파일이 모두 있을 때만 표시) -->
+      <!-- 4. 체험용 샘플 문서 (파일이 모두 있을 때만 표시) -->
       <section class="band sample-download" id="sample-download" aria-labelledby="sample-dl-title" tabindex="-1" hidden>
         <p class="section-kicker">체험하기</p>
-        <h2 class="sample-dl-title" id="sample-dl-title">가상 문서로 직접 체험해 보세요</h2>
-        <p class="muted section-intro">실제 문서가 없어도 괜찮아요. 가상 회사와 가상의 근로조건으로 만든 문서를 받아 등록해 보세요.</p>
+        <h2 class="sample-dl-title" id="sample-dl-title">샘플 문서로 직접 체험해 보세요</h2>
+        <p class="muted section-intro">실제 문서가 없어도 괜찮아요. 가상 회사와 가상의 근로조건으로 만든 샘플 문서를 받아 등록해 보세요.</p>
         <ul class="sample-dl-list" id="sample-dl-list"></ul>
         <div class="sample-zip-card">
-          <div><p class="sample-zip-title">가상 문서 3종 한 번에 받기</p><p class="small muted">세 PDF를 ZIP 하나로 묶어 받아요.</p></div>
+          <div><p class="sample-zip-title">샘플 문서 3종 한 번에 받기</p><p class="small muted">세 PDF를 ZIP 하나로 묶어 받아요.</p></div>
           <button type="button" class="btn-secondary btn-auto sample-zip" id="sample-zip">전체 다운로드</button>
         </div>
         <p class="muted small" id="sample-status" role="status" aria-live="polite"></p>
+        <div class="sample-next">
+          <p class="small muted">샘플 문서를 받았다면 바로 등록해 보세요.</p>
+          <a href="#/new" class="btn-primary btn-auto" id="sample-register">다운로드한 문서 등록하기 →</a>
+        </div>
       </section>
 
       <!-- 5. 안내 -->
@@ -266,13 +270,22 @@
           <div class="pane-bar">
             <p class="pane-title"><label for="review-text">추출된 텍스트</label><span class="tag" id="review-mode-tag">읽기 화면</span></p>
             <div class="pane-tools">
-              <button type="button" class="btn-secondary" id="review-edit">텍스트 수정하기</button>
               <button type="button" class="btn-small" id="review-select" hidden>전체 선택</button>
               <button type="button" class="btn-small" id="review-clear" hidden>비우기</button>
-              <button type="button" class="btn-small" id="review-restore">원래 추출 텍스트로</button>
+              <!-- 같은 크기의 두 버튼 (강조는 버튼 스타일로만 구분) -->
+              <div class="review-pair">
+                <button type="button" class="btn-secondary" id="review-edit">텍스트 수정하기</button>
+                <button type="button" class="btn-small" id="review-restore">원래 추출 텍스트로</button>
+              </div>
             </div>
           </div>
           <p class="small layout-status" id="layout-status" role="status" aria-live="polite"></p>
+          <!-- Gemini 줄바꿈 정리 중: 정리 전 텍스트를 보였다가 바꾸지 않고, 정리·검증이 끝난 뒤 한 번만 보여 준다 -->
+          <div class="layout-wait" id="layout-wait" role="status" aria-live="polite" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            <p class="layout-wait-title">추출된 텍스트를 정리하고 있어요.</p>
+            <p class="small muted">문서의 제목과 항목을 읽기 쉽게 정리하고 있어요.</p>
+          </div>
           <!-- 기본: 읽기 화면 (제목·항목·문단 구분). 글자는 입력칸과 같고, 제목의 [ ]는 화면 표시로만 -->
           <div class="read-view" id="read-view" tabindex="0" aria-label="추출된 텍스트 (읽기 화면)"></div>
           <textarea id="review-text" rows="18" maxlength="20000" hidden></textarea>
@@ -500,6 +513,8 @@
       </div>
     </section>
   </main>
+  <!-- 짧은 완료 안내 (몇 초 뒤 사라짐). 실패는 해당 자리에 남는 오류로 안내한다 -->
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <footer class="site-footer">
     <p>문서에 적힌 내용을 정리하며 법률 위반 여부, 계약의 효력, 회사의 신뢰도는 판단하지 않아요.</p>

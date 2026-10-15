@@ -1,6 +1,6 @@
 // 사용자 흐름 검사 (실제 브라우저, 1440px·390px). 모의 AI: 사람이 작성한 응답 + 데모 규칙 (실제 Gemini 아님).
 //   node scripts/e2e-journey.mjs
-// 1) 처음 방문 → 가상문서 받기 → 받은 근로계약서 PDF 등록 → 10개 조건 확인
+// 1) 처음 방문 → 샘플 문서 받기 → 받은 근로계약서 PDF 등록 → 10개 조건 확인
 // 2) 채용공고 하나 → 결과 활용 안내·다음 문서 추가
 // 3) 두 문서 비교 → 원문 근거 → '원문 전체에서 위치 보기'(펼침·강조·돌아가기)
 // 4) 조건 상세 → 메모 작성 → 결과 화면 복귀(보던 카드 위치), 브라우저 뒤로 가기
@@ -68,23 +68,27 @@ try {
     };
     const addDoc = () => page.click('#add-second:visible, #add-doc-top:visible');
 
-    // ---- 1) 처음 방문 → 가상문서 → 근로계약서 PDF 등록 ----
+    // ---- 1) 처음 방문 → 샘플 문서 → 근로계약서 PDF 등록 ----
     await page.goto(`${BASE}/#/`); await view('landing');
     await page.waitForSelector('#landing-how:not([hidden])', { timeout: 5000 });
     const steps = await page.$$eval('.step-list > li h3', (els) => els.map((e) => e.textContent));
     const hier = await page.evaluate(() => {
       const a = document.querySelector('#landing-start'); const b = document.querySelector('#landing-how');
       const ra = a.getBoundingClientRect(); const rb = b.getBoundingClientRect();
-      return { aBg: getComputedStyle(a).backgroundColor, bBg: getComputedStyle(b).backgroundColor, aH: ra.height, bH: rb.height, bVisible: rb.top < window.innerHeight };
+      return { aBg: getComputedStyle(a).backgroundColor, bBg: getComputedStyle(b).backgroundColor, aH: ra.height, bH: rb.height, bVisible: rb.top < window.innerHeight, bRight: rb.right, vw: window.innerWidth };
     });
     check(`[${tag}] 랜딩: 이용 방법 = 문서 한 개 → 주요 조건 → (선택) 비교 → 근거·질문, 계약서 단독 안내`, steps[0].startsWith('문서 한 개 등록하기') && steps[2].includes('선택') && (await text('#view-landing')).includes('근로계약서는 한 개만으로도') && !/반드시|필수/.test(await text('.step-list')), steps.join(' | '));
-    check(`[${tag}] 랜딩: 첫 화면에서 가상문서로 가는 보조 버튼 (메인 CTA보다 덜 강조)`, hier.bVisible && hier.aBg !== hier.bBg && hier.aH >= hier.bH && (await text('#landing-start')).includes('첫 문서 등록하기'), JSON.stringify(hier));
+    check(`[${tag}] 랜딩: 첫 화면에서 샘플 문서로 가는 보조 버튼 (문구·메인 CTA보다 덜 강조·화면 안에 들어옴)`, hier.bVisible && hier.aBg !== hier.bBg && hier.aH >= hier.bH && hier.bRight <= hier.vw && (await text('#landing-how')) === '문서가 없다면? 샘플 문서로 체험해 보세요' && (await text('#landing-start')).includes('첫 문서 등록하기'), JSON.stringify(hier));
     await page.click('#landing-how'); await page.waitForTimeout(700);
-    check(`[${tag}] 랜딩: 가상문서 영역으로 이동·강조, 개별 3종 + ZIP`, await inView('#sample-dl-list') && (await page.$$('#sample-dl-list a')).length === 3 && await page.isVisible('#sample-zip'));
+    check(`[${tag}] 랜딩: 샘플 문서 영역으로 이동·강조, 개별 3종 + ZIP`, await inView('#sample-dl-list') && (await page.$$('#sample-dl-list a')).length === 3 && await page.isVisible('#sample-zip'));
     const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#sample-dl-list li:nth-child(3) a')]);
     const pdf = readFileSync(await dl.path());
-    await page.click('#landing-start'); await view('input');
-    check(`[${tag}] 등록 화면에는 가상문서 다운로드 영역 없음`, !(await page.$('#view-input .sample-download, #view-input #sample-dl-list')));
+    // 샘플 영역 아래 '다운로드한 문서 등록하기' → 등록 화면
+    await page.$eval('#sample-register', (e) => e.scrollIntoView());
+    const regBox = await page.$eval('#sample-register', (e) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, vw: window.innerWidth, h: r.height }; });
+    check(`[${tag}] 샘플 영역 아래 '다운로드한 문서 등록하기' 하나, 화면 안에 들어옴`, (await page.$$('#sample-download a[href="#/new"]')).length === 1 && regBox.left >= 0 && regBox.right <= regBox.vw && regBox.h >= 44, JSON.stringify(regBox));
+    await page.click('#sample-register'); await view('input');
+    check(`[${tag}] 등록 화면에는 샘플 문서 다운로드 영역 없음`, !(await page.$('#view-input .sample-download, #view-input #sample-dl-list')));
     await page.check('input[name="doc-type"][value="contract"]');
     await page.click('#tab-upload');
     await page.setInputFiles('#file-input', { name: SAMPLE_FILES[2].name, mimeType: 'application/pdf', buffer: pdf });

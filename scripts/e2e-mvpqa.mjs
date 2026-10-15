@@ -66,7 +66,7 @@ try {
       await view('record'); await page.waitForTimeout(150);
     };
     const addDoc = async () => { await page.click('#add-second:visible, #add-doc-top:visible'); };
-    const groups = () => page.$$eval('#condition-list [data-group]', (els) => els.map((g) => ({ key: g.dataset.group, count: Number(g.querySelector('.sum-count')?.textContent ?? -1), cards: g.querySelectorAll('.ccard, .cmp-card').length, open: g.tagName === 'DETAILS' ? g.open : null })));
+    const groups = () => page.$$eval('#condition-list [data-group]', (els) => els.map((g) => ({ key: g.dataset.group, count: g.querySelector(':scope > .cgroup-title .sum-count') ? Number(g.querySelector(':scope > .cgroup-title .sum-count').textContent) : null, cards: g.querySelectorAll('.ccard, .cmp-card').length, open: g.tagName === 'DETAILS' ? g.open : null })));
     // 비교 요약 칸 숫자 (상태 → 건수)
     const tiles = () => page.$$eval('#cmp-tiles .cmp-tile', (els) => Object.fromEntries(els.map((t) => [t.dataset.jump, Number(t.querySelector('.cmp-tile-count strong').textContent)])));
     const card = (id) => text(`#condition-list [data-item="${id}"]`);
@@ -75,11 +75,12 @@ try {
     await page.goto(`${BASE}/#/new`);
     await register('job_posting', DEMO_POSTING);
     const g1 = await groups();
-    const single = async () => ({ doc: await text('#cmp-docs'), tl: await tiles(), cards: await page.$$eval('#condition-list .cmp-card', (els) => els.map((e) => ({ id: e.dataset.item, st: e.dataset.status, panels: e.querySelectorAll('.cmp-panel').length }))) });
+    const single = async () => ({ doc: await text('#cmp-docs'), tl: await tiles(), cards: await page.$$eval('#condition-list .cmp-card', (els) => els.map((e) => ({ id: e.dataset.item, st: e.dataset.status, panels: e.querySelectorAll('.cmp-panel').length, compact: e.classList.contains('is-compact') }))) });
     const s1 = await single();
-    const sumMatches = (s, g) => g.every((x) => x.count === x.cards && s.tl[x.key] === x.cards) && Object.values(s.tl).reduce((a, b) => a + b, 0) === s.cards.length;
+    // 목록형 묶음('문서에 적힌/기재된 조건')은 제목 옆 건수를 다시 적지 않는다 (요약 칸에만)
+    const sumMatches = (s, g) => g.every((x) => (x.count === x.cards || (x.count === null && ['stated', 'written'].includes(x.key))) && s.tl[x.key] === x.cards) && Object.values(s.tl).reduce((a, b) => a + b, 0) === s.cards.length;
     check(`[${tag}] 채용공고 단독: 문서 정보 카드(유형·등록 완료·등록일) → 요약 칸 → 조건 카드, 두 번째 문서 CTA`, s1.doc.includes('채용공고') && s1.doc.includes('등록 완료') && s1.doc.includes('등록 ')
-      && (await text('#conditions-title')) === '주요 조건 미리보기' && g1.map((g) => g.key).every((k) => ['stated', 'deferred', 'unavailable'].includes(k)) && s1.cards.length >= 4 && s1.cards.every((c) => c.panels === 1)
+      && (await text('#conditions-title')) === '주요 조건 미리보기' && g1.map((g) => g.key).every((k) => ['stated', 'deferred', 'unavailable'].includes(k)) && s1.cards.length >= 4 && s1.cards.every((c) => c.panels === 1 || (c.compact && c.st === 'stated'))
       && await page.isVisible('#add-second') && (await text('#add-second')).includes('비교할 두 번째 문서 추가하기') && (await text('#next-step')).includes('다른 문서를 추가하면 근로조건이 어떻게 달라졌는지 비교할 수 있어요.'), JSON.stringify(s1.tl));
     check(`[${tag}] 채용공고 단독: 요약 숫자 = 묶음 숫자 = 카드 수`, sumMatches(s1, g1), g1.map((g) => `${g.key}:${g.count}/${g.cards}`).join(' '));
     check(`[${tag}] 채용공고 단독: 회사 질문·미기재 판정 없음`, (await page.$$('#view-record .q-text')).length === 0 && !(await page.isVisible('#now-section')) && !(await page.isVisible('#cmp-questions')) && !(await text('#condition-list')).includes('문서에서 확인되지 않음') && !(await page.isVisible('#copy-all-questions')));
@@ -113,7 +114,16 @@ try {
     check(`[${tag}] 근로계약서 단독: '여전히' 없이 '추가 확인이 필요한 조건', 미리보기 CTA 없음, 점검표·요약 중복 영역 없음`, (await text('#condition-list')).includes('추가 확인이 필요한 조건') && !(await text('#view-record')).includes('여전히') && !(await page.isVisible('#next-step')) && !(await page.$('#contract-checklist, #contract-glance, #result-overview')) && !(await page.isVisible('#all-conditions')));
     const c02 = await card('02');
     check(`[${tag}] 계산값: 근무시간은 '계산으로 확인한 조건' 묶음, 원문 기재값과 '(계산값)' 구분, '내용이 모호함' 아님`, (await page.getAttribute('#cmp-item-02', 'data-status')) === 'calculated' && c02.includes('10:00~19:00') && c02.includes('주 40시간 (계산값)') && c02.includes('원문 기재값') && !c02.includes('내용이 모호함'), c02.slice(0, 160));
-    check(`[${tag}] 요약 값에 원문 목차·항목명 없음 (근무장소·담당업무·수습기간)`, (await text('#cmp-item-03 .cmp-panels')).includes('서울 성동구 성수동 본사') && !(await text('#cmp-item-03 .cmp-panels')).includes('2. 근무장소') && !(await text('#cmp-item-04 .cmp-panels')).includes('업무의 내용') && (await text('#cmp-item-07 .cmp-panels')).includes('입사 후 3개월'));
+    check(`[${tag}] 요약 값에 원문 목차·항목명 없음 (근무장소·담당업무·수습기간)`, (await text('#cmp-item-03 .cmp-value')).includes('서울 성동구 성수동 본사') && !(await text('#cmp-item-03 .cmp-value')).includes('2. 근무장소') && !(await text('#cmp-item-04 .cmp-value')).includes('업무의 내용') && (await text('#cmp-item-07 .cmp-value')).includes('입사 후 3개월'));
+    // 목록형: 문서에 기재된 짧은 조건은 2열(데스크톱)/1열(모바일), 근거·상세 링크 유지, 긴 항목·추가 확인 항목은 넓은 카드
+    const compact = await page.$$eval('[data-group="written"]', (gs) => gs.map((g) => {
+      const rows = g.querySelector('.cmp-rows');
+      const items = [...g.querySelectorAll('.cmp-rows > .cmp-row')];
+      const cols = rows ? getComputedStyle(rows).gridTemplateColumns.split(' ').length : 0;
+      return { n: items.length, cols, ev: items.every((r) => r.querySelector('details.cmp-evidence > summary')?.textContent === '원문 근거 보기'), link: items.every((r) => r.querySelector('a.cmp-detail-link')?.textContent.includes('조건 상세·답변 메모')), titleCount: Boolean(g.querySelector(':scope > .cgroup-title .sum-count')), wide: g.querySelectorAll('.cmp-cards > .cmp-card').length };
+    })[0]);
+    const needsWide = await page.$$eval('[data-group="needs"] .cmp-card', (els) => els.every((e) => !e.classList.contains('is-compact')));
+    check(`[${tag}] 근로계약서 단독: 기재된 짧은 조건은 목록형 ${tag === 'desk' ? '2열' : '1열'}, 근거·상세 유지, 묶음 제목 옆 중복 건수 없음, 추가 확인은 넓은 카드`, compact && compact.n >= 3 && compact.cols === (tag === 'desk' ? 2 : 1) && compact.ev && compact.link && !compact.titleCount && needsWide && (await page.$$('[data-group="needs"] .sum-count')).length === 1, JSON.stringify(compact));
     const needQ = await page.$$eval('[data-group="needs"] .cmp-card', (els) => els.map((e) => e.querySelectorAll('.q-text').length));
     check(`[${tag}] 근로계약서 단독: 질문은 추가 확인 카드 안 + 위쪽 '질문 전체 복사' 하나 (아래 중복 없음)`, (await page.$$('[data-group="written"] .q-text, [data-group="calculated"] .q-text')).length === 0 && needQ.length > 0 && (await page.isVisible('#copy-all-top')) && !(await page.isVisible('#copy-all-questions')), JSON.stringify(needQ));
     check(`[${tag}] 근로계약서 단독: null 없음·가로 넘침 없음`, await noNull() && await noOverflow());
@@ -201,9 +211,23 @@ try {
     const recUrl = page.url();
     check(`[${tag}] 이름이 없으면 제목 자리에 안내 문구 + 연필 버튼 (회사명 자동 표시 없음)`, (await text('#record-title')) === '기록 이름을 입력해 주세요' && (await page.$$('#rename-open svg')).length === 1 && (await text('#rename-open')).includes('이름 입력'));
     await page.click('#rename-open');
+    // 저장 실패: 사라지지 않는 오류를 입력칸 아래에 (토스트·성공 문구 없음), 고쳐서 다시 저장 가능
+    await page.evaluate(() => { window.__put = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = function () { throw new DOMException('막힘', 'QuotaExceededError'); }; });
     await page.fill('#rename-input', '파란스텝 콘텐츠 마케터 (가상)');
     await page.click('#rename-form button[type="submit"]');
+    await page.waitForSelector('#rename-error:not([hidden])', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(3200);
+    check(`[${tag}] 기록 이름 저장 실패: 입력칸 아래 오류가 남아 있음, 성공 토스트 없음`, await page.isVisible('#rename-error') && (await text('#rename-error')).includes('이름을 저장하지 못했어요') && (await page.getAttribute('#rename-error', 'role')) === 'alert' && await page.isVisible('#rename-input') && !(await text('#toast')).includes('저장했어요'));
+    await page.evaluate(() => { IDBObjectStore.prototype.put = window.__put; });
+    // 저장 성공: 넓은 안내 영역 대신 짧은 토스트(aria-live), 몇 초 뒤 사라짐
+    await page.click('#rename-form button[type="submit"]');
     await page.waitForFunction(() => document.querySelector('#record-title')?.textContent === '파란스텝 콘텐츠 마케터 (가상)');
+    const toast1 = await page.evaluate(() => { const t = document.querySelector('#toast'); const r = t.getBoundingClientRect(); return { text: t.textContent, live: t.getAttribute('aria-live'), shown: t.classList.contains('is-shown'), w: r.width, inView: r.left >= 0 && r.right <= window.innerWidth }; });
+    const flash = await page.$eval('#save-status', (e) => (e.hidden ? '' : e.textContent));
+    await page.screenshot({ path: `${OUT}/${tag}-rename-toast.png` });
+    await page.waitForTimeout(3300);
+    const toastGone = await page.$eval('#toast', (t) => !t.classList.contains('is-shown') && getComputedStyle(t).opacity === '0');
+    check(`[${tag}] 기록 이름 저장 성공: 토스트 '기록 이름을 저장했어요.'(aria-live) 후 자동으로 사라짐, 넓은 저장 안내 없음`, toast1.text === '기록 이름을 저장했어요.' && toast1.live === 'polite' && toast1.shown && toast1.inView && toastGone && !flash.includes('기록 이름'), JSON.stringify(toast1));
     await page.reload(); await view('record');
     check(`[${tag}] 기록 이름 변경 → 새로고침 후에도 유지`, page.url() === recUrl && (await text('#record-title')) === '파란스텝 콘텐츠 마케터 (가상)' && (await page.$$('#doc-list > li')).length === 2);
     dialogAnswer = 'dismiss'; const d0 = dialogs.length;
@@ -246,7 +270,7 @@ try {
     await page.$eval('#sample-download', (e) => e.scrollIntoView());
     const dlBox = await text('#sample-download').catch(() => '');
     const inView = await page.$eval('#sample-download', (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= window.innerWidth + 1; });
-    check(`[${tag}] 가상 문서 영역 노출: 제목·가상 문서 안내·링크 3개·전체 다운로드, 화면 안에 들어옴, 메인 CTA보다 덜 강조`, await page.isVisible('#sample-download') && inView && dlBox.includes('가상 문서로 직접 체험해 보세요') && dlBox.includes('가상 회사와 가상의 근로조건')
+    check(`[${tag}] 가상 문서 영역 노출: 제목·가상 문서 안내·링크 3개·전체 다운로드, 화면 안에 들어옴, 메인 CTA보다 덜 강조`, await page.isVisible('#sample-download') && inView && dlBox.includes('샘플 문서로 직접 체험해 보세요') && dlBox.includes('가상 회사와 가상의 근로조건')
       && (await page.$$('#sample-dl-list a')).length === 3 && (await text('#sample-zip')) === '전체 다운로드'
       && await page.$eval('#landing-start', (b) => getComputedStyle(b).backgroundColor) !== await page.$eval('#sample-zip', (b) => getComputedStyle(b).backgroundColor));
     await page.screenshot({ path: `${OUT}/${tag}-0-download.png` });
@@ -260,7 +284,7 @@ try {
       singleOk &&= Buffer.compare(readFileSync(await dl.path()), originals[k]) === 0 && names[k] === SAMPLE_FILES[k].name;
     }
     check(`[${tag}] 가상 문서 개별 다운로드 3종: 받은 파일이 원본과 같음`, singleOk, names.join(', '));
-    check(`[${tag}] 두 번째 문서 다운로드 이름 = '처우·근로조건 안내'`, names[1] === '일단확인_가상문서_2_처우·근로조건안내.pdf' && (await text('#sample-dl-list')).includes('처우·근로조건 안내 PDF'), names[1]);
+    check(`[${tag}] 두 번째 문서 다운로드 이름 = '처우·근로조건 안내'`, names[1] === '일단확인_샘플문서_2_처우·근로조건안내.pdf' && (await text('#sample-dl-list')).includes('처우·근로조건 안내 PDF'), names[1]);
     const [zdl] = await Promise.all([page.waitForEvent('download'), page.click('#sample-zip')]);
     const dir = mkdtempSync(join(tmpdir(), 'ildan-zip-'));
     const zipPath = join(dir, 'samples.zip');
@@ -290,7 +314,7 @@ try {
     const landingText = await text('#view-landing');
     check(`[${tag}] 메인: 문서 2개 비교 / 근로계약서 단독 확인 구분, 10개 조건`, flow.includes('문서 2개 비교') && flow.includes('근로계약서 단독 확인') && (await page.$$('#landing-criteria .criteria-chips li')).length === 10);
     check(`[${tag}] 메인: 확인 기준(기재 여부·구체성·계산값 구분) + 법률 판단 안 함 + Gemini·브라우저 저장 안내`, ['기재 여부', '구체성', '계산값'].every((x) => flow.includes(x)) && landingText.includes('법률 위반 여부나 계약의 적법성') && landingText.includes('Google Gemini') && landingText.includes('브라우저에만 저장') && !/100% ?로컬|안전하게/.test(landingText));
-    check(`[${tag}] 메인: 핵심 카피 유지·CTA는 히어로 '첫 문서 등록하기' 하나·가로 넘침 없음`, landingText.includes('입사 전, 놓치지 말고') && (await text('#landing-start')).includes('첫 문서 등록하기') && (await page.$$('#view-landing a[href="#/new"]')).length === 1 && !(await page.$('#landing-records, #landing-start-bottom')) && await noOverflow());
+    check(`[${tag}] 메인: 핵심 카피 유지·CTA는 히어로 '첫 문서 등록하기' 하나·가로 넘침 없음`, landingText.includes('입사 전, 놓치지 말고') && (await text('#landing-start')).includes('첫 문서 등록하기') && (await page.$$('#view-landing a[href="#/new"]')).length === 2 && (await text('#sample-register')).includes('다운로드한 문서 등록하기') && !(await page.$('#landing-records, #landing-start-bottom')) && await noOverflow());
     await page.screenshot({ path: `${OUT}/${tag}-0-landing.png`, fullPage: true });
 
     check(`[${tag}] 페이지 오류 없음`, errors.length === 0, errors.join(' | ').slice(0, 200));

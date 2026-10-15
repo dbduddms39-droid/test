@@ -1,14 +1,14 @@
-// 박람회 체험용 가상 문서 다운로드 (시작 화면 전용).
+// 박람회 체험용 샘플 문서 다운로드 (시작 화면 전용).
 // 파일은 public/samples/에 직접 넣는다 (가상 회사·가상 근로조건 문서 3종, 앱이 만들거나 바꾸지 않는다).
 // 세 파일이 모두 있을 때만 영역을 보여 주고, 하나라도 없으면 숨긴다 (깨진 링크를 보여 주지 않음).
 // '전체 다운로드'는 같은 세 파일을 브라우저에서 ZIP 하나로 묶는다 (압축 없이 저장, 서버 전송 없음).
 
 export const SAMPLE_FILES = [
-  { path: 'samples/ildan-sample-1-job-posting.pdf', name: '일단확인_가상문서_1_채용공고.pdf', label: '채용공고 PDF', desc: '직무·근무지·급여 범위가 적힌 공고' },
-  { path: 'samples/ildan-sample-2-offer-mail.pdf', name: '일단확인_가상문서_2_처우·근로조건안내.pdf', label: '처우·근로조건 안내 PDF', desc: '합격 후 받은 연봉·근무 조건 안내' },
-  { path: 'samples/ildan-sample-3-contract.pdf', name: '일단확인_가상문서_3_근로계약서.pdf', label: '근로계약서 PDF', desc: '10가지 조건을 점검할 수 있는 계약서' },
+  { path: 'samples/ildan-sample-1-job-posting.pdf', name: '일단확인_샘플문서_1_채용공고.pdf', label: '채용공고 PDF', desc: '직무·근무지·급여 범위가 적힌 공고' },
+  { path: 'samples/ildan-sample-2-offer-mail.pdf', name: '일단확인_샘플문서_2_처우·근로조건안내.pdf', label: '처우·근로조건 안내 PDF', desc: '합격 후 받은 연봉·근무 조건 안내' },
+  { path: 'samples/ildan-sample-3-contract.pdf', name: '일단확인_샘플문서_3_근로계약서.pdf', label: '근로계약서 PDF', desc: '10가지 조건을 점검할 수 있는 계약서' },
 ];
-export const SAMPLE_ZIP_NAME = '일단확인_가상문서_3종.zip';
+export const SAMPLE_ZIP_NAME = '일단확인_샘플문서_3종.zip';
 
 // 세 파일이 모두 PDF로 응답하는지 (본문 없이 HEAD로 확인)
 export async function samplesAvailable(fetchImpl = fetch) {
@@ -73,7 +73,7 @@ export function buildZip(files, date = new Date()) {
 export async function initSampleDownloads({ root, list, zipButton, status, el }) {
   if (!(await samplesAvailable())) { root.hidden = true; return false; }
   list.replaceChildren(...SAMPLE_FILES.map((f, i) => el('li', { class: 'sample-dl-item' },
-    el('p', { class: 'sample-dl-no' }, `가상 문서 ${i + 1}`),
+    el('p', { class: 'sample-dl-no' }, `샘플 문서 ${i + 1}`),
     el('p', { class: 'sample-dl-desc' }, f.desc ?? ''),
     el('a', { href: f.path, download: f.name, class: 'btn-secondary sample-dl-link' }, `${f.label} 다운로드`))));
   zipButton.addEventListener('click', async () => {
